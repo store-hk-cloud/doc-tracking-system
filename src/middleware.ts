@@ -27,9 +27,10 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Public routes
-  if (request.nextUrl.pathname === '/') {
-    if (user) {
+  // Public routes (bypass auth check)
+  const publicRoutes = ['/', '/api/setup', '/api/sheets'];
+  if (publicRoutes.includes(request.nextUrl.pathname)) {
+    if (request.nextUrl.pathname === '/' && user) {
       return NextResponse.redirect(new URL('/dashboard', request.url));
     }
     return supabaseResponse;
