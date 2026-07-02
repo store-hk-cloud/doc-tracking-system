@@ -1,16 +1,4 @@
-import { google } from 'googleapis';
-
-function getAuth() {
-  return new google.auth.GoogleAuth({
-    credentials: {
-      client_email: process.env.GOOGLE_DRIVE_CLIENT_EMAIL || process.env.GOOGLE_SHEETS_CLIENT_EMAIL,
-      private_key: (process.env.GOOGLE_DRIVE_PRIVATE_KEY || process.env.GOOGLE_SHEETS_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
-    },
-    scopes: ['https://www.googleapis.com/auth/drive.file'],
-  });
-}
-
-const drive = google.drive({ version: 'v3', auth: getAuth() });
+import { getDriveClient } from './google-auth';
 
 export async function uploadToDrive(
   fileName: string,
@@ -18,6 +6,7 @@ export async function uploadToDrive(
   mimeType: string
 ): Promise<{ fileId: string; viewLink: string }> {
   try {
+    const drive = getDriveClient();
     const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
     const res = await drive.files.create({
       requestBody: {
@@ -49,6 +38,7 @@ export function getDriveViewLink(fileId: string): string {
 
 export async function deleteFromDrive(fileId: string): Promise<void> {
   try {
+    const drive = getDriveClient();
     await drive.files.delete({ fileId });
   } catch (error) {
     console.error('[Google Drive] Delete error:', error);
