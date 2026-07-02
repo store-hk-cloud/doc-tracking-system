@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from('documents')
-      .select('*, departments(name), profiles(full_name)')
+      .select('*')
       .order('running_no', { ascending: false });
 
     if (status) query = query.eq('status', status);
@@ -28,10 +28,22 @@ export async function GET(request: NextRequest) {
     const { data, error } = await query;
     if (error) throw error;
 
-    const mapped = data.map((d: any) => ({
+    // Fetch department and profile names separately
+    const deptIds = [...new Set((data || []).map((d: any) => d.recipient_dept_id).filter(Boolean))];
+    const profileIds = [...new Set((data || []).map((d: any) => d.recorded_by).filter(Boolean))];
+    
+    const [{ data: departments }, { data: profiles }] = await Promise.all([
+      supabase.from('departments').select('id, name').in('id', deptIds.length ? deptIds : ['none']),
+      supabase.from('profiles').select('id, full_name').in('id', profileIds.length ? profileIds : ['none']),
+    ]);
+
+    const deptMap = new Map((departments || []).map((d: any) => [d.id, d.name]));
+    const profileMap = new Map((profiles || []).map((p: any) => [p.id, p.full_name]));
+
+    const mapped = (data || []).map((d: any) => ({
       ...d,
-      recipient_dept_name: d.departments?.name,
-      recorded_by_name: d.profiles?.full_name,
+      recipient_dept_name: deptMap.get(d.recipient_dept_id) || null,
+      recorded_by_name: profileMap.get(d.recorded_by) || null,
     }));
 
     return NextResponse.json({ success: true, data: mapped });
@@ -59,10 +71,32 @@ export async function POST(request: NextRequest) {
         recorded_by: body.recorded_by,
         status: 'registered',
       })
-      .select('*, departments(name), profiles(full_name)')
+      .select()
       .single();
 
     if (error) throw error;
+
+    // Get department name
+    let deptName = '';
+    if (data.recipient_dept_id) {
+      const { data: dept } = await supabase
+        .from('departments')
+        .select('name')
+        .eq('id', data.recipient_dept_id)
+        .single();
+      deptName = dept?.name || '';
+    }
+
+    // Get profile name
+    let profileName = '';
+    if (data.recorded_by) {
+      const { data: prof } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', data.recorded_by)
+        .single();
+      profileName = prof?.full_name || '';
+    }
 
     // Sync to Google Sheets
     appendRow('เอกสารเข้า', [
@@ -71,7 +105,7 @@ export async function POST(request: NextRequest) {
       data.doc_number || '',
       data.sender,
       data.subject,
-      data.departments?.name || '',
+      deptName,
       'registered',
       '',
       '',
@@ -80,14 +114,14 @@ export async function POST(request: NextRequest) {
       data.is_damaged ? 'ใช่' : 'ไม่',
       data.damage_image_url || '',
       data.note || '',
-      data.profiles?.full_name || '',
+      profileName,
       data.created_at,
       '',
     ]);
 
     return NextResponse.json({
       success: true,
-      data: { ...data, recipient_dept_name: data.departments?.name, recorded_by_name: data.profiles?.full_name },
+      data: { ...data, recipient_dept_name: deptName, recorded_by_name: profileName },
     });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

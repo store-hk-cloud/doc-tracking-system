@@ -41,27 +41,32 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/', request.url));
   }
 
-  // Check role-based access
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single();
+  // Skip profile check for API routes (handled by the route itself)
+  const isApiRoute = request.nextUrl.pathname.startsWith('/api/');
+  
+  if (!isApiRoute) {
+    // Check role-based access - single query
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single();
 
-  const role = profile?.role;
+    const role = profile?.role;
 
-  // Admin-only routes
-  const adminRoutes = ['/register', '/delivery', '/admin'];
-  if (adminRoutes.some((r) => request.nextUrl.pathname.startsWith(r))) {
-    if (role !== 'super_admin' && role !== 'admin') {
-      return NextResponse.redirect(new URL('/dashboard', request.url));
+    // Admin-only routes
+    const adminRoutes = ['/register', '/delivery', '/admin'];
+    if (adminRoutes.some((r) => request.nextUrl.pathname.startsWith(r))) {
+      if (role !== 'super_admin' && role !== 'admin') {
+        return NextResponse.redirect(new URL('/dashboard', request.url));
+      }
     }
-  }
 
-  // Super admin only routes
-  if (request.nextUrl.pathname.startsWith('/admin')) {
-    if (role !== 'super_admin') {
-      return NextResponse.redirect(new URL('/dashboard', request.url));
+    // Super admin only routes
+    if (request.nextUrl.pathname.startsWith('/admin')) {
+      if (role !== 'super_admin') {
+        return NextResponse.redirect(new URL('/dashboard', request.url));
+      }
     }
   }
 
