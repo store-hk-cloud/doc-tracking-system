@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { createClient } from '@/lib/supabase/client';
 
 const STATUS_OPTIONS = ['ทั้งหมด', 'registered', 'delivered', 'signed', 'closed', 'rejected'];
 const STATUS_LABELS: Record<string, string> = {
@@ -23,7 +22,6 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function TrackingPage() {
   const { profile } = useAuth();
-  const supabase = createClient();
   const [docs, setDocs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState({ status: '', keyword: '', dept_id: '' });
@@ -32,8 +30,8 @@ export default function TrackingPage() {
   const [selectedDoc, setSelectedDoc] = useState<any>(null);
 
   useEffect(() => {
-    supabase.from('departments').select('*').order('name').then(({ data }) => {
-      if (data) setDepartments(data);
+    fetch('/api/departments').then(r => r.json()).then(data => {
+      if (data.success) setDepartments(data.data);
     });
   }, []);
 

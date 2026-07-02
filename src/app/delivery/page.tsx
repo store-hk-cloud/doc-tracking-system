@@ -2,12 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { createClient } from '@/lib/supabase/client';
 import type { Document } from '@/types';
 
 export default function DeliveryPage() {
   const { user } = useAuth();
-  const supabase = createClient();
   const [docs, setDocs] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -17,18 +15,24 @@ export default function DeliveryPage() {
   const [error, setError] = useState('');
 
   const fetchDocs = async () => {
-    const { data } = await supabase
-      .from('documents')
-      .select('*, departments(name)')
-      .eq('status', 'registered')
-      .order('running_no');
-    if (data) setDocs(data);
+    try {
+      const res = await fetch('/api/documents?status=registered');
+      const data = await res.json();
+      if (data.success) setDocs(data.data);
+    } catch (e) {
+      console.error('fetch docs error:', e);
+    }
     setLoading(false);
   };
 
   const fetchDepartments = async () => {
-    const { data } = await supabase.from('departments').select('*').order('name');
-    if (data) setDepartments(data);
+    try {
+      const res = await fetch('/api/departments');
+      const data = await res.json();
+      if (data.success) setDepartments(data.data);
+    } catch (e) {
+      console.error('fetch departments error:', e);
+    }
   };
 
   useEffect(() => { fetchDocs(); fetchDepartments(); }, []);

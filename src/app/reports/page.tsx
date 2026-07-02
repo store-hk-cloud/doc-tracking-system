@@ -2,11 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { createClient } from '@/lib/supabase/client';
 
 export default function ReportsPage() {
   const { profile } = useAuth();
-  const supabase = createClient();
   const [departments, setDepartments] = useState<any[]>([]);
   const [docs, setDocs] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -21,8 +19,8 @@ export default function ReportsPage() {
   });
 
   useEffect(() => {
-    supabase.from('departments').select('*').order('name').then(({ data }) => {
-      if (data) setDepartments(data);
+    fetch('/api/departments').then(r => r.json()).then(data => {
+      if (data.success) setDepartments(data.data);
     });
   }, []);
 
