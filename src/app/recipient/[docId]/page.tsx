@@ -19,14 +19,14 @@ export default function RecipientPage() {
   const [existingDelivery, setExistingDelivery] = useState<any>(null);
 
   useEffect(() => {
-    const fetchDoc = async () => {
+    const loadDoc = async () => {
       try {
-        const res = await fetch(`/api/documents/${docId}`);
+        const res = await window.fetch(`/api/documents/${docId}`);
         const data = await res.json();
         if (data.success) {
           setDoc(data.data);
           // Check if already signed via delivery logs
-          const deliveryRes = await fetch('/api/deliveries?document_id=' + docId);
+          const deliveryRes = await window.fetch('/api/deliveries?document_id=' + docId);
           const deliveryData = await deliveryRes.json();
           if (deliveryData.success && deliveryData.data.length > 0) {
             setExistingDelivery(deliveryData.data[0]);
@@ -37,7 +37,7 @@ export default function RecipientPage() {
       }
       setLoading(false);
     };
-    if (docId) fetchDoc();
+    if (docId) loadDoc();
   }, [docId]);
 
   const handleSubmit = async () => {

@@ -10,16 +10,15 @@ export default function RecipientListPage() {
   const isAdmin = profile?.role === 'super_admin' || profile?.role === 'admin';
 
   useEffect(() => {
-    const fetch = async () => {
+    const loadDocs = async () => {
       try {
         let url = '/api/documents?status=delivered&status=signed';
         if (!isAdmin && profile?.department_id) {
           url += `&dept_id=${profile.department_id}`;
         }
-        const res = await fetch(url);
+        const res = await window.fetch(url);
         const data = await res.json();
         if (data.success) {
-          // Filter for delivered/signed (API supports single status, handle both)
           setDocs(data.data.filter((d: any) => ['delivered', 'signed'].includes(d.status)));
         }
       } catch (e) {
@@ -27,7 +26,7 @@ export default function RecipientListPage() {
       }
       setLoading(false);
     };
-    fetch();
+    loadDocs();
   }, []);
 
   const statusMap: Record<string, { label: string; color: string }> = {
