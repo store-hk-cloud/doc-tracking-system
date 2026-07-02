@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
-import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import type { Profile } from '@/types';
 
 interface AuthContextType {
@@ -27,34 +27,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const supabase = createClient();
-  const fetchedRef = useRef(false);
 
   useEffect(() => {
-    let cancelled = false;
+    let mounted = true;
 
-    const getSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (cancelled) return;
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!mounted) return;
       if (session?.user) {
         setUser({ id: session.user.id, email: session.user.email! });
-        // Fetch profile once
-        if (!fetchedRef.current) {
-          fetchedRef.current = true;
-          try {
-            const res = await fetch('/api/profile');
-            const data = await res.json();
-            if (!cancelled && data.success) setProfile(data.data);
-          } catch (e) {
-            console.error('fetch profile error:', e);
-          }
-        }
+        // Fetch profile via API route (uses service_role → bypasses RLS)
+        fetch('/api/profile')
+          .then(r => r.json())
+          .then(data => { if (mounted && data.success) setProfile(data.data); })
+          .catch(e => console.error('fetch profile error:', e));
       }
-      if (!cancelled) setLoading(false);
-    };
-    getSession();
+      if (mounted) setLoading(false);
+    });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (cancelled) return;
+    // Subscribe to auth changes (but DON'T call fetchProfile here to avoid loops)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
       if (session?.user) {
         setUser({ id: session.user.id, email: session.user.email! });
       } else {
@@ -63,18 +55,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    return () => { cancelled = true; subscription.unsubscribe(); };
+    return () => { mounted = false; subscription.unsubscribe(); };
   }, []);
 
   const signIn = async (email: string, password: string): Promise<string | null> => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return error.message;
+    // Fetch profile after sign in
+    fetch('/api/profile')
+      .then(r => r.json())
+      .then(data => { if (data.success) setProfile(data.data); })
+      .catch(() => {});
     router.push('/dashboard');
     return null;
   };
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    setProfile(null);
+    setUser(null);
     router.push('/');
   };
 
