@@ -2,12 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { createClient } from '@/lib/supabase/client';
 import { useParams } from 'next/navigation';
 
 export default function RecipientPage() {
   const { user, profile } = useAuth();
-  const supabase = createClient();
   const params = useParams();
   const docId = params.docId as string;
   const [doc, setDoc] = useState<any>(null);
@@ -22,21 +20,20 @@ export default function RecipientPage() {
 
   useEffect(() => {
     const fetchDoc = async () => {
-      const { data, error } = await supabase
-        .from('documents')
-        .select('*, departments(name), profiles(full_name)')
-        .eq('id', docId)
-        .single();
-
-      if (data) {
-        setDoc(data);
-        // Check if already signed
-        const { data: delivery } = await supabase
-          .from('delivery_logs')
-          .select('*')
-          .eq('document_id', docId)
-          .single();
-        if (delivery) setExistingDelivery(delivery);
+      try {
+        const res = await fetch(`/api/documents/${docId}`);
+        const data = await res.json();
+        if (data.success) {
+          setDoc(data.data);
+          // Check if already signed via delivery logs
+          const deliveryRes = await fetch('/api/deliveries?document_id=' + docId);
+          const deliveryData = await deliveryRes.json();
+          if (deliveryData.success && deliveryData.data.length > 0) {
+            setExistingDelivery(deliveryData.data[0]);
+          }
+        }
+      } catch (e) {
+        console.error('fetch doc error:', e);
       }
       setLoading(false);
     };
@@ -119,7 +116,7 @@ export default function RecipientPage() {
           </div>
           <div className="field-control">
             <span>หน่วยงานผู้รับ</span>
-            <div style={{ fontWeight: 700 }}>{doc.departments?.name}</div>
+            <div style={{ fontWeight: 700 }}>{doc.recipient_dept_name}</div>
           </div>
           {doc.doc_number && (
             <div className="field-control">

@@ -4,13 +4,9 @@ import { getServiceSupabase } from '@/lib/supabase/admin';
 
 export async function GET(request: NextRequest) {
   try {
-    // Get user ID from auth session cookie
     const supabase = getServiceSupabase();
     
-    const authHeader = request.headers.get('authorization') || '';
-    const cookieAuth = request.cookies.get('sb-access-token')?.value;
-    
-    // Try to get user from the Supabase auth session
+    // Get user from auth session cookie
     const authClient = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -27,27 +23,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    // Fetch profile with service_role (bypasses RLS)
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single();
+    // Fetch profile and department in parallel
+    const [{ data: profile }, { data: depts }] = await Promise.all([
+      supabase.from('profiles').select('*').eq('id', user.id).single(),
+      supabase.from('departments').select('id, name'),
+    ]);
 
     if (!profile) {
       return NextResponse.json({ success: false, error: 'Profile not found' }, { status: 404 });
     }
 
-    // Get department name
-    let department_name = undefined;
-    if (profile.department_id) {
-      const { data: dept } = await supabase
-        .from('departments')
-        .select('name')
-        .eq('id', profile.department_id)
-        .single();
-      department_name = dept?.name;
-    }
+    const deptMap = new Map((depts || []).map((d: any) => [d.id, d.name]));
+    const department_name = profile.department_id ? deptMap.get(profile.department_id) : undefined;
 
     return NextResponse.json({
       success: true,

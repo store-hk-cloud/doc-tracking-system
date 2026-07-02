@@ -2,29 +2,29 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { createClient } from '@/lib/supabase/client';
 
 export default function RecipientListPage() {
   const { profile } = useAuth();
-  const supabase = createClient();
   const [docs, setDocs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const isAdmin = profile?.role === 'super_admin' || profile?.role === 'admin';
 
   useEffect(() => {
     const fetch = async () => {
-      let query = supabase
-        .from('documents')
-        .select('*, departments(name)')
-        .in('status', ['delivered', 'signed'])
-        .order('received_date', { ascending: false });
-
-      if (!isAdmin && profile?.department_id) {
-        query = query.eq('recipient_dept_id', profile.department_id);
+      try {
+        let url = '/api/documents?status=delivered&status=signed';
+        if (!isAdmin && profile?.department_id) {
+          url += `&dept_id=${profile.department_id}`;
+        }
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.success) {
+          // Filter for delivered/signed (API supports single status, handle both)
+          setDocs(data.data.filter((d: any) => ['delivered', 'signed'].includes(d.status)));
+        }
+      } catch (e) {
+        console.error('fetch docs error:', e);
       }
-
-      const { data } = await query;
-      if (data) setDocs(data);
       setLoading(false);
     };
     fetch();
@@ -71,7 +71,7 @@ export default function RecipientListPage() {
                       <td>{doc.received_date}</td>
                       <td>{doc.sender}</td>
                       <td>{doc.subject}</td>
-                      <td>{doc.departments?.name}</td>
+                      <td>{doc.recipient_dept_name}</td>
                       <td><span className={`status-badge${s.color}`}>{s.label}</span></td>
                       <td>
                         {doc.status === 'delivered' ? (

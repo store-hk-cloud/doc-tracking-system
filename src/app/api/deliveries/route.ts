@@ -8,6 +8,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
     const dept_id = searchParams.get('dept_id');
+    const document_id = searchParams.get('document_id');
 
     let query = supabase
       .from('delivery_logs')
@@ -19,6 +20,9 @@ export async function GET(request: NextRequest) {
     }
     if (dept_id) {
       query = query.eq('documents.recipient_dept_id', dept_id);
+    }
+    if (document_id) {
+      query = query.eq('document_id', document_id);
     }
 
     const { data, error } = await query;
