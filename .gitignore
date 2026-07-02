@@ -40,3 +40,4 @@ capacitor.config.json
 node_modules
 
 .vercel
+.env*

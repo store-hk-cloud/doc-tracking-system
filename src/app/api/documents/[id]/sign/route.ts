@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabase } from '@/lib/supabase/server';
 import { updateRow, findRowByValue, appendRow } from '@/lib/google-sheets';
+import { notifyDepartment } from '@/lib/upstash';
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -20,6 +21,14 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       .single();
 
     if (error) throw error;
+
+    // Notify department via Upstash
+    await notifyDepartment(data.recipient_dept_id, {
+      title: '📦 เอกสารใหม่ถึงหน่วยงาน',
+      body: `เอกสาร #${data.running_no}: ${data.subject} จาก ${data.sender}`,
+      docId: data.id,
+      runningNo: data.running_no,
+    });
 
     // Sync to Sheets
     const row = await findRowByValue('เอกสารเข้า', 1, String(data.running_no));
