@@ -138,6 +138,7 @@ export async function updateRow(_sheetName: string, rowIndex: number, values: st
     const spreadsheetId = await getSpreadsheetId();
     const sheets = getSheetsClient();
     const today = todaySheetName();
+    // Always update in today's sheet (append style - update latest entry)
     await sheets.spreadsheets.values.update({
       spreadsheetId,
       range: `${today}!A${rowIndex}:Z${rowIndex}`,
@@ -149,33 +150,53 @@ export async function updateRow(_sheetName: string, rowIndex: number, values: st
   }
 }
 
-export async function findRowByValue(_sheetName: string, column: number, value: string): Promise<number | null> {
+// New: Update a row in a specific sheet (used by findRowByValue result)
+export async function updateRowInSheet(sheet: string, rowIndex: number, values: string[]) {
   try {
     const spreadsheetId = await getSpreadsheetId();
     const sheets = getSheetsClient();
-    // Find in today's sheet first, then try all sheets
-    const today = todaySheetName();
-    const { data: info } = await sheets.spreadsheets.get({ spreadsheetId });
-    const allSheets = (info?.sheets || []).map((s: any) => s.properties?.title).filter(Boolean);
-    
-    // Try today's sheet first
-    const targetSheets = allSheets.includes(today) 
-      ? [today, ...allSheets.filter((s: string) => s !== today)]
-      : allSheets;
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${sheet}!A${rowIndex}:Z${rowIndex}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [values] },
+    });
+  } catch (error) {
+    console.error(`[Google Sheets] Update in sheet error:`, error);
+  }
+}
 
-    for (const sheet of targetSheets) {
-      const res = await sheets.spreadsheets.values.get({
-        spreadsheetId,
-        range: `${sheet}!A:Z`,
-      });
-      const rows = res.data.values || [];
-      for (let i = 1; i < rows.length; i++) {
-        if (rows[i][column - 1]?.toString() === value) {
-          return i + 1;
-        }
+async function findRowByValueAndSheet(column: number, value: string): Promise<{ sheet: string; row: number } | null> {
+  const spreadsheetId = await getSpreadsheetId();
+  const sheets = getSheetsClient();
+  const today = todaySheetName();
+  const { data: info } = await sheets.spreadsheets.get({ spreadsheetId });
+  const allSheets = (info?.sheets || []).map((s: any) => s.properties?.title).filter(Boolean);
+  
+  const targetSheets = allSheets.includes(today)
+    ? [today, ...allSheets.filter((s: string) => s !== today)]
+    : allSheets;
+
+  for (const sheet of targetSheets) {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${sheet}!A:Z`,
+    });
+    const rows = res.data.values || [];
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i][column - 1]?.toString() === value) {
+        return { sheet, row: i + 1 };
       }
     }
-    return null;
+  }
+  return null;
+}
+
+// Backward-compatible: return just the row number (for today's sheet)
+export async function findRowByValue(_sheetName: string, column: number, value: string): Promise<number | null> {
+  try {
+    const result = await findRowByValueAndSheet(column, value);
+    return result ? result.row : null;
   } catch (error) {
     console.error(`[Google Sheets] Find error:`, error);
     return null;
