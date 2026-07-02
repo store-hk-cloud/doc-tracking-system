@@ -31,28 +31,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // Get initial session - this is the ONLY place we set user/profile
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!mounted) return;
       if (session?.user) {
         setUser({ id: session.user.id, email: session.user.email! });
-        // Fetch profile via API route (uses service_role → bypasses RLS)
-        fetch('/api/profile')
-          .then(r => r.json())
-          .then(data => { if (mounted && data.success) setProfile(data.data); })
-          .catch(e => console.error('fetch profile error:', e));
+        // Load profile via API route (service_role bypasses RLS)
+        try {
+          const res = await fetch('/api/profile');
+          if (res.ok) {
+            const data = await res.json();
+            if (mounted && data.success) setProfile(data.data);
+          }
+        } catch (_) {}
       }
       if (mounted) setLoading(false);
     });
 
-    // Subscribe to auth changes (but DON'T call fetchProfile here to avoid loops)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    // Subscribe only for sign-out events
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
-      if (session?.user) {
-        setUser({ id: session.user.id, email: session.user.email! });
-      } else {
+      if (event === 'SIGNED_OUT') {
         setUser(null);
         setProfile(null);
       }
+      // NO setUser on SIGNED_IN - that causes infinite loops
     });
 
     return () => { mounted = false; subscription.unsubscribe(); };
@@ -61,20 +64,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = async (email: string, password: string): Promise<string | null> => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return error.message;
-    // Fetch profile after sign in
-    fetch('/api/profile')
-      .then(r => r.json())
-      .then(data => { if (data.success) setProfile(data.data); })
-      .catch(() => {});
-    router.push('/dashboard');
+    // Reload the page to get fresh session
+    window.location.href = '/dashboard';
     return null;
   };
 
   const signOut = async () => {
     await supabase.auth.signOut();
-    setProfile(null);
-    setUser(null);
-    router.push('/');
+    window.location.href = '/';
   };
 
   return (
