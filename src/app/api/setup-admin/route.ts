@@ -1,14 +1,18 @@
 import { NextResponse } from 'next/server';
-import { createServerSupabase } from '@/lib/supabase/server';
 import { createClient } from '@supabase/supabase-js';
 
 export async function POST(request: Request) {
   try {
     const { email, password, full_name } = await request.json();
-    const supabase = await createServerSupabase();
 
-    // Check if admin already exists
-    const { data: existing } = await supabase
+    // Use service_role key directly (bypasses RLS)
+    const serviceClient = createClient(
+      process.env.SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+
+    // Check if admin already exists (using service_role)
+    const { data: existing } = await serviceClient
       .from('profiles')
       .select('id')
       .eq('role', 'super_admin')
@@ -21,13 +25,7 @@ export async function POST(request: Request) {
       });
     }
 
-    // Get service role client for admin operations
-    const serviceClient = createClient(
-      process.env.SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-
-    // Create auth user
+    // Create auth user with service role
     const { data: authData, error: authError } = await serviceClient.auth.admin.createUser({
       email,
       password,
@@ -36,14 +34,14 @@ export async function POST(request: Request) {
 
     if (authError) throw authError;
 
-    // Get default department
-    const { data: dept } = await supabase
+    // Get default department via service client
+    const { data: dept } = await serviceClient
       .from('departments')
       .select('id')
       .limit(1);
 
-    // Create profile
-    const { error: profileError } = await supabase
+    // Create profile via service_client (bypasses RLS)
+    const { error: profileError } = await serviceClient
       .from('profiles')
       .insert({
         id: authData.user.id,
