@@ -3,8 +3,8 @@ import { google } from 'googleapis';
 function getAuth() {
   return new google.auth.GoogleAuth({
     credentials: {
-      client_email: process.env.GOOGLE_DRIVE_CLIENT_EMAIL,
-      private_key: process.env.GOOGLE_DRIVE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      client_email: process.env.GOOGLE_DRIVE_CLIENT_EMAIL || process.env.GOOGLE_SHEETS_CLIENT_EMAIL,
+      private_key: (process.env.GOOGLE_DRIVE_PRIVATE_KEY || process.env.GOOGLE_SHEETS_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
     },
     scopes: ['https://www.googleapis.com/auth/drive.file'],
   });
@@ -16,9 +16,9 @@ export async function uploadToDrive(
   fileName: string,
   fileBuffer: Buffer,
   mimeType: string
-): Promise<string> {
+): Promise<{ fileId: string; viewLink: string }> {
   try {
-    const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+    const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
     const res = await drive.files.create({
       requestBody: {
         name: fileName,
@@ -35,7 +35,8 @@ export async function uploadToDrive(
       fileId,
       requestBody: { role: 'reader', type: 'anyone' },
     });
-    return fileId;
+    const viewLink = getDriveViewLink(fileId);
+    return { fileId, viewLink };
   } catch (error) {
     console.error('[Google Drive] Upload error:', error);
     throw new Error('Failed to upload file to Google Drive');
