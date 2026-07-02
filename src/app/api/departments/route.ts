@@ -30,3 +30,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const supabase = getServiceSupabase();
+    const { id } = await request.json();
+    if (!id) {
+      return NextResponse.json({ success: false, error: 'No ID provided' }, { status: 400 });
+    }
+    const { error } = await supabase.from('departments').delete().eq('id', id);
+    if (error) throw error;
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}

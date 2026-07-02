@@ -1,28 +1,34 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { useAuth } from '@/components/auth/AuthProvider';
 
 export default function AdminDepartmentsPage() {
-  const supabase = createClient();
+  const { profile } = useAuth();
   const [departments, setDepartments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [newDept, setNewDept] = useState({ name: '', code: '' });
   const [message, setMessage] = useState('');
+  const isSuperAdmin = profile?.role === 'super_admin';
 
-  const fetchDepts = async () => {
-    const { data } = await supabase.from('departments').select('*').order('name');
-    if (data) setDepartments(data);
+  const loadDepts = async () => {
+    try {
+      const res = await window.fetch('/api/departments');
+      const data = await res.json();
+      if (data.success) setDepartments(data.data);
+    } catch (e) {
+      console.error('fetch departments error:', e);
+    }
     setLoading(false);
   };
 
-  useEffect(() => { fetchDepts(); }, []);
+  useEffect(() => { loadDepts(); }, []);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newDept.name || !newDept.code) return;
 
-    const res = await fetch('/api/departments', {
+    const res = await window.fetch('/api/departments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newDept),
@@ -31,7 +37,23 @@ export default function AdminDepartmentsPage() {
     if (data.success) {
       setMessage(`✅ เพิ่มหน่วยงาน ${newDept.name} สำเร็จ`);
       setNewDept({ name: '', code: '' });
-      fetchDepts();
+      loadDepts();
+    } else {
+      setMessage(`❌ ${data.error}`);
+    }
+  };
+
+  const handleDelete = async (id: string, name: string) => {
+    if (!window.confirm(`⚠️ ลบหน่วยงาน "${name}"? เอกสารที่เกี่ยวข้องจะถูกลบด้วย`)) return;
+    const res = await window.fetch('/api/departments', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      setMessage(`✅ ลบหน่วยงาน ${name} สำเร็จ`);
+      loadDepts();
     } else {
       setMessage(`❌ ${data.error}`);
     }
@@ -74,6 +96,7 @@ export default function AdminDepartmentsPage() {
                   <th>รหัส</th>
                   <th>ชื่อหน่วยงาน</th>
                   <th>วันที่สร้าง</th>
+                  {isSuperAdmin && <th>จัดการ</th>}
                 </tr>
               </thead>
               <tbody>
@@ -82,6 +105,17 @@ export default function AdminDepartmentsPage() {
                     <td className="code-cell">{d.code}</td>
                     <td style={{ fontWeight: 700 }}>{d.name}</td>
                     <td>{new Date(d.created_at).toLocaleDateString('th-TH')}</td>
+                    {isSuperAdmin && (
+                      <td>
+                        <button
+                          className="table-action-button danger"
+                          onClick={() => handleDelete(d.id, d.name)}
+                          style={{ background: 'var(--danger)', color: 'white', border: 'none', padding: '6px 12px', borderRadius: 6, cursor: 'pointer', fontSize: '0.8rem' }}
+                        >
+                          🗑 ลบ
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

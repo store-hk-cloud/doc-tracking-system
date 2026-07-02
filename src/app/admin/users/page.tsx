@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { useAuth } from '@/components/auth/AuthProvider';
 
 export default function AdminUsersPage() {
-  const supabase = createClient();
+  const { profile } = useAuth();
   const [users, setUsers] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -12,16 +12,21 @@ export default function AdminUsersPage() {
   const [form, setForm] = useState({ email: '', password: '', full_name: '', role: 'user', department_id: '' });
   const [message, setMessage] = useState('');
 
-  const fetchUsers = async () => {
-    const { data } = await supabase.from('profiles').select('*, departments(name)').order('full_name');
-    if (data) setUsers(data.map((p: any) => ({ ...p, department_name: p.departments?.name })));
+  const loadUsers = async () => {
+    try {
+      const res = await window.fetch('/api/profiles');
+      const data = await res.json();
+      if (data.success) setUsers(data.data);
+    } catch (e) {
+      console.error('fetch users error:', e);
+    }
     setLoading(false);
   };
 
   useEffect(() => {
-    fetchUsers();
-    supabase.from('departments').select('*').order('name').then(({ data }) => {
-      if (data) setDepartments(data);
+    loadUsers();
+    window.fetch('/api/departments').then(r => r.json()).then(data => {
+      if (data.success) setDepartments(data.data);
     });
   }, []);
 
@@ -29,7 +34,7 @@ export default function AdminUsersPage() {
     e.preventDefault();
     setMessage('');
 
-    const res = await fetch('/api/profiles', {
+    const res = await window.fetch('/api/profiles', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(form),
@@ -39,10 +44,16 @@ export default function AdminUsersPage() {
       setMessage(`✅ สร้างผู้ใช้ ${form.full_name} สำเร็จ`);
       setForm({ email: '', password: '', full_name: '', role: 'user', department_id: '' });
       setShowForm(false);
-      fetchUsers();
+      loadUsers();
     } else {
       setMessage(`❌ ${data.error}`);
     }
+  };
+
+  const roleLabel: Record<string, string> = {
+    super_admin: 'ผู้ดูแลระบบ',
+    admin: 'ธุรการ',
+    user: 'ผู้ใช้',
   };
 
   return (
@@ -125,8 +136,8 @@ export default function AdminUsersPage() {
                     <td style={{ fontWeight: 700 }}>{u.full_name}</td>
                     <td>{u.email}</td>
                     <td>
-                      <span className={`status-badge${u.role === 'super_admin' ? ' success' : u.role === 'admin' ? '' : ''}`}>
-                        {u.role === 'super_admin' ? 'ผู้ดูแลระบบ' : u.role === 'admin' ? 'ธุรการ' : 'ผู้ใช้'}
+                      <span className={`status-badge${u.role === 'super_admin' ? ' success' : ''}`}>
+                        {roleLabel[u.role] || u.role}
                       </span>
                     </td>
                     <td>{u.department_name || '-'}</td>
