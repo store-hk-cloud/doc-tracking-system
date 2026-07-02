@@ -17,10 +17,22 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         status: 'delivered',
       })
       .eq('id', id)
-      .select('*, departments(name), profiles(full_name)')
+      .select()
       .single();
 
     if (error) throw error;
+
+    // Get department and profile names separately
+    let deptName = '';
+    if (data.recipient_dept_id) {
+      const { data: dept } = await supabase.from('departments').select('name').eq('id', data.recipient_dept_id).single();
+      deptName = dept?.name || '';
+    }
+    let profName = '';
+    if (data.recorded_by) {
+      const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', data.recorded_by).single();
+      profName = prof?.full_name || '';
+    }
 
     // Notify department via Upstash
     await notifyDepartment(data.recipient_dept_id, {
@@ -35,15 +47,15 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     if (row) {
       updateRow('เอกสารเข้า', row, [
         String(data.running_no), data.received_date, data.doc_number || '',
-        data.sender, data.subject, data.departments?.name || '',
+        data.sender, data.subject, deptName,
         'delivered', data.admin_signature || '', data.admin_signed_at || '',
         '', '', data.is_damaged ? 'ใช่' : 'ไม่',
         data.damage_image_url || '', data.note || '',
-        data.profiles?.full_name || '', data.created_at, data.updated_at,
+        profName, data.created_at, data.updated_at,
       ]);
     }
 
-    return NextResponse.json({ success: true, data });
+    return NextResponse.json({ success: true, data: { ...data, recipient_dept_name: deptName, recorded_by_name: profName } });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }

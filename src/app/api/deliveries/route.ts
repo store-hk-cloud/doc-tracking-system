@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from('delivery_logs')
-      .select('*, documents!inner(*, departments(name), profiles(full_name)), profiles(full_name)')
+      .select('*, documents(*)')
       .order('created_at', { ascending: false });
 
     if (status === 'pending_verify') {
@@ -23,7 +23,37 @@ export async function GET(request: NextRequest) {
 
     const { data, error } = await query;
     if (error) throw error;
-    return NextResponse.json({ success: true, data });
+
+    // Enrich with department and profile names
+    const docIds = [...new Set((data || []).map((d: any) => d.document_id).filter(Boolean))];
+    const profileIds = [...new Set((data || []).map((d: any) => d.recipient_id).filter(Boolean))];
+    
+    const [deptRes, profRes] = await Promise.all([
+      docIds.length > 0
+        ? supabase.from('documents').select('id, recipient_dept_id').in('id', docIds).then(async ({ data: docs }) => {
+            if (!docs?.length) return [];
+            const deptIds = [...new Set(docs.map((d: any) => d.recipient_dept_id).filter(Boolean))];
+            if (!deptIds.length) return [];
+            const { data: depts } = await supabase.from('departments').select('id, name').in('id', deptIds);
+            return { docs, depts: new Map((depts || []).map((d: any) => [d.id, d.name])) };
+          })
+        : Promise.resolve([]),
+      profileIds.length > 0
+        ? supabase.from('profiles').select('id, full_name').in('id', profileIds).then(({ data }) => new Map((data || []).map((p: any) => [p.id, p.full_name])))
+        : Promise.resolve(new Map()),
+    ]);
+
+    const deptByName = deptRes && Array.isArray(deptRes) ? new Map() : (deptRes as any)?.depts || new Map();
+    const docDept = deptRes && Array.isArray(deptRes) ? new Map() : new Map((deptRes as any)?.docs?.map((d: any) => [d.id, deptByName.get(d.recipient_dept_id)]) || []);
+    const profilesMap = profRes instanceof Map ? profRes : new Map();
+
+    const enriched = (data || []).map((d: any) => ({
+      ...d,
+      documents: d.documents ? { ...d.documents, recipient_dept_name: docDept.get(d.document_id) || null } : d.documents,
+      recipient_name: profilesMap.get(d.recipient_id) || null,
+    }));
+
+    return NextResponse.json({ success: true, data: enriched });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
@@ -55,27 +85,39 @@ export async function POST(request: NextRequest) {
       .from('documents')
       .update({ status: newStatus, note: body.verification_note || undefined })
       .eq('id', body.document_id)
-      .select('*, departments(name), profiles(full_name)')
+      .select()
       .single();
 
     // Sync to Sheets
     if (doc) {
+      // Get department and profile names separately
+      let deptName = '';
+      if (doc.recipient_dept_id) {
+        const { data: dept } = await supabase.from('departments').select('name').eq('id', doc.recipient_dept_id).single();
+        deptName = dept?.name || '';
+      }
+      let profName = '';
+      if (doc.recorded_by) {
+        const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', doc.recorded_by).single();
+        profName = prof?.full_name || '';
+      }
+
       const row = await findRowByValue('เอกสารเข้า', 1, String(doc.running_no));
       if (row) {
         updateRow('เอกสารเข้า', row, [
           String(doc.running_no), doc.received_date, doc.doc_number || '',
-          doc.sender, doc.subject, doc.departments?.name || '',
+          doc.sender, doc.subject, deptName,
           newStatus, doc.admin_signature || '', doc.admin_signed_at || '',
           body.recipient_signature, delivery.recipient_signed_at,
           doc.is_damaged ? 'ใช่' : 'ไม่',
           doc.damage_image_url || '', doc.note || '',
-          doc.profiles?.full_name || '', doc.created_at, doc.updated_at,
+          profName, doc.created_at, doc.updated_at,
         ]);
       }
 
       appendRow('ประวัติการส่งมอบ', [
         String(doc.running_no), doc.sender, doc.subject,
-        body.recipient_name || '', doc.departments?.name || '',
+        body.recipient_name || '', deptName,
         body.recipient_signature, delivery.recipient_signed_at,
         body.is_verified ? 'ถูกต้อง' : 'ไม่ถูกต้อง',
         body.verification_note || '', 'รอตรวจสอบ', '',

@@ -24,16 +24,23 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       .from('documents')
       .update({ status: 'closed' })
       .eq('id', delivery.document_id)
-      .select('*, departments(name)')
+      .select()
       .single();
 
     // Sync to Sheets
     if (doc) {
+      // Get department name
+      let deptName = '';
+      if (doc.recipient_dept_id) {
+        const { data: dept } = await supabase.from('departments').select('name').eq('id', doc.recipient_dept_id).single();
+        deptName = dept?.name || '';
+      }
+
       const row = await findRowByValue('เอกสารเข้า', 1, String(doc.running_no));
       if (row) {
         updateRow('เอกสารเข้า', row, [
           String(doc.running_no), doc.received_date, doc.doc_number || '',
-          doc.sender, doc.subject, doc.departments?.name || '',
+          doc.sender, doc.subject, deptName,
           'closed', doc.admin_signature || '', doc.admin_signed_at || '',
           delivery.recipient_signature, delivery.recipient_signed_at,
           doc.is_damaged ? 'ใช่' : 'ไม่',

@@ -61,14 +61,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser({ id: session.user.id, email: session.user.email! });
         const { data: prof } = await supabase
           .from('profiles')
-          .select('*, departments(name)')
+          .select('*')
           .eq('id', session.user.id)
           .single();
         if (prof) {
-          setProfile({
-            ...prof,
-            department_name: prof.departments?.name,
-          });
+          let department_name = undefined;
+          if (prof.department_id) {
+            const { data: dept } = await supabase
+              .from('departments')
+              .select('name')
+              .eq('id', prof.department_id)
+              .single();
+            department_name = dept?.name;
+          }
+          setProfile({ ...prof, department_name });
         }
       } else {
         setUser(null);

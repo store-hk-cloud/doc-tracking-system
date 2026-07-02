@@ -2,11 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { createClient } from '@/lib/supabase/client';
 
 export default function DashboardPage() {
   const { profile } = useAuth();
-  const supabase = createClient();
   const [stats, setStats] = useState<any>(null);
   const [recentDocs, setRecentDocs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -14,34 +12,20 @@ export default function DashboardPage() {
   const fetchData = async () => {
     setLoading(true);
 
-    // Get documents
-    const { data: docs } = await supabase
-      .from('documents')
-      .select('*, departments(name)')
-      .order('created_at', { ascending: false })
-      .limit(10);
+    try {
+      // Fetch stats from API route (server-side)
+      const [statsRes, docsRes] = await Promise.all([
+        fetch('/api/stats'),
+        fetch('/api/documents?limit=10'),
+      ]);
 
-    if (docs) setRecentDocs(docs);
+      const statsData = await statsRes.json();
+      const docsData = await docsRes.json();
 
-    // Get stats
-    const { data: all } = await supabase.from('documents').select('status, is_damaged');
-    const today = new Date().toISOString().split('T')[0];
-    const { data: todayDocs } = await supabase
-      .from('documents')
-      .select('id')
-      .gte('received_date', today);
-
-    if (all) {
-      setStats({
-        total: all.length,
-        today: todayDocs?.length || 0,
-        registered: all.filter((d: any) => d.status === 'registered').length,
-        delivered: all.filter((d: any) => d.status === 'delivered').length,
-        signed: all.filter((d: any) => d.status === 'signed').length,
-        closed: all.filter((d: any) => d.status === 'closed').length,
-        rejected: all.filter((d: any) => d.status === 'rejected').length,
-        damaged: all.filter((d: any) => d.is_damaged).length,
-      });
+      if (statsData.success) setStats(statsData.data);
+      if (docsData.success) setRecentDocs(docsData.data.slice(0, 10));
+    } catch (e) {
+      console.error('Dashboard fetch error:', e);
     }
 
     setLoading(false);

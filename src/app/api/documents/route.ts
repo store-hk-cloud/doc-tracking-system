@@ -11,11 +11,14 @@ export async function GET(request: NextRequest) {
     const keyword = searchParams.get('keyword');
     const date_from = searchParams.get('date_from');
     const date_to = searchParams.get('date_to');
+    const limit = parseInt(searchParams.get('limit') || '0', 10);
 
     let query = supabase
       .from('documents')
       .select('*')
       .order('running_no', { ascending: false });
+    
+    if (limit > 0) query = query.limit(limit);
 
     if (status) query = query.eq('status', status);
     if (dept_id) query = query.eq('recipient_dept_id', dept_id);
