@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
-import { appendRow, updateRow, findRowByValue } from '@/lib/google-sheets';
+import { updateRow, findRowByValue } from '@/lib/google-sheets';
 
 export async function GET(request: NextRequest) {
   try {
@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
       .select()
       .single();
 
-    // Sync to Sheets
+    // Sync to Sheets (unified - update existing row only)
     if (doc) {
       // Get department and profile names separately
       let deptName = '';
@@ -109,23 +109,27 @@ export async function POST(request: NextRequest) {
       const row = await findRowByValue('เอกสารเข้า', 1, String(doc.running_no));
       if (row) {
         await updateRow('เอกสารเข้า', row, [
-          String(doc.running_no), doc.received_date, doc.doc_number || '',
-          doc.sender, doc.subject, deptName,
-          newStatus, doc.admin_signature || '', doc.admin_signed_at || '',
-          body.recipient_signature, delivery.recipient_signed_at,
-          doc.is_damaged ? 'ใช่' : 'ไม่',
-          doc.damage_image_url || '', doc.note || '',
-          profName, doc.created_at, doc.updated_at,
+          String(doc.running_no),           // A: Running No.
+          doc.received_date,                // B: วันที่รับ
+          doc.doc_number || '',             // C: เลขที่เอกสาร
+          doc.sender,                       // D: ผู้ส่ง
+          doc.subject,                      // E: เรื่อง
+          deptName,                         // F: หน่วยงาน
+          newStatus,                        // G: สถานะ (signed/rejected)
+          doc.admin_signature || '',        // H: ลายเซ็น Admin
+          doc.admin_signed_at || '',        // I: เวลา Admin ลงนาม
+          body.recipient_name || '',        // J: ชื่อผู้รับ
+          body.recipient_signature,         // K: ลายเซ็นผู้รับ
+          delivery.recipient_signed_at,     // L: เวลาผู้รับลงนาม
+          body.is_verified ? 'ถูกต้อง' : 'ไม่ถูกต้อง', // M: ผลการตรวจสอบ
+          body.verification_note || '',     // N: หมายเหตุ (ผู้รับ)
+          doc.is_damaged ? 'ใช่' : 'ไม่',    // O: เสียหาย
+          doc.damage_image_url || '',        // P: รูปความเสียหาย
+          doc.note || '',                    // Q: หมายเหตุ
+          profName,                         // R: ผู้บันทึก
+          doc.updated_at,                   // S: updated_at
         ]);
       }
-
-      await appendRow('ประวัติการส่งมอบ', [
-        String(doc.running_no), doc.sender, doc.subject,
-        body.recipient_name || '', deptName,
-        body.recipient_signature, delivery.recipient_signed_at,
-        body.is_verified ? 'ถูกต้อง' : 'ไม่ถูกต้อง',
-        body.verification_note || '', 'รอตรวจสอบ', '',
-      ]);
     }
 
     return NextResponse.json({ success: true, data: delivery });

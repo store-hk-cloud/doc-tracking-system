@@ -101,25 +101,27 @@ export async function POST(request: NextRequest) {
       profileName = prof?.full_name || '';
     }
 
-    // Sync to Google Sheets
+    // Sync to Google Sheets (new unified layout, 19 columns)
     await appendRow('เอกสารเข้า', [
-      String(data.running_no),
-      data.received_date,
-      data.doc_number || '',
-      data.sender,
-      data.subject,
-      deptName,
-      'registered',
-      '',
-      '',
-      '',
-      '',
-      data.is_damaged ? 'ใช่' : 'ไม่',
-      data.damage_image_url || '',
-      data.note || '',
-      profileName,
-      data.created_at,
-      '',
+      String(data.running_no),           // A: Running No.
+      data.received_date,                // B: วันที่รับ
+      data.doc_number || '',             // C: เลขที่เอกสาร
+      data.sender,                       // D: ผู้ส่ง
+      data.subject,                      // E: เรื่อง
+      deptName,                          // F: หน่วยงาน
+      'registered',                      // G: สถานะ
+      '',                                // H: ลายเซ็น Admin (empty until admin signs)
+      '',                                // I: เวลา Admin ลงนาม
+      '',                                // J: ชื่อผู้รับ (empty until delivery)
+      '',                                // K: ลายเซ็นผู้รับ
+      '',                                // L: เวลาผู้รับลงนาม
+      '',                                // M: ผลการตรวจสอบ
+      '',                                // N: หมายเหตุ (ผู้รับ)
+      data.is_damaged ? 'ใช่' : 'ไม่',    // O: เสียหาย
+      data.damage_image_url || '',        // P: รูปความเสียหาย
+      data.note || '',                    // Q: หมายเหตุ
+      profileName,                        // R: ผู้บันทึก
+      '',                                 // S: updated_at
     ]);
 
     return NextResponse.json({

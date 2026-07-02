@@ -2,16 +2,26 @@ import { NextResponse } from 'next/server';
 import { getSheetsClient } from '@/lib/google-auth';
 import { createClient } from '@supabase/supabase-js';
 
-const HEADERS_DOCUMENTS = [
-  'Running No.', 'วันที่รับ', 'เลขที่เอกสาร', 'ผู้ส่ง', 'เรื่อง',
-  'หน่วยงาน', 'สถานะ', 'ลายเซ็น Admin', 'เวลา Admin ลงนาม',
-  'ลายเซ็นผู้รับ', 'เวลาผู้รับลงนาม', 'เสียหาย', 'รูปความเสียหาย',
-  'หมายเหตุ', 'ผู้บันทึก', 'created_at', 'updated_at',
-];
-
-const HEADERS_DELIVERY_HISTORY = [
-  'Running No.', 'ผู้ส่ง', 'เรื่อง', 'ชื่อผู้รับ', 'หน่วยงาน',
-  'ลายเซ็นผู้รับ', 'เวลาลงนาม', 'ผลการตรวจสอบ', 'หมายเหตุ', 'สถานะ', '',
+const HEADERS = [
+  'Running No.',       // A
+  'วันที่รับ',          // B
+  'เลขที่เอกสาร',       // C
+  'ผู้ส่ง',             // D
+  'เรื่อง',             // E
+  'หน่วยงาน',          // F
+  'สถานะ',             // G
+  'ลายเซ็น Admin',     // H
+  'เวลา Admin ลงนาม',  // I
+  'ชื่อผู้รับ',         // J
+  'ลายเซ็นผู้รับ',      // K
+  'เวลาผู้รับลงนาม',    // L
+  'ผลการตรวจสอบ',      // M
+  'หมายเหตุ (ผู้รับ)',  // N
+  'เสียหาย',           // O
+  'รูปความเสียหาย',    // P
+  'หมายเหตุ',          // Q
+  'ผู้บันทึก',          // R
+  'updated_at',        // S
 ];
 
 export async function GET() {
@@ -41,29 +51,18 @@ export async function GET() {
     const res = await sheets.spreadsheets.create({
       requestBody: {
         properties: { title: 'ระบบรับ-ส่งเอกสาร' },
-        sheets: [
-          { properties: { title: today } },
-          { properties: { title: 'ประวัติการส่งมอบ' } },
-        ],
+        sheets: [{ properties: { title: today } }],
       },
     });
 
     spreadsheetId = res.data.spreadsheetId!;
 
-    // Write headers for today's sheet
+    // Write headers (new unified layout, 19 columns)
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `${today}!A1:Z1`,
+      range: `${today}!A1:S1`,
       valueInputOption: 'USER_ENTERED',
-      requestBody: { values: [HEADERS_DOCUMENTS] },
-    });
-
-    // Write headers for delivery history sheet
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `ประวัติการส่งมอบ!A1:Z1`,
-      valueInputOption: 'USER_ENTERED',
-      requestBody: { values: [HEADERS_DELIVERY_HISTORY] },
+      requestBody: { values: [HEADERS] },
     });
 
     // Persist to Supabase

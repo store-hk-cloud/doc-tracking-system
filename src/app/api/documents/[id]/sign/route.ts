@@ -42,16 +42,29 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       runningNo: data.running_no,
     });
 
-    // Sync to Sheets
+    // Sync to Sheets (update existing row with admin signature)
     const row = await findRowByValue('เอกสารเข้า', 1, String(data.running_no));
     if (row) {
       await updateRow('เอกสารเข้า', row, [
-        String(data.running_no), data.received_date, data.doc_number || '',
-        data.sender, data.subject, deptName,
-        'delivered', data.admin_signature || '', data.admin_signed_at || '',
-        '', '', data.is_damaged ? 'ใช่' : 'ไม่',
-        data.damage_image_url || '', data.note || '',
-        profName, data.created_at, data.updated_at,
+        String(data.running_no),           // A: Running No.
+        data.received_date,                // B: วันที่รับ
+        data.doc_number || '',             // C: เลขที่เอกสาร
+        data.sender,                       // D: ผู้ส่ง
+        data.subject,                      // E: เรื่อง
+        deptName,                          // F: หน่วยงาน
+        'delivered',                       // G: สถานะ
+        data.admin_signature || '',        // H: ลายเซ็น Admin
+        data.admin_signed_at || '',        // I: เวลา Admin ลงนาม
+        '',                                // J: ชื่อผู้รับ (waiting for recipient)
+        '',                                // K: ลายเซ็นผู้รับ
+        '',                                // L: เวลาผู้รับลงนาม
+        '',                                // M: ผลการตรวจสอบ
+        '',                                // N: หมายเหตุ (ผู้รับ)
+        data.is_damaged ? 'ใช่' : 'ไม่',    // O: เสียหาย
+        data.damage_image_url || '',        // P: รูปความเสียหาย
+        data.note || '',                    // Q: หมายเหตุ
+        profName,                          // R: ผู้บันทึก
+        data.updated_at,                   // S: updated_at
       ]);
     }
 
