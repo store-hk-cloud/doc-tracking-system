@@ -27,15 +27,16 @@ export default function TrackingPage() {
   const [filter, setFilter] = useState({ status: '', keyword: '', dept_id: '' });
   const [departments, setDepartments] = useState<any[]>([]);
   const isAdmin = profile?.role === 'super_admin' || profile?.role === 'admin';
+  const isSuperAdmin = profile?.role === 'super_admin';
   const [selectedDoc, setSelectedDoc] = useState<any>(null);
 
   useEffect(() => {
-    fetch('/api/departments').then(r => r.json()).then(data => {
+    window.fetch('/api/departments').then(r => r.json()).then(data => {
       if (data.success) setDepartments(data.data);
     });
   }, []);
 
-  const fetchDocs = async () => {
+  const loadDocs = async () => {
     setLoading(true);
     let url = '/api/documents?';
     if (filter.status) url += `status=${filter.status}&`;
@@ -43,13 +44,22 @@ export default function TrackingPage() {
     if (filter.dept_id) url += `dept_id=${filter.dept_id}&`;
     if (!isAdmin && profile?.department_id) url += `dept_id=${profile.department_id}&`;
 
-    const res = await fetch(url);
+    const res = await window.fetch(url);
     const data = await res.json();
     if (data.success) setDocs(data.data);
     setLoading(false);
   };
 
-  useEffect(() => { fetchDocs(); }, [filter.status]);
+  useEffect(() => { loadDocs(); }, [filter.status]);
+
+  const handleDeleteDoc = async (doc: any) => {
+    if (!window.confirm(`⚠️ ลบเอกสาร #${doc.running_no} "${doc.subject}"?`)) return;
+    const res = await window.fetch(`/api/documents/${doc.id}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (data.success) {
+      setDocs(docs.filter((d: any) => d.id !== doc.id));
+    }
+  };
 
   return (
     <div>
@@ -67,7 +77,7 @@ export default function TrackingPage() {
               placeholder="ค้นหา ผู้ส่ง, เรื่อง, เลขที่เอกสาร..."
               value={filter.keyword}
               onChange={(e) => setFilter({ ...filter, keyword: e.target.value })}
-              onKeyDown={(e) => e.key === 'Enter' && fetchDocs()}
+              onKeyDown={(e) => e.key === 'Enter' && loadDocs()}
             />
           </div>
           <div className="segmented-control" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
@@ -89,7 +99,7 @@ export default function TrackingPage() {
               ))}
             </select>
           )}
-          <button className="secondary-button" onClick={fetchDocs} style={{ minHeight: 44 }}>
+          <button className="secondary-button" onClick={loadDocs} style={{ minHeight: 44 }}>
             🔍 ค้นหา
           </button>
         </div>
@@ -115,6 +125,7 @@ export default function TrackingPage() {
                     <th>สถานะ</th>
                     <th>ลายเซ็น Admin</th>
                     <th>ลายเซ็นผู้รับ</th>
+                    {isSuperAdmin && <th>ลบ</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -132,6 +143,16 @@ export default function TrackingPage() {
                       </td>
                       <td>{doc.admin_signature || '-'}</td>
                       <td>-</td>
+                      {isSuperAdmin && (
+                        <td>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDeleteDoc(doc); }}
+                            style={{ background: 'var(--danger)', color: 'white', border: 'none', padding: '4px 10px', borderRadius: 6, cursor: 'pointer', fontSize: '0.8rem' }}
+                          >
+                            🗑
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -160,6 +181,14 @@ export default function TrackingPage() {
               <div><strong>ผู้บันทึก:</strong> {selectedDoc.recorded_by_name || '-'}</div>
               {selectedDoc.admin_signature && <div><strong>ลายเซ็นส่งมอบ:</strong> {selectedDoc.admin_signature}</div>}
               {selectedDoc.note && <div><strong>หมายเหตุ:</strong> {selectedDoc.note}</div>}
+              {isSuperAdmin && (
+                <button
+                  onClick={() => handleDeleteDoc(selectedDoc)}
+                  style={{ marginTop: 8, background: 'var(--danger)', color: 'white', border: 'none', padding: '10px', borderRadius: 8, cursor: 'pointer' }}
+                >
+                  🗑 ลบเอกสารนี้
+                </button>
+              )}
             </div>
             <button className="scan-popup-close" onClick={() => setSelectedDoc(null)}>ปิด</button>
           </div>
