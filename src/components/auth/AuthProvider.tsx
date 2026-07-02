@@ -28,29 +28,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const supabase = createClient();
 
+  const fetchProfile = async () => {
+    try {
+      const res = await fetch('/api/profile');
+      const data = await res.json();
+      if (data.success) {
+        setProfile(data.data);
+      }
+    } catch (e) {
+      console.error('fetch profile error:', e);
+    }
+  };
+
   useEffect(() => {
     const getSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         setUser({ id: session.user.id, email: session.user.email! });
-        const { data: prof } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
-        if (prof) {
-          // Get department name separately
-          if (prof.department_id) {
-            const { data: dept } = await supabase
-              .from('departments')
-              .select('name')
-              .eq('id', prof.department_id)
-              .single();
-            setProfile({ ...prof, department_name: dept?.name });
-          } else {
-            setProfile(prof);
-          }
-        }
+        await fetchProfile();
       }
       setLoading(false);
     };
@@ -59,23 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (session?.user) {
         setUser({ id: session.user.id, email: session.user.email! });
-        const { data: prof } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
-        if (prof) {
-          let department_name = undefined;
-          if (prof.department_id) {
-            const { data: dept } = await supabase
-              .from('departments')
-              .select('name')
-              .eq('id', prof.department_id)
-              .single();
-            department_name = dept?.name;
-          }
-          setProfile({ ...prof, department_name });
-        }
+        await fetchProfile();
       } else {
         setUser(null);
         setProfile(null);
