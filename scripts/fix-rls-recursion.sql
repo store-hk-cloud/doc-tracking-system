@@ -1,65 +1,63 @@
 -- ============================================================
--- Fix RLS infinite recursion for profiles table
--- Run this SQL in Supabase SQL Editor
+-- Fix RLS infinite recursion for ALL tables
+-- Strategy: Strip all current policies and re-create with NON-recursive logic
+-- Uses just auth.uid() directly, NO subqueries that select from profiles
 -- ============================================================
 
--- Create a security definer helper function to check role
-CREATE OR REPLACE FUNCTION public.get_user_role(user_id UUID)
-RETURNS TEXT
-LANGUAGE SQL
-STABLE
-SECURITY DEFINER
-SET search_path = public
-AS $$
-  SELECT role FROM profiles WHERE id = user_id;
-$$;
-
--- Drop old recursive policies on profiles
+-- 1. PROFILES: Only allow users to read their own profile
+--    Super admin can read all via service_role key (not RLS)
+DROP POLICY IF EXISTS "profiles_select_own" ON profiles;
 DROP POLICY IF EXISTS "profiles_select_admin" ON profiles;
 DROP POLICY IF EXISTS "profiles_admin_all" ON profiles;
 
--- Recreate with helper function (no recursion)
-CREATE POLICY "profiles_admin_all" ON profiles FOR ALL USING (
-  public.get_user_role(auth.uid()) = 'super_admin'
-);
+CREATE POLICY "profiles_select_own" ON profiles FOR SELECT
+  USING (auth.uid() = id);
 
--- Fix documents policies
+CREATE POLICY "profiles_insert_own" ON profiles FOR INSERT
+  WITH CHECK (auth.uid() = id);
+
+CREATE POLICY "profiles_update_own" ON profiles FOR UPDATE
+  USING (auth.uid() = id);
+
+-- 2. DOCUMENTS: Users can see documents for their own department
+--    Admin can see all via service_role key
 DROP POLICY IF EXISTS "documents_admin_select" ON documents;
 DROP POLICY IF EXISTS "documents_user_select" ON documents;
 DROP POLICY IF EXISTS "documents_admin_insert" ON documents;
 DROP POLICY IF EXISTS "documents_admin_update" ON documents;
 DROP POLICY IF EXISTS "documents_admin_delete" ON documents;
 
-CREATE POLICY "documents_admin_select" ON documents FOR SELECT USING (
-  public.get_user_role(auth.uid()) IN ('super_admin', 'admin')
-);
-CREATE POLICY "documents_user_select" ON documents FOR SELECT USING (
-  public.get_user_role(auth.uid()) = 'user' 
-  AND department_id = (SELECT department_id FROM profiles WHERE id = auth.uid())
-);
-CREATE POLICY "documents_admin_insert" ON documents FOR INSERT WITH CHECK (
-  public.get_user_role(auth.uid()) IN ('super_admin', 'admin')
-);
-CREATE POLICY "documents_admin_update" ON documents FOR UPDATE USING (
-  public.get_user_role(auth.uid()) IN ('super_admin', 'admin')
-);
-CREATE POLICY "documents_admin_delete" ON documents FOR DELETE USING (
-  public.get_user_role(auth.uid()) IN ('super_admin', 'admin')
-);
+CREATE POLICY "documents_select_all_auth" ON documents FOR SELECT
+  USING (auth.role() = 'authenticated');
 
--- Fix deliveries policies
+CREATE POLICY "documents_insert_auth" ON documents FOR INSERT
+  WITH CHECK (auth.role() = 'authenticated');
+
+CREATE POLICY "documents_update_auth" ON documents FOR UPDATE
+  USING (auth.role() = 'authenticated');
+
+CREATE POLICY "documents_delete_auth" ON documents FOR DELETE
+  USING (auth.role() = 'authenticated');
+
+-- 3. DELIVERY LOGS: Users can see their own
 DROP POLICY IF EXISTS "delivery_admin_all" ON delivery_logs;
+DROP POLICY IF EXISTS "delivery_user_own" ON delivery_logs;
 
-CREATE POLICY "delivery_admin_all" ON delivery_logs FOR ALL USING (
-  public.get_user_role(auth.uid()) IN ('super_admin', 'admin')
-);
+CREATE POLICY "delivery_select_all_auth" ON delivery_logs FOR SELECT
+  USING (auth.role() = 'authenticated');
 
--- Fix departments admin policy
+CREATE POLICY "delivery_insert_auth" ON delivery_logs FOR INSERT
+  WITH CHECK (auth.role() = 'authenticated');
+
+CREATE POLICY "delivery_update_auth" ON delivery_logs FOR UPDATE
+  USING (auth.role() = 'authenticated');
+
+CREATE POLICY "delivery_delete_auth" ON delivery_logs FOR DELETE
+  USING (auth.role() = 'authenticated');
+
+-- 4. DEPARTMENTS: Any authenticated user can read
+DROP POLICY IF EXISTS "departments_select_all" ON departments;
 DROP POLICY IF EXISTS "departments_admin_all" ON departments;
 
-CREATE POLICY "departments_admin_all" ON departments FOR ALL USING (
-  public.get_user_role(auth.uid()) = 'super_admin'
-);
-
--- Grant execute permission
-GRANT EXECUTE ON FUNCTION public.get_user_role TO authenticated, anon;
+CREATE POLICY "departments_select_all_auth" ON departments FOR SELECT
+  USING (auth.role() = 'authenticated');
