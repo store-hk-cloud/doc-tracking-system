@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Sync to Google Sheets
-    appendRow('เอกสารเข้า', [
+    await appendRow('เอกสารเข้า', [
       String(data.running_no),
       data.received_date,
       data.doc_number || '',

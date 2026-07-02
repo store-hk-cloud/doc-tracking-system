@@ -22,6 +22,10 @@ function getAuth(): any {
     const oauth2 = new google.auth.OAuth2(clientId, clientSecret);
     oauth2.setCredentials({ refresh_token: refreshToken });
     cachedAuth = oauth2;
+    // Test the connection immediately
+    oauth2.getAccessToken().catch((err) => {
+      console.error('[Google Auth] Token refresh failed:', err.message);
+    });
     return oauth2;
   }
 
@@ -34,7 +38,7 @@ function getAuth(): any {
       },
       scopes: [
         'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/drive.file',
+        'https://www.googleapis.com/auth/drive',
       ],
     });
     return cachedAuth;

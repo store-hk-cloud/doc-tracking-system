@@ -45,7 +45,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     // Sync to Sheets
     const row = await findRowByValue('เอกสารเข้า', 1, String(data.running_no));
     if (row) {
-      updateRow('เอกสารเข้า', row, [
+      await updateRow('เอกสารเข้า', row, [
         String(data.running_no), data.received_date, data.doc_number || '',
         data.sender, data.subject, deptName,
         'delivered', data.admin_signature || '', data.admin_signed_at || '',

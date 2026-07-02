@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
 
       const row = await findRowByValue('เอกสารเข้า', 1, String(doc.running_no));
       if (row) {
-        updateRow('เอกสารเข้า', row, [
+        await updateRow('เอกสารเข้า', row, [
           String(doc.running_no), doc.received_date, doc.doc_number || '',
           doc.sender, doc.subject, deptName,
           newStatus, doc.admin_signature || '', doc.admin_signed_at || '',
@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
         ]);
       }
 
-      appendRow('ประวัติการส่งมอบ', [
+      await appendRow('ประวัติการส่งมอบ', [
         String(doc.running_no), doc.sender, doc.subject,
         body.recipient_name || '', deptName,
         body.recipient_signature, delivery.recipient_signed_at,
