@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerSupabase } from '@/lib/supabase/server';
+import { getServiceSupabase } from '@/lib/supabase/admin';
 import { appendRow } from '@/lib/google-sheets';
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createServerSupabase();
+    const supabase = getServiceSupabase();
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
     const dept_id = searchParams.get('dept_id');
@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerSupabase();
+    const supabase = getServiceSupabase();
     const body = await request.json();
     
     const { data, error } = await supabase

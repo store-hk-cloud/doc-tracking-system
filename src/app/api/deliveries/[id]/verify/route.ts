@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerSupabase } from '@/lib/supabase/server';
+import { getServiceSupabase } from '@/lib/supabase/admin';
 import { updateRow, findRowByValue } from '@/lib/google-sheets';
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const supabase = await createServerSupabase();
+    const supabase = getServiceSupabase();
 
     const { data: delivery, error: deliveryError } = await supabase
       .from('delivery_logs')

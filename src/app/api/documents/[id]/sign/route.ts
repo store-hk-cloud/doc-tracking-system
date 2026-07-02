@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerSupabase } from '@/lib/supabase/server';
+import { getServiceSupabase } from '@/lib/supabase/admin';
 import { updateRow, findRowByValue, appendRow } from '@/lib/google-sheets';
 import { notifyDepartment } from '@/lib/upstash';
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const supabase = await createServerSupabase();
+    const supabase = getServiceSupabase();
     const body = await request.json();
 
     const { data, error } = await supabase

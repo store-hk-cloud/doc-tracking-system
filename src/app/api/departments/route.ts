@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerSupabase } from '@/lib/supabase/server';
+import { getServiceSupabase } from '@/lib/supabase/admin';
 
 export async function GET() {
   try {
-    const supabase = await createServerSupabase();
+    const supabase = getServiceSupabase();
     const { data, error } = await supabase
       .from('departments')
       .select('*')
@@ -17,7 +17,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerSupabase();
+    const supabase = getServiceSupabase();
     const body = await request.json();
     const { data, error } = await supabase
       .from('departments')

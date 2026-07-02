@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerSupabase } from '@/lib/supabase/server';
+import { getServiceSupabase } from '@/lib/supabase/admin';
 
 export async function GET() {
   try {
-    const supabase = await createServerSupabase();
+    const supabase = getServiceSupabase();
     
     // Fetch profiles and departments separately to avoid 500 from join RLS issues
     const [{ data: profiles, error: profilesError }, { data: departments }] = await Promise.all([
@@ -28,7 +28,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerSupabase();
+    const supabase = getServiceSupabase();
     const body = await request.json();
 
     // Create auth user

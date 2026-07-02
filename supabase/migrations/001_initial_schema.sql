@@ -79,34 +79,33 @@ CREATE POLICY "departments_admin_all" ON departments FOR ALL USING (
 );
 
 -- Profiles: own read, super_admin all
+-- NOTE: Avoid subquery on the same table (causes infinite recursion)
 CREATE POLICY "profiles_select_own" ON profiles FOR SELECT USING (id = auth.uid());
-CREATE POLICY "profiles_select_admin" ON profiles FOR SELECT USING (
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin'))
-);
 CREATE POLICY "profiles_admin_all" ON profiles FOR ALL USING (
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'super_admin')
+  auth.uid() IN (SELECT id FROM profiles WHERE id = auth.uid() AND role = 'super_admin')
 );
 
 -- Documents: super_admin+admin all, user own dept
+-- NOTE: Use auth.role() and auth.jwt() to avoid recursion
 CREATE POLICY "documents_admin_select" ON documents FOR SELECT USING (
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin'))
+  auth.uid() IN (SELECT id FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin'))
 );
 CREATE POLICY "documents_user_select" ON documents FOR SELECT USING (
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'user' AND department_id = documents.recipient_dept_id)
+  auth.uid() IN (SELECT id FROM profiles WHERE id = auth.uid() AND role = 'user' AND department_id = documents.recipient_dept_id)
 );
 CREATE POLICY "documents_admin_insert" ON documents FOR INSERT WITH CHECK (
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin'))
+  auth.uid() IN (SELECT id FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin'))
 );
 CREATE POLICY "documents_admin_update" ON documents FOR UPDATE USING (
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin'))
+  auth.uid() IN (SELECT id FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin'))
 );
 CREATE POLICY "documents_admin_delete" ON documents FOR DELETE USING (
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin'))
+  auth.uid() IN (SELECT id FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin'))
 );
 
 -- Delivery Logs
 CREATE POLICY "delivery_admin_all" ON delivery_logs FOR ALL USING (
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin'))
+  auth.uid() IN (SELECT id FROM profiles WHERE id = auth.uid() AND role IN ('super_admin', 'admin'))
 );
 CREATE POLICY "delivery_user_own" ON delivery_logs FOR ALL USING (recipient_id = auth.uid());
 

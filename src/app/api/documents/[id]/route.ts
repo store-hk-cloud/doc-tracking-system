@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerSupabase } from '@/lib/supabase/server';
+import { getServiceSupabase } from '@/lib/supabase/admin';
 import { updateRow, findRowByValue } from '@/lib/google-sheets';
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const supabase = await createServerSupabase();
+    const supabase = getServiceSupabase();
     const { data, error } = await supabase
       .from('documents')
       .select('*')
@@ -37,7 +37,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const supabase = await createServerSupabase();
+    const supabase = getServiceSupabase();
     const body = await request.json();
 
     const { data, error } = await supabase
@@ -88,7 +88,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const supabase = await createServerSupabase();
+    const supabase = getServiceSupabase();
     const { error } = await supabase.from('documents').delete().eq('id', id);
     if (error) throw error;
     return NextResponse.json({ success: true });

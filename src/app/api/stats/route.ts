@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
-import { createServerSupabase } from '@/lib/supabase/server';
+import { getServiceSupabase } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const supabase = await createServerSupabase();
+    const supabase = getServiceSupabase();
     const today = new Date().toISOString().split('T')[0];
 
     const { data: all, error } = await supabase
