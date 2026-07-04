@@ -22,6 +22,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const isLoginPage = pathname === '/';
   const role = profile?.role || 'user';
   const mobileItems = NAV_ITEMS.filter((item) => item.roles.includes(role)).slice(0, 5);
+  const isActiveRoute = (path: string) => pathname === path || pathname.startsWith(`${path}/`);
 
   if (loading) {
     return <div className="loading-screen">Loading...</div>;
@@ -39,16 +40,21 @@ export function AppLayout({ children }: { children: ReactNode }) {
         <main className="app-shell">{children}</main>
       </div>
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
-        {mobileItems.map((item) => (
-          <Link
-            key={item.path}
-            href={item.path}
-            className={`mobile-nav-item ${pathname.startsWith(item.path) ? 'active' : ''}`}
-          >
-            <span className="mobile-nav-icon">{item.icon}</span>
-            <span>{item.label}</span>
-          </Link>
-        ))}
+        {mobileItems.map((item) => {
+          const isActive = isActiveRoute(item.path);
+
+          return (
+            <Link
+              key={item.path}
+              href={item.path}
+              className={`mobile-nav-item ${isActive ? 'active' : ''}`}
+              aria-current={isActive ? 'page' : undefined}
+            >
+              <span className="mobile-nav-icon">{item.icon}</span>
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
       </nav>
     </div>
   );

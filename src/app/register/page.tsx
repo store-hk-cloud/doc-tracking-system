@@ -27,7 +27,7 @@ export default function RegisterPage() {
   const selectDocumentType = (type: string) => {
     setForm((current) => ({
       ...current,
-      subject: current.subject && !DOCUMENT_TYPES.includes(current.subject) ? current.subject : type,
+      subject: type,
     }));
   };
 
@@ -79,12 +79,13 @@ export default function RegisterPage() {
   return (
     <div>
       <div className="app-title" style={{ marginBottom: 20 }}>
-        <div className="document-type-strip" aria-label="รายการเอกสาร">
+        <div className="document-type-strip" role="group" aria-label="รายการเอกสาร">
           {DOCUMENT_TYPES.map((type) => (
             <button
               key={type}
               type="button"
               className={`document-type-chip ${form.subject === type ? 'active' : ''}`}
+              aria-pressed={form.subject === type}
               onClick={() => selectDocumentType(type)}
             >
               {type}
