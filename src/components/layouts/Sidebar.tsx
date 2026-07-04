@@ -24,7 +24,7 @@ export function Sidebar() {
 
   return (
     <aside
-      className="side-panel"
+      className="side-panel desktop-sidebar"
       style={{
         position: 'fixed',
         left: 0,

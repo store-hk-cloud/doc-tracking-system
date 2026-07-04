@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { createClient } from '@/lib/supabase/client';
 
+const DOCUMENT_TYPES = ['จดหมาย', 'ใบกำกับภาษี', 'ใบวางบิล', 'พัสดุ', 'ใบเสร็จ', 'บิลต่างๆ'];
+
 export default function RegisterPage() {
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const supabase = createClient();
   const [departments, setDepartments] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -21,6 +23,13 @@ export default function RegisterPage() {
     note: '',
     is_damaged: false,
   });
+
+  const selectDocumentType = (type: string) => {
+    setForm((current) => ({
+      ...current,
+      subject: current.subject && !DOCUMENT_TYPES.includes(current.subject) ? current.subject : type,
+    }));
+  };
 
   useEffect(() => {
     supabase.from('departments').select('*').order('name').then(({ data }) => {
@@ -70,6 +79,18 @@ export default function RegisterPage() {
   return (
     <div>
       <div className="app-title" style={{ marginBottom: 20 }}>
+        <div className="document-type-strip" aria-label="รายการเอกสาร">
+          {DOCUMENT_TYPES.map((type) => (
+            <button
+              key={type}
+              type="button"
+              className={`document-type-chip ${form.subject === type ? 'active' : ''}`}
+              onClick={() => selectDocumentType(type)}
+            >
+              {type}
+            </button>
+          ))}
+        </div>
         <div className="title-badge">📝 ลงทะเบียน</div>
         <h2>ลงทะเบียนเอกสารเข้า</h2>
         <div className="title-accent" />
