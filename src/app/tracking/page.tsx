@@ -61,6 +61,18 @@ export default function TrackingPage() {
     }
   };
 
+  const handleRedeliver = async (doc: any) => {
+    if (!window.confirm(`ส่งเอกสาร #${doc.running_no} ให้ผู้รับเซ็นใหม่?`)) return;
+    const res = await window.fetch(`/api/documents/${doc.id}/redeliver`, { method: 'PUT' });
+    const data = await res.json();
+    if (data.success) {
+      setDocs(docs.map((d: any) => (d.id === doc.id ? { ...d, status: 'delivered' } : d)));
+      setSelectedDoc(null);
+    } else {
+      window.alert(data.error || 'เกิดข้อผิดพลาด');
+    }
+  };
+
   return (
     <div>
       <div className="app-title" style={{ marginBottom: 20 }}>
@@ -120,6 +132,7 @@ export default function TrackingPage() {
                     <th>No.</th>
                     <th>วันที่รับ</th>
                     <th>ผู้ส่ง</th>
+                    <th>เลขที่เอกสาร</th>
                     <th>เรื่อง</th>
                     <th>หน่วยงาน</th>
                     <th>สถานะ</th>
@@ -134,6 +147,7 @@ export default function TrackingPage() {
                       <td className="code-cell">{doc.running_no}</td>
                       <td>{doc.received_date}</td>
                       <td>{doc.sender}</td>
+                      <td>{doc.doc_number || '-'}</td>
                       <td>{doc.subject}</td>
                       <td>{doc.recipient_dept_name}</td>
                       <td>
@@ -142,7 +156,7 @@ export default function TrackingPage() {
                         </span>
                       </td>
                       <td>{doc.admin_signature || '-'}</td>
-                      <td>-</td>
+                      <td>{doc.recipient_signature || '-'}</td>
                       {isSuperAdmin && (
                         <td>
                           <button
@@ -179,8 +193,17 @@ export default function TrackingPage() {
               <div><strong>หน่วยงาน:</strong> {selectedDoc.recipient_dept_name}</div>
               <div><strong>สถานะ:</strong> <span className={`status-badge${STATUS_COLORS[selectedDoc.status] || ''}`}>{STATUS_LABELS[selectedDoc.status] || selectedDoc.status}</span></div>
               <div><strong>ผู้บันทึก:</strong> {selectedDoc.recorded_by_name || '-'}</div>
-              {selectedDoc.admin_signature && <div><strong>ลายเซ็นส่งมอบ:</strong> {selectedDoc.admin_signature}</div>}
+              {selectedDoc.admin_signature && <div><strong>ลายเซ็นส่งมอบ (Admin):</strong> {selectedDoc.admin_signature}</div>}
+              {selectedDoc.recipient_signature && <div><strong>ลายเซ็นผู้รับ:</strong> {selectedDoc.recipient_signature}</div>}
               {selectedDoc.note && <div><strong>หมายเหตุ:</strong> {selectedDoc.note}</div>}
+              {isAdmin && selectedDoc.status === 'rejected' && (
+                <button
+                  onClick={() => handleRedeliver(selectedDoc)}
+                  style={{ marginTop: 8, background: 'var(--warning)', color: 'white', border: 'none', padding: '10px', borderRadius: 8, cursor: 'pointer' }}
+                >
+                  📮 ส่งเซ็นใหม่
+                </button>
+              )}
               {isSuperAdmin && (
                 <button
                   onClick={() => handleDeleteDoc(selectedDoc)}

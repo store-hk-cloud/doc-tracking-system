@@ -5,12 +5,11 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { useParams } from 'next/navigation';
 
 export default function RecipientPage() {
-  const { user, profile } = useAuth();
+  const { profile } = useAuth();
   const params = useParams();
   const docId = params.docId as string;
   const [doc, setDoc] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [signature, setSignature] = useState('');
   const [verified, setVerified] = useState(true);
   const [verifyNote, setVerifyNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -41,8 +40,8 @@ export default function RecipientPage() {
   }, [docId]);
 
   const handleSubmit = async () => {
-    if (!signature.trim()) {
-      setError('กรุณาพิมพ์ชื่อผู้รับ');
+    if (!profile?.full_name) {
+      setError('ไม่พบชื่อผู้ใช้ในโปรไฟล์ กรุณาติดต่อผู้ดูแลระบบ');
       return;
     }
     setSubmitting(true);
@@ -53,9 +52,6 @@ export default function RecipientPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         document_id: docId,
-        recipient_id: user?.id,
-        recipient_signature: signature,
-        recipient_name: profile?.full_name,
         is_verified: verified,
         verification_note: verified ? null : verifyNote,
       }),
@@ -72,16 +68,23 @@ export default function RecipientPage() {
 
   if (loading) return <div className="loading-screen">กำลังโหลด...</div>;
   if (!doc) return <div className="loading-screen">ไม่พบเอกสาร</div>;
-  if (existingDelivery) {
+
+  // Only a document currently in 'delivered' status can be signed. Any other
+  // status (including 'rejected') is a terminal view here — an admin must
+  // redeliver a rejected document before this page accepts a new signature.
+  if (doc.status !== 'delivered' && !success) {
+    const isRejected = doc.status === 'rejected';
     return (
       <div className="scan-panel" style={{ maxWidth: 580, margin: '40px auto' }}>
         <div className="app-title" style={{ textAlign: 'center' }}>
-          <div className="title-badge">✅ ดำเนินการแล้ว</div>
-          <h3>เอกสารนี้ได้รับการดำเนินการแล้ว</h3>
+          <div className="title-badge">{isRejected ? '⚠️ แจ้งปัญหาแล้ว' : '✅ ดำเนินการแล้ว'}</div>
+          <h3>{isRejected ? 'เอกสารนี้ถูกแจ้งปัญหาไว้ รอหน่วยงานจัดส่งใหม่' : 'เอกสารนี้ได้รับการดำเนินการแล้ว'}</h3>
         </div>
-        <div style={{ marginTop: 16, textAlign: 'center', color: 'var(--muted)' }}>
-          ลงชื่อรับเมื่อ: {new Date(existingDelivery.recipient_signed_at).toLocaleString('th-TH')}
-        </div>
+        {existingDelivery && (
+          <div style={{ marginTop: 16, textAlign: 'center', color: 'var(--muted)' }}>
+            ลงชื่อรับเมื่อ: {new Date(existingDelivery.recipient_signed_at).toLocaleString('th-TH')}
+          </div>
+        )}
       </div>
     );
   }
@@ -174,14 +177,16 @@ export default function RecipientPage() {
         )}
 
         <div className="form-group" style={{ marginTop: 16 }}>
-          <label>✍️ ลายเซ็นผู้รับ (พิมพ์ชื่อ) *</label>
+          <label>✍️ ลายเซ็นผู้รับ</label>
           <input
             type="text"
-            value={signature}
-            onChange={(e) => setSignature(e.target.value)}
-            placeholder="พิมพ์ชื่อผู้รับ"
+            value={profile?.full_name || ''}
+            readOnly
             style={{ fontFamily: 'Caveat, cursive', fontSize: '1.4rem', minHeight: 48 }}
           />
+          <div style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: 4 }}>
+            ระบบใช้ชื่อจากบัญชีที่ล็อกอินอยู่เป็นลายเซ็นเสมอ ไม่สามารถแก้ไขได้
+          </div>
         </div>
 
         {success && <div className="toast success" style={{ position: 'static', marginBottom: 8 }}>{success}</div>}

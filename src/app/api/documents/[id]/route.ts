@@ -48,10 +48,25 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const supabase = getServiceSupabase();
     const body = await request.json();
 
+    const { data: existing, error: existingError } = await supabase
+      .from('documents')
+      .select('status')
+      .eq('id', id)
+      .single();
+    if (existingError || !existing) {
+      return NextResponse.json({ success: false, error: 'Document not found' }, { status: 404 });
+    }
+
     const allowedFields = [
       'received_date', 'doc_number', 'sender', 'subject',
       'recipient_dept_id', 'note', 'is_damaged', 'damage_image_url',
     ] as const;
+    if (Object.prototype.hasOwnProperty.call(body, 'recipient_dept_id') && existing.status !== 'registered') {
+      return NextResponse.json(
+        { success: false, error: 'recipient_dept_id can only be changed while the document is still registered' },
+        { status: 409 }
+      );
+    }
     const updates = Object.fromEntries(
       allowedFields
         .filter((field) => Object.prototype.hasOwnProperty.call(body, field))

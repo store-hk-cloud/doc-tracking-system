@@ -28,9 +28,9 @@ export default function LoginPage() {
               <rect x="2" y="3" width="20" height="18" rx="2" />
               <path d="M12 3v18M6 9h4M6 13h4" />
             </svg>
-            ระบบเอกสาร
+            เอกสารภายใน
           </div>
-          <h1 style={{ fontSize: '1.5rem' }}>รับ-ส่งจดหมายพัสดุ</h1>
+          <h1 style={{ fontSize: '1.5rem' }}>จดหมาย พัสดุ เอกสารภายใน</h1>
           <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginTop: 4 }}>
             เข้าสู่ระบบเพื่อดำเนินการ
           </p>

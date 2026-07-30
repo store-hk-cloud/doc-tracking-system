@@ -42,19 +42,34 @@ export async function GET(request: NextRequest) {
     // Fetch department and profile names separately
     const deptIds = [...new Set((data || []).map((d: any) => d.recipient_dept_id).filter(Boolean))];
     const profileIds = [...new Set((data || []).map((d: any) => d.recorded_by).filter(Boolean))];
+    const docIds = (data || []).map((d: any) => d.id);
 
-    const [{ data: departments }, { data: profiles }] = await Promise.all([
+    const [{ data: departments }, { data: profiles }, { data: deliveries }] = await Promise.all([
       supabase.from('departments').select('id, name').in('id', deptIds.length ? deptIds : ['none']),
       supabase.from('profiles').select('id, full_name').in('id', profileIds.length ? profileIds : ['none']),
+      supabase
+        .from('delivery_logs')
+        .select('document_id, recipient_signature, recipient_signed_at')
+        .in('document_id', docIds.length ? docIds : ['none'])
+        .order('created_at', { ascending: false }),
     ]);
 
     const deptMap = new Map((departments || []).map((d: any) => [d.id, d.name]));
     const profileMap = new Map((profiles || []).map((p: any) => [p.id, p.full_name]));
+    // delivery_logs is ordered newest-first, so the first entry per document wins (latest attempt).
+    const recipientSignatureMap = new Map<string, { signature: string; signedAt: string }>();
+    for (const log of deliveries || []) {
+      if (!recipientSignatureMap.has(log.document_id)) {
+        recipientSignatureMap.set(log.document_id, { signature: log.recipient_signature, signedAt: log.recipient_signed_at });
+      }
+    }
 
     const mapped = (data || []).map((d: any) => ({
       ...d,
       recipient_dept_name: deptMap.get(d.recipient_dept_id) || null,
       recorded_by_name: profileMap.get(d.recorded_by) || null,
+      recipient_signature: recipientSignatureMap.get(d.id)?.signature || null,
+      recipient_signed_at: recipientSignatureMap.get(d.id)?.signedAt || null,
     }));
 
     return NextResponse.json({ success: true, data: mapped });

@@ -79,8 +79,8 @@ export async function POST(request: NextRequest) {
     const supabase = getServiceSupabase();
     const body = await request.json();
 
-    if (!body.document_id || !body.recipient_signature || typeof body.is_verified !== 'boolean') {
-      return NextResponse.json({ success: false, error: 'document_id, recipient_signature and is_verified are required' }, { status: 400 });
+    if (!body.document_id || typeof body.is_verified !== 'boolean') {
+      return NextResponse.json({ success: false, error: 'document_id and is_verified are required' }, { status: 400 });
     }
 
     const { data: documentBefore, error: documentError } = await supabase
@@ -92,9 +92,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Document not found' }, { status: 404 });
     }
     if (!canAccessDepartment(auth.context!, documentBefore.recipient_dept_id)) return forbiddenResponse();
-    if (documentBefore.status !== 'delivered') {
-      return NextResponse.json({ success: false, error: 'Document is not ready for recipient signing' }, { status: 409 });
-    }
 
     const { data: recipient } = await supabase
       .from('profiles')
@@ -103,14 +100,31 @@ export async function POST(request: NextRequest) {
       .single();
     const recipientName = recipient?.full_name || auth.context!.user.email || '';
     const isVerified = body.is_verified === true;
+    const newStatus = isVerified ? 'signed' : 'rejected';
 
-    // Insert delivery log
+    // Atomically flip the document out of 'delivered' first. If two requests race,
+    // only one WHERE status='delivered' update can succeed — the loser gets 409
+    // instead of both inserting a delivery log for the same document.
+    const { data: doc, error: docUpdateError } = await supabase
+      .from('documents')
+      .update({ status: newStatus })
+      .eq('id', body.document_id)
+      .eq('status', 'delivered')
+      .select()
+      .single();
+
+    if (docUpdateError || !doc) {
+      return NextResponse.json({ success: false, error: 'This document has already been processed' }, { status: 409 });
+    }
+
+    // Insert delivery log. recipient_signature is always the server-verified
+    // profile name — never trust a client-supplied name for who signed.
     const { data: delivery, error: deliveryError } = await supabase
       .from('delivery_logs')
       .insert({
         document_id: body.document_id,
         recipient_id: auth.context!.user.id,
-        recipient_signature: body.recipient_signature,
+        recipient_signature: recipientName,
         is_verified: isVerified,
         verification_note: body.verification_note || null,
       })
@@ -118,15 +132,6 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (deliveryError) throw deliveryError;
-
-    // Update document status
-    const newStatus = isVerified ? 'signed' : 'rejected';
-    const { data: doc } = await supabase
-      .from('documents')
-      .update({ status: newStatus })
-      .eq('id', body.document_id)
-      .select()
-      .single();
 
     // Sync to Sheets (unified - update existing row only)
     if (doc) {
@@ -155,7 +160,7 @@ export async function POST(request: NextRequest) {
           doc.admin_signature || '',        // H: ลายเซ็น Admin
           doc.admin_signed_at || '',        // I: เวลา Admin ลงนาม
           recipientName,                     // J: recipient name from server-side profile
-          body.recipient_signature,         // K: ลายเซ็นผู้รับ
+          recipientName,                     // K: ลายเซ็นผู้รับ (server-verified, not client input)
           delivery.recipient_signed_at,     // L: เวลาผู้รับลงนาม
           isVerified ? 'ถูกต้อง' : 'ไม่ถูกต้อง', // M: ผลการตรวจสอบ
           body.verification_note || '',     // N: หมายเหตุ (ผู้รับ)

@@ -5,13 +5,13 @@ import { AppLayout } from '@/components/layouts/AppLayout';
 import { PwaRegister } from '@/components/PwaRegister';
 
 export const metadata: Metadata = {
-  title: 'Doc Tracking',
+  title: 'จดหมาย พัสดุ เอกสารภายใน',
   description: 'Mobile document receiving and delivery tracking',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'Doc Tracking',
+    title: 'จดหมาย พัสดุ เอกสารภายใน',
   },
   icons: {
     icon: [

@@ -1,6 +1,6 @@
 {
-  "name": "Doc Tracking",
-  "short_name": "DocTracking",
+  "name": "จดหมาย พัสดุ เอกสารภายใน",
+  "short_name": "เอกสารภายใน",
   "description": "Mobile document receiving and delivery tracking",
   "start_url": "/dashboard",
   "scope": "/",

@@ -43,10 +43,10 @@ export function Sidebar() {
             <rect x="2" y="3" width="20" height="18" rx="2" />
             <path d="M12 3v18M6 9h4M6 13h4" />
           </svg>
-          DOC TRACKING
+          เอกสารภายใน
         </div>
         <h3 style={{ fontSize: '1rem', fontWeight: 800, margin: 0, lineHeight: 1.3 }}>
-          ระบบรับ-ส่งจดหมายพัสดุ
+          จดหมาย พัสดุ เอกสารภายใน
         </h3>
         <div className="title-accent" style={{ width: 40, marginTop: 8 }} />
       </div>
