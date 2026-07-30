@@ -52,6 +52,21 @@ export async function DELETE(request: NextRequest) {
     if (!id) {
       return NextResponse.json({ success: false, error: 'No ID provided' }, { status: 400 });
     }
+
+    const [{ count: docCount }, { count: profileCount }] = await Promise.all([
+      supabase.from('documents').select('id', { count: 'exact', head: true }).eq('recipient_dept_id', id),
+      supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('department_id', id),
+    ]);
+    if ((docCount || 0) > 0 || (profileCount || 0) > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `ลบไม่ได้ เนื่องจากยังมีเอกสาร ${docCount || 0} รายการ และผู้ใช้ ${profileCount || 0} คน ผูกอยู่กับหน่วยงานนี้`,
+        },
+        { status: 409 }
+      );
+    }
+
     const { error } = await supabase.from('departments').delete().eq('id', id);
     if (error) throw error;
     return NextResponse.json({ success: true });

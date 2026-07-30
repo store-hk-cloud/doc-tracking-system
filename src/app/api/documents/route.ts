@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
 
     const supabase = getServiceSupabase();
     const { searchParams } = new URL(request.url);
-    const status = searchParams.get('status');
+    const statuses = searchParams.getAll('status');
     const dept_id = searchParams.get('dept_id');
     const keyword = searchParams.get('keyword');
     const date_from = searchParams.get('date_from');
@@ -28,7 +28,8 @@ export async function GET(request: NextRequest) {
 
     if (limit > 0) query = query.limit(limit);
 
-    if (status) query = query.eq('status', status);
+    if (statuses.length === 1) query = query.eq('status', statuses[0]);
+    else if (statuses.length > 1) query = query.in('status', statuses);
     if (dept_id) query = query.eq('recipient_dept_id', dept_id);
     if (keyword) {
       query = query.or(`sender.ilike.%${keyword}%,subject.ilike.%${keyword}%,doc_number.ilike.%${keyword}%`);

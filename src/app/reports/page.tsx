@@ -40,13 +40,18 @@ export default function ReportsPage() {
     setLoading(false);
   };
 
+  const escapeCsvCell = (value: any) => {
+    const s = String(value ?? '');
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+
   const exportCSV = () => {
     const headers = ['Running No.', 'วันที่รับ', 'เลขที่เอกสาร', 'ผู้ส่ง', 'เรื่อง', 'หน่วยงาน', 'สถานะ'];
     const rows = docs.map((d: any) => [
       d.running_no, d.received_date, d.doc_number || '', d.sender, d.subject,
       d.recipient_dept_name, d.status,
     ]);
-    const csv = [headers, ...rows].map((row) => row.join(',')).join('\n');
+    const csv = [headers, ...rows].map((row) => row.map(escapeCsvCell).join(',')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);

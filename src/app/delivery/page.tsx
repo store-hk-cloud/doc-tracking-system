@@ -97,7 +97,7 @@ export default function DeliveryPage() {
                     <td>{doc.received_date}</td>
                     <td>{doc.sender}</td>
                     <td>{doc.subject}</td>
-                    <td>{doc.departments?.name}</td>
+                    <td>{doc.recipient_dept_name}</td>
                     <td>
                       <button
                         className="table-action-button"
@@ -124,7 +124,7 @@ export default function DeliveryPage() {
             <div style={{ display: 'grid', gap: 8, marginBottom: 16, fontSize: '0.9rem' }}>
               <div><strong>ผู้ส่ง:</strong> {selectedDoc.sender}</div>
               <div><strong>เรื่อง:</strong> {selectedDoc.subject}</div>
-              <div><strong>หน่วยงาน:</strong> {selectedDoc.departments?.name}</div>
+              <div><strong>หน่วยงาน:</strong> {selectedDoc.recipient_dept_name}</div>
               <div><strong>วันที่รับ:</strong> {selectedDoc.received_date}</div>
             </div>
 

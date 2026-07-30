@@ -44,7 +44,7 @@ export default function AdminDepartmentsPage() {
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!window.confirm(`⚠️ ลบหน่วยงาน "${name}"? เอกสารที่เกี่ยวข้องจะถูกลบด้วย`)) return;
+    if (!window.confirm(`⚠️ ลบหน่วยงาน "${name}"? จะลบไม่ได้ถ้ายังมีเอกสารหรือผู้ใช้ผูกอยู่กับหน่วยงานนี้`)) return;
     const res = await window.fetch('/api/departments', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },

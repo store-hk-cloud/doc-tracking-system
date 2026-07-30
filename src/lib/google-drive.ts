@@ -1,3 +1,4 @@
+import { Readable } from 'stream';
 import { getDriveClient } from './google-auth';
 
 export async function uploadToDrive(
@@ -15,7 +16,7 @@ export async function uploadToDrive(
       },
       media: {
         mimeType,
-        body: fileBuffer,
+        body: Readable.from(fileBuffer),
       },
     });
     const fileId = res.data.id!;

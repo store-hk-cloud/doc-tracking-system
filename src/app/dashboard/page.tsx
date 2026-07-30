@@ -130,7 +130,7 @@ export default function DashboardPage() {
                     <td>{doc.received_date}</td>
                     <td>{doc.sender}</td>
                     <td>{doc.subject}</td>
-                    <td>{doc.departments?.name}</td>
+                    <td>{doc.recipient_dept_name}</td>
                     <td><span className={`status-badge${s.color}`}>{s.label}</span></td>
                   </tr>
                 );
