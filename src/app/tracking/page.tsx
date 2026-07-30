@@ -84,15 +84,28 @@ export default function TrackingPage() {
       {/* Filters */}
       <div className="search-panel">
         <div className="search-form">
-          <div className="search-input-row">
-            <input
-              placeholder="ค้นหา ผู้ส่ง, เรื่อง, เลขที่เอกสาร..."
-              value={filter.keyword}
-              onChange={(e) => setFilter({ ...filter, keyword: e.target.value })}
-              onKeyDown={(e) => e.key === 'Enter' && loadDocs()}
-            />
+          <div className="search-top-row">
+            <div className="search-input-row">
+              <input
+                placeholder="ค้นหา ผู้ส่ง, เรื่อง, เลขที่เอกสาร..."
+                value={filter.keyword}
+                onChange={(e) => setFilter({ ...filter, keyword: e.target.value })}
+                onKeyDown={(e) => e.key === 'Enter' && loadDocs()}
+              />
+            </div>
+            {isAdmin && (
+              <select value={filter.dept_id} onChange={(e) => setFilter({ ...filter, dept_id: e.target.value })} style={{ minHeight: 42, borderRadius: 8, border: '1px solid var(--line-strong)', padding: '0 10px' }}>
+                <option value="">ทุกหน่วยงาน</option>
+                {departments.map((d: any) => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
+            )}
+            <button className="secondary-button" onClick={loadDocs} style={{ minHeight: 44 }}>
+              🔍 ค้นหา
+            </button>
           </div>
-          <div className="segmented-control" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+          <div className="segmented-control search-status-row">
             {STATUS_OPTIONS.map((s) => (
               <button
                 key={s}
@@ -103,17 +116,6 @@ export default function TrackingPage() {
               </button>
             ))}
           </div>
-          {isAdmin && (
-            <select value={filter.dept_id} onChange={(e) => setFilter({ ...filter, dept_id: e.target.value })} style={{ minHeight: 42, borderRadius: 8, border: '1px solid var(--line-strong)', padding: '0 10px' }}>
-              <option value="">ทุกหน่วยงาน</option>
-              {departments.map((d: any) => (
-                <option key={d.id} value={d.id}>{d.name}</option>
-              ))}
-            </select>
-          )}
-          <button className="secondary-button" onClick={loadDocs} style={{ minHeight: 44 }}>
-            🔍 ค้นหา
-          </button>
         </div>
       </div>
 
