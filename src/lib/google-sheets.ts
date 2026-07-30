@@ -1,0 +1,231 @@
+import { getSheetsClient } from './google-auth';
+import { createClient } from '@supabase/supabase-js';
+
+/**
+ * NEW unified header - 1 row has everything:
+ * document info + admin sign + recipient sign + delivery result
+ */
+const HEADERS = [
+  'Running No.',       // A
+  'วันที่รับ',          // B
+  'เลขที่เอกสาร',       // C
+  'ผู้ส่ง',             // D
+  'เรื่อง',             // E
+  'หน่วยงาน',          // F
+  'สถานะ',             // G - registered → delivered → signed/rejected
+  'ลายเซ็น Admin',     // H
+  'เวลา Admin ลงนาม',  // I
+  'ชื่อผู้รับ',         // J
+  'ลายเซ็นผู้รับ',      // K
+  'เวลาผู้รับลงนาม',    // L
+  'ผลการตรวจสอบ',      // M - ถูกต้อง / ไม่ถูกต้อง
+  'หมายเหตุ (ผู้รับ)',  // N
+  'เสียหาย',           // O
+  'รูปความเสียหาย',    // P
+  'หมายเหตุ',          // Q - note at creation
+  'ผู้บันทึก',          // R
+  'updated_at',        // S
+];
+
+/** Get today's date as YYYY-MM-DD */
+function todaySheetName(): string {
+  return new Date().toISOString().split('T')[0];
+}
+
+let cachedSpreadsheetId: string | null = null;
+
+async function getOrCreateSpreadsheet(): Promise<string> {
+  // Check env
+  if (process.env.GOOGLE_SHEETS_SPREADSHEET_ID) {
+    return process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+  }
+
+  // Check cache
+  if (cachedSpreadsheetId) return cachedSpreadsheetId;
+
+  // Try to get from Supabase (persisted across deploys)
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (supabaseUrl && supabaseKey) {
+    const sb = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } });
+    const { data } = await sb.from('app_settings').select('value').eq('key', 'google_spreadsheet_id').single();
+    if (data?.value) {
+      cachedSpreadsheetId = data.value;
+    }
+  }
+
+  if (!cachedSpreadsheetId) {
+    // Auto-create spreadsheet with today's sheet
+    const sheets = getSheetsClient();
+    const today = todaySheetName();
+    const res = await sheets.spreadsheets.create({
+      requestBody: {
+        properties: { title: `ระบบรับ-ส่งเอกสาร` },
+        sheets: [{ properties: { title: today } }],
+      },
+    });
+    cachedSpreadsheetId = res.data.spreadsheetId!;
+
+    // Write headers
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: cachedSpreadsheetId,
+      range: `${today}!A1:S1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [HEADERS] },
+    });
+
+    // Persist to Supabase
+    if (supabaseUrl && supabaseKey) {
+      const sb = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } });
+      await sb.from('app_settings').upsert(
+        { key: 'google_spreadsheet_id', value: cachedSpreadsheetId },
+        { onConflict: 'key' }
+      );
+    }
+    console.log(`[Google Sheets] Created spreadsheet: ${cachedSpreadsheetId}`);
+  }
+
+  return cachedSpreadsheetId;
+}
+
+/**
+ * Get or create today's sheet tab.
+ * Newest day is inserted at index 0 (leftmost).
+ */
+async function getOrCreateDailySheet(): Promise<string> {
+  const spreadsheetId = await getSpreadsheetId();
+  const sheets = getSheetsClient();
+  const today = todaySheetName();
+
+  // Get existing sheets
+  const { data: sheetInfo } = await sheets.spreadsheets.get({ spreadsheetId });
+  const existingSheets = sheetInfo?.sheets || [];
+  const hasToday = existingSheets.some((s: any) => s.properties?.title === today);
+
+  if (!hasToday) {
+    // Insert today's sheet at index 0 (leftmost)
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [{
+          addSheet: {
+            properties: { title: today, index: 0 },
+          },
+        }],
+      },
+    });
+    // Write headers
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${today}!A1:S1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [HEADERS] },
+    });
+    console.log(`[Google Sheets] Created daily sheet: ${today}`);
+  }
+
+  return today;
+}
+
+async function getSpreadsheetId(): Promise<string> {
+  try {
+    return await getOrCreateSpreadsheet();
+  } catch (error) {
+    console.error('[Google Sheets] Failed to get/create spreadsheet:', error);
+    throw error;
+  }
+}
+
+export async function appendRow(sheetName: string, values: string[]) {
+  try {
+    const spreadsheetId = await getSpreadsheetId();
+    const sheets = getSheetsClient();
+    const today = await getOrCreateDailySheet();
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `${today}!A:S`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [values] },
+    });
+  } catch (error) {
+    console.error(`[Google Sheets] Append error:`, error);
+  }
+}
+
+export async function updateRow(sheetName: string, rowIndex: number, values: string[]) {
+  try {
+    const spreadsheetId = await getSpreadsheetId();
+    const sheets = getSheetsClient();
+    const today = todaySheetName();
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${today}!A${rowIndex}:S${rowIndex}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [values] },
+    });
+  } catch (error) {
+    console.error(`[Google Sheets] Update error:`, error);
+  }
+}
+
+// Update a row in a specific sheet (used by findRowByValue result)
+export async function updateRowInSheet(sheet: string, rowIndex: number, values: string[]) {
+  try {
+    const spreadsheetId = await getSpreadsheetId();
+    const sheets = getSheetsClient();
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${sheet}!A${rowIndex}:S${rowIndex}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [values] },
+    });
+  } catch (error) {
+    console.error(`[Google Sheets] Update in sheet error:`, error);
+  }
+}
+
+async function findRowByValueAndSheet(column: number, value: string): Promise<{ sheet: string; row: number } | null> {
+  const spreadsheetId = await getSpreadsheetId();
+  const sheets = getSheetsClient();
+  const today = todaySheetName();
+  const { data: info } = await sheets.spreadsheets.get({ spreadsheetId });
+  const allSheets = (info?.sheets || []).map((s: any) => s.properties?.title).filter(Boolean);
+
+  const targetSheets = allSheets.includes(today)
+    ? [today, ...allSheets.filter((s: string) => s !== today)]
+    : allSheets;
+
+  for (const sheet of targetSheets) {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${sheet}!A:S`,
+    });
+    const rows = res.data.values || [];
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i][column - 1]?.toString() === value) {
+        return { sheet, row: i + 1 };
+      }
+    }
+  }
+  return null;
+}
+
+// Backward-compatible: return just the row number (for today's sheet)
+export async function findRowByValue(_sheetName: string, column: number, value: string): Promise<number | null> {
+  try {
+    const result = await findRowByValueAndSheet(column, value);
+    return result ? result.row : null;
+  } catch (error) {
+    console.error(`[Google Sheets] Find error:`, error);
+    return null;
+  }
+}
+
+export async function getSpreadsheetUrl(): Promise<string | null> {
+  try {
+    const id = await getSpreadsheetId();
+    return `https://docs.google.com/spreadsheets/d/${id}`;
+  } catch {
+    return null;
+  }
+}
