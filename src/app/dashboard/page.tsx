@@ -51,7 +51,7 @@ export default function DashboardPage() {
           </svg>
           DASHBOARD
         </div>
-        <h1>ภาพรวมระบบรับ-ส่งเอกสาร</h1>
+        <h1>ภาพรวมจดหมาย พัสดุ เอกสารภายใน</h1>
         <div className="title-accent" />
       </div>
 

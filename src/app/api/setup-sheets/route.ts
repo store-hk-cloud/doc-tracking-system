@@ -54,7 +54,7 @@ export async function GET() {
     
     const res = await sheets.spreadsheets.create({
       requestBody: {
-        properties: { title: 'ระบบรับ-ส่งเอกสาร' },
+        properties: { title: 'จดหมาย พัสดุ เอกสารภายใน' },
         sheets: [{ properties: { title: today } }],
       },
     });

@@ -77,7 +77,7 @@ const today = new Date().toISOString().split('T')[0]; // 2026-07-02
 // Create spreadsheet
 const res = await sheets.spreadsheets.create({
   requestBody: {
-    properties: { title: '📋 ทดสอบโครงสร้างใหม่ - ระบบรับ-ส่งเอกสาร' },
+    properties: { title: '📋 ทดสอบโครงสร้างใหม่ - จดหมาย พัสดุ เอกสารภายใน' },
     sheets: [
       { properties: { title: today } },
     ],
