@@ -16,9 +16,9 @@ export async function POST(request: NextRequest) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const fileName = `${folderName}/${Date.now()}-${file.name}`;
+    const fileName = `${Date.now()}-${file.name}`;
 
-    const { fileId, viewLink } = await uploadToDrive(fileName, buffer, file.type);
+    const { fileId, viewLink } = await uploadToDrive(fileName, buffer, file.type, folderName);
 
     return NextResponse.json({
       success: true,
