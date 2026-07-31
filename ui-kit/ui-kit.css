@@ -4,9 +4,9 @@
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
   letter-spacing: -0.01em;
-  --page: #f2f2f7;
-  --page-soft: #e8e8ed;
-  --surface: rgba(255,255,255,0.82);
+  --page: #eaf4f3;
+  --page-soft: #dcede9;
+  --surface: rgba(255,255,255,0.88);
   --surface-soft: rgba(255,255,255,0.55);
   --surface-raised: rgba(255,255,255,0.88);
   --text: #1c1c1e;
@@ -46,8 +46,8 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --page: #000000;
-  --page-soft: #1c1c1e;
+  --page: #04120f;
+  --page-soft: #0c211e;
   --surface: rgba(44,44,46,0.8);
   --surface-soft: rgba(44,44,46,0.5);
   --surface-raised: rgba(44,44,46,0.9);
