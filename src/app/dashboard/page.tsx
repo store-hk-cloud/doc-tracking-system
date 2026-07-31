@@ -65,35 +65,35 @@ export default function DashboardPage() {
           <>
             <div>
               <span>📄 เอกสารทั้งหมด</span>
-              <strong className="counter-pop">{stats?.total || 0}</strong>
+              <strong>{stats?.total || 0}</strong>
             </div>
             <div>
               <span>📅 วันนี้</span>
-              <strong className="counter-pop">{stats?.today || 0}</strong>
+              <strong>{stats?.today || 0}</strong>
             </div>
             <div>
               <span>📝 รอส่งมอบ</span>
-              <strong className="counter-pop">{stats?.registered || 0}</strong>
+              <strong>{stats?.registered || 0}</strong>
             </div>
             <div>
               <span>✅ ปิดงานแล้ว</span>
-              <strong className="counter-pop">{stats?.closed || 0}</strong>
+              <strong>{stats?.closed || 0}</strong>
             </div>
             <div>
               <span>📦 ส่งมอบแล้ว</span>
-              <strong className="counter-pop">{stats?.delivered || 0}</strong>
+              <strong>{stats?.delivered || 0}</strong>
             </div>
             <div>
               <span>✍️ ลงนามแล้ว</span>
-              <strong className="counter-pop">{stats?.signed || 0}</strong>
+              <strong>{stats?.signed || 0}</strong>
             </div>
             <div>
               <span>⚠️ แจ้งปัญหา</span>
-              <strong className="counter-pop">{stats?.rejected || 0}</strong>
+              <strong>{stats?.rejected || 0}</strong>
             </div>
             <div>
               <span>📸 เสียหาย</span>
-              <strong className="counter-pop">{stats?.damaged || 0}</strong>
+              <strong>{stats?.damaged || 0}</strong>
             </div>
           </>
         )}
