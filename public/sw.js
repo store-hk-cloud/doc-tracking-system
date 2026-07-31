@@ -1,4 +1,4 @@
-const CACHE_NAME = 'doc-tracking-v2';
+const CACHE_NAME = 'doc-tracking-v3';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',

@@ -23,13 +23,7 @@ export default function LoginPage() {
     <div className="auth-page">
       <div className="scan-panel auth-card">
         <div className="app-title" style={{ marginBottom: 24, textAlign: 'center' }}>
-          <div className="title-badge" style={{ display: 'inline-flex', marginBottom: 12 }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <rect x="2" y="3" width="20" height="18" rx="2" />
-              <path d="M12 3v18M6 9h4M6 13h4" />
-            </svg>
-            เอกสารภายใน
-          </div>
+          <img src="/icons/hillkoff-emblem.png" alt="Hillkoff" width={64} height={64} style={{ marginBottom: 12 }} />
           <h1 style={{ fontSize: '1.5rem' }}>จดหมาย พัสดุ เอกสารภายใน</h1>
           <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginTop: 4 }}>
             เข้าสู่ระบบเพื่อดำเนินการ

@@ -1,6 +1,6 @@
 :root {
   color-scheme: light;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Inter, ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-kanit), -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Inter, ui-sans-serif, system-ui, sans-serif;
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
   letter-spacing: -0.01em;
@@ -13,9 +13,12 @@
   --muted: #8e8e93;
   --line: rgba(120,120,128,0.16);
   --line-strong: rgba(120,120,128,0.24);
-  --primary: #007aff;
-  --primary-strong: #0060d0;
-  --primary-soft: rgba(0,122,255,0.12);
+  --primary: #058581;
+  --primary-strong: #046662;
+  --primary-soft: rgba(5,133,129,0.12);
+  --primary-rgb: 5,133,129;
+  --brand-accent: #00bac6;
+  --brand-mint: #51ddd7;
   --warning: #ff9500;
   --warning-bg: rgba(255,149,0,0.12);
   --warning-line: rgba(255,149,0,0.3);
@@ -52,9 +55,12 @@
   --muted: #98989d;
   --line: rgba(120,120,128,0.24);
   --line-strong: rgba(120,120,128,0.36);
-  --primary: #0a84ff;
-  --primary-strong: #409cff;
-  --primary-soft: rgba(10,132,255,0.18);
+  --primary: #1aa39d;
+  --primary-strong: #51ddd7;
+  --primary-soft: rgba(26,163,157,0.18);
+  --primary-rgb: 26,163,157;
+  --brand-accent: #00bac6;
+  --brand-mint: #51ddd7;
   --warning: #ff9f0a;
   --warning-bg: rgba(255,159,10,0.15);
   --warning-line: rgba(255,159,10,0.35);
@@ -181,8 +187,8 @@ p {
   position: relative;
   padding: 18px 20px 14px;
   border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, rgba(0,122,255,0.06) 0%, rgba(0,122,255,0.02) 50%, transparent 100%);
-  border: 0.5px solid rgba(0,122,255,0.1);
+  background: linear-gradient(135deg, rgba(var(--primary-rgb),0.06) 0%, rgba(var(--primary-rgb),0.02) 50%, transparent 100%);
+  border: 0.5px solid rgba(var(--primary-rgb),0.1);
   box-shadow: 0 0 0 1px rgba(0,0,0,0.02), 0 4px 16px rgba(0,0,0,0.03);
   overflow: hidden;
 }
@@ -195,7 +201,7 @@ p {
   width: 120px;
   height: 120px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(0,122,255,0.08) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(var(--primary-rgb),0.08) 0%, transparent 70%);
   pointer-events: none;
   animation: title-glow 4s ease-in-out infinite;
 }
@@ -211,8 +217,8 @@ p {
   gap: 8px;
   padding: 5px 14px;
   border-radius: var(--radius-full);
-  background: linear-gradient(135deg, rgba(0,122,255,0.15), rgba(0,122,255,0.05));
-  border: 0.5px solid rgba(0,122,255,0.2);
+  background: linear-gradient(135deg, rgba(var(--primary-rgb),0.15), rgba(var(--primary-rgb),0.05));
+  border: 0.5px solid rgba(var(--primary-rgb),0.2);
   color: var(--primary);
   font-size: 0.7rem;
   font-weight: 800;
@@ -221,17 +227,17 @@ p {
   margin-bottom: 12px;
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  box-shadow: 0 0 12px rgba(0,122,255,0.08);
+  box-shadow: 0 0 12px rgba(var(--primary-rgb),0.08);
 }
 
 .title-badge svg {
-  filter: drop-shadow(0 0 4px rgba(0,122,255,0.4));
+  filter: drop-shadow(0 0 4px rgba(var(--primary-rgb),0.4));
   animation: scan-pulse 2s ease infinite;
 }
 
 @keyframes scan-pulse {
-  0%, 100% { opacity: 0.5; transform: scale(1); filter: drop-shadow(0 0 3px rgba(0,122,255,0.3)); }
-  50% { opacity: 1; transform: scale(1.15); filter: drop-shadow(0 0 8px rgba(0,122,255,0.6)); }
+  0%, 100% { opacity: 0.5; transform: scale(1); filter: drop-shadow(0 0 3px rgba(var(--primary-rgb),0.3)); }
+  50% { opacity: 1; transform: scale(1.15); filter: drop-shadow(0 0 8px rgba(var(--primary-rgb),0.6)); }
 }
 
 h1 {
@@ -249,8 +255,8 @@ h1 {
   height: 3px;
   margin-top: 10px;
   border-radius: 3px;
-  background: linear-gradient(90deg, var(--primary), #409cff 50%, transparent);
-  box-shadow: 0 0 8px rgba(0,122,255,0.3);
+  background: linear-gradient(90deg, var(--primary), var(--brand-accent) 50%, transparent);
+  box-shadow: 0 0 8px rgba(var(--primary-rgb),0.3);
   animation: accent-pulse 3s ease-in-out infinite;
 }
 
@@ -481,7 +487,7 @@ select:hover {
 }
 
 .segmented-control button:not(.active):hover {
-  background: rgba(0,122,255,0.06);
+  background: rgba(var(--primary-rgb),0.06);
   color: var(--primary);
 }
 
@@ -536,7 +542,7 @@ select:hover {
 
 .current-courier-badge:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 16px rgba(0,122,255,0.15);
+  box-shadow: 0 4px 16px rgba(var(--primary-rgb),0.15);
 }
 
 .field-control input {
@@ -735,7 +741,7 @@ select:hover {
   border-left-color: var(--primary);
   background: var(--primary-soft);
   color: var(--primary-strong);
-  box-shadow: 0 2px 8px rgba(0,122,255,0.12);
+  box-shadow: 0 2px 8px rgba(var(--primary-rgb),0.12);
 }
 
 .courier-button strong {
@@ -751,7 +757,7 @@ select:hover {
 .courier-button.active strong {
   background: var(--primary);
   color: #fff;
-  box-shadow: 0 2px 6px rgba(0,122,255,0.25);
+  box-shadow: 0 2px 6px rgba(var(--primary-rgb),0.25);
 }
 
 .scan-tool-panel {
@@ -795,7 +801,7 @@ select:hover {
   background: var(--primary);
   color: #ffffff;
   border: 0;
-  box-shadow: 0 2px 8px rgba(0,122,255,0.25);
+  box-shadow: 0 2px 8px rgba(var(--primary-rgb),0.25);
   transform: translateY(0);
   transition: all 0.2s cubic-bezier(0.25, 0.1, 0.25, 1);
   font-weight: 600;
@@ -804,14 +810,14 @@ select:hover {
 
 .secondary-button:not(:disabled):hover {
   filter: none;
-  background: #0070e9;
-  box-shadow: 0 4px 12px rgba(0,122,255,0.35);
+  background: var(--brand-accent);
+  box-shadow: 0 4px 12px rgba(var(--primary-rgb),0.35);
   transform: translateY(-1px);
 }
 
 .secondary-button:not(:disabled):active {
-  background: #0060d0;
-  box-shadow: 0 1px 4px rgba(0,122,255,0.2);
+  background: var(--primary-strong);
+  box-shadow: 0 1px 4px rgba(var(--primary-rgb),0.2);
   transform: scale(0.98);
 }
 
@@ -1700,9 +1706,9 @@ tbody tr:nth-child(8){ animation-delay: 0.21s; }
 .status-badge { animation: status-pop 0.3s cubic-bezier(0.34,1.56,0.64,1); }
 
 @keyframes flash-success {
-  0% { border-color: var(--primary); box-shadow: 0 0 0 0 rgba(0,122,255,0.4); }
+  0% { border-color: var(--primary); box-shadow: 0 0 0 0 rgba(var(--primary-rgb),0.4); }
   50% { border-color: var(--success); box-shadow: 0 0 0 8px rgba(52,199,89,0.2); }
-  100% { border-color: var(--primary); box-shadow: 0 0 0 0 rgba(0,122,255,0); }
+  100% { border-color: var(--primary); box-shadow: 0 0 0 0 rgba(var(--primary-rgb),0); }
 }
 
 .scan-input-row.flash {

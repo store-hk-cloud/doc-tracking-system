@@ -37,18 +37,14 @@ export function Sidebar() {
         zIndex: 100,
       }}
     >
-      <div style={{ padding: '20px 16px 12px' }}>
-        <div className="title-badge" style={{ marginBottom: 8 }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="2" y="3" width="20" height="18" rx="2" />
-            <path d="M12 3v18M6 9h4M6 13h4" />
-          </svg>
-          เอกสารภายใน
+      <div style={{ padding: '20px 16px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <img src="/icons/hillkoff-emblem.png" alt="Hillkoff" width={38} height={38} style={{ flexShrink: 0 }} />
+        <div>
+          <h3 style={{ fontSize: '0.95rem', fontWeight: 800, margin: 0, lineHeight: 1.25, color: 'var(--primary)' }}>
+            จดหมาย พัสดุ<br />เอกสารภายใน
+          </h3>
+          <div className="title-accent" style={{ width: 32, height: 3, marginTop: 6, animation: 'none' }} />
         </div>
-        <h3 style={{ fontSize: '1rem', fontWeight: 800, margin: 0, lineHeight: 1.3 }}>
-          จดหมาย พัสดุ เอกสารภายใน
-        </h3>
-        <div className="title-accent" style={{ width: 40, marginTop: 8 }} />
       </div>
 
       <nav className="sidebar-menu" style={{ flex: 1, padding: '8px 12px', overflowY: 'auto' }}>
