@@ -51,6 +51,7 @@ export interface Document {
   running_no: number;
   received_date: string;
   doc_number: string | null;
+  tax_invoice_no: string | null;
   sender: string;
   subject: string;
   recipient_dept_id: string;

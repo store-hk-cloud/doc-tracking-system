@@ -46,9 +46,9 @@ export default function ReportsPage() {
   };
 
   const exportCSV = () => {
-    const headers = ['Running No.', 'วันที่รับ', 'เลขที่เอกสาร', 'ผู้ส่ง', 'เรื่อง', 'หน่วยงาน', 'สถานะ'];
+    const headers = ['Running No.', 'วันที่รับ', 'เลขที่เอกสาร', 'เลขใบกำกับภาษี', 'ผู้ส่ง', 'เรื่อง', 'หน่วยงาน', 'สถานะ'];
     const rows = docs.map((d: any) => [
-      d.running_no, d.received_date, d.doc_number || '', d.sender, d.subject,
+      d.running_no, d.received_date, d.doc_number || '', d.tax_invoice_no || '', d.sender, d.subject,
       d.recipient_dept_name, d.status,
     ]);
     const csv = [headers, ...rows].map((row) => row.map(escapeCsvCell).join(',')).join('\n');

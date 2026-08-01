@@ -23,6 +23,7 @@ export default function RegisterPage() {
   const [form, setForm] = useState({
     received_date: new Date().toISOString().split('T')[0],
     doc_number: '',
+    tax_invoice_no: '',
     sender: '',
     subject: '',
     recipient_dept_id: '',
@@ -128,6 +129,7 @@ export default function RegisterPage() {
       setForm({
         received_date: new Date().toISOString().split('T')[0],
         doc_number: '',
+        tax_invoice_no: '',
         sender: '',
         subject: '',
         recipient_dept_id: '',
@@ -175,6 +177,13 @@ export default function RegisterPage() {
             <div className="form-group">
               <label>เลขที่เอกสาร</label>
               <input type="text" value={form.doc_number} onChange={(e) => setForm({ ...form, doc_number: e.target.value })} placeholder="เช่น INV-2024-001" />
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label>เลขใบกำกับภาษี</label>
+              <input type="text" value={form.tax_invoice_no} onChange={(e) => setForm({ ...form, tax_invoice_no: e.target.value })} placeholder="เลขใบกำกับภาษี" />
             </div>
           </div>
 

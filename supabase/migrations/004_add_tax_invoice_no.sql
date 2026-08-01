@@ -1,0 +1,1 @@
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS tax_invoice_no VARCHAR(255);

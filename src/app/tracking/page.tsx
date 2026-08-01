@@ -190,6 +190,7 @@ export default function TrackingPage() {
             <div style={{ display: 'grid', gap: 8 }}>
               <div><strong>วันที่รับ:</strong> {selectedDoc.received_date}</div>
               <div><strong>เลขที่เอกสาร:</strong> {selectedDoc.doc_number || '-'}</div>
+              <div><strong>เลขใบกำกับภาษี:</strong> {selectedDoc.tax_invoice_no || '-'}</div>
               <div><strong>ผู้ส่ง:</strong> {selectedDoc.sender}</div>
               <div><strong>เรื่อง:</strong> {selectedDoc.subject}</div>
               <div><strong>หน่วยงาน:</strong> {selectedDoc.recipient_dept_name}</div>

@@ -58,7 +58,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     }
 
     const allowedFields = [
-      'received_date', 'doc_number', 'sender', 'subject',
+      'received_date', 'doc_number', 'tax_invoice_no', 'sender', 'subject',
       'recipient_dept_id', 'note', 'is_damaged', 'damage_image_url',
     ] as const;
     if (Object.prototype.hasOwnProperty.call(body, 'recipient_dept_id') && existing.status !== 'registered') {
@@ -109,6 +109,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         '', '', data.is_damaged ? 'ใช่' : 'ไม่',
         data.damage_image_url || '', data.note || '',
         profName, data.created_at, data.updated_at,
+        data.tax_invoice_no || '',
       ]);
     }
 

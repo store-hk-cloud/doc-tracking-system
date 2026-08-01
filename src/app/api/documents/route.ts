@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
     else if (statuses.length > 1) query = query.in('status', statuses);
     if (dept_id) query = query.eq('recipient_dept_id', dept_id);
     if (keyword) {
-      query = query.or(`sender.ilike.%${keyword}%,subject.ilike.%${keyword}%,doc_number.ilike.%${keyword}%`);
+      query = query.or(`sender.ilike.%${keyword}%,subject.ilike.%${keyword}%,doc_number.ilike.%${keyword}%,tax_invoice_no.ilike.%${keyword}%`);
     }
     if (date_from) query = query.gte('received_date', date_from);
     if (date_to) query = query.lte('received_date', date_to);
@@ -96,6 +96,7 @@ export async function POST(request: NextRequest) {
       .insert({
         received_date: body.received_date || new Date().toISOString().split('T')[0],
         doc_number: body.doc_number || null,
+        tax_invoice_no: body.tax_invoice_no || null,
         sender: body.sender,
         subject: body.subject,
         recipient_dept_id: body.recipient_dept_id,
@@ -153,6 +154,7 @@ export async function POST(request: NextRequest) {
       data.note || '',                    // Q: หมายเหตุ
       profileName,                        // R: ผู้บันทึก
       '',                                 // S: updated_at
+      data.tax_invoice_no || '',          // T: เลขใบกำกับภาษี
     ]);
 
     return NextResponse.json({
