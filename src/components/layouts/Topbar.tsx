@@ -2,6 +2,7 @@
 
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 
 export function Topbar() {
   const { profile, signOut } = useAuth();
@@ -33,6 +34,7 @@ export function Topbar() {
   return (
     <div className="topbar">
       <div className="topbar-actions" style={{ position: 'relative' }}>
+        <Link href="/policies" className="topbar-help-link">📚 คู่มือ</Link>
         <button
           className="ghost-button"
           onClick={() => setShowPanel((v) => !v)}

@@ -18,6 +18,7 @@ export function Sidebar() {
     { path: '/recipient', label: '✍️ รับเอกสาร', roles: ['super_admin', 'admin', 'user'] },
     { path: '/tracking', label: '🔍 ติดตาม', roles: ['super_admin', 'admin', 'user'] },
     { path: '/reports', label: '📈 รายงาน', roles: ['super_admin', 'admin', 'user'] },
+    { path: '/policies', label: '📚 นโยบายและคู่มือ', roles: ['super_admin', 'admin', 'user'] },
     { path: '/admin/users', label: '👥 จัดการผู้ใช้', roles: ['super_admin', 'admin'] },
     { path: '/admin/departments', label: '🏢 จัดการหน่วยงาน', roles: ['super_admin'] },
   ];
