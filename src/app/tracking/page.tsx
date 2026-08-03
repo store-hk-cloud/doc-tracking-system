@@ -139,6 +139,7 @@ export default function TrackingPage() {
                     <th>หน่วยงาน</th>
                     <th>สถานะ</th>
                     <th>ลายเซ็น Admin</th>
+                    <th>ลายเซ็นผู้ตรวจสอบ / จัดซื้อ</th>
                     <th>ลายเซ็นผู้รับ</th>
                     {isSuperAdmin && <th>ลบ</th>}
                   </tr>
@@ -158,6 +159,14 @@ export default function TrackingPage() {
                         </span>
                       </td>
                       <td>{doc.admin_signature || '-'}</td>
+                      <td>
+                        {doc.inspector_signature || doc.purchasing_signature ? (
+                          <div style={{ display: 'grid', gap: 2 }}>
+                            <span>ผู้ตรวจสอบ: {doc.inspector_signature || '-'}</span>
+                            <span>จัดซื้อ: {doc.purchasing_signature || '-'}</span>
+                          </div>
+                        ) : '-'}
+                      </td>
                       <td>{doc.recipient_signature || '-'}</td>
                       {isSuperAdmin && (
                         <td>
@@ -197,6 +206,12 @@ export default function TrackingPage() {
               <div><strong>สถานะ:</strong> <span className={`status-badge${STATUS_COLORS[selectedDoc.status] || ''}`}>{STATUS_LABELS[selectedDoc.status] || selectedDoc.status}</span></div>
               <div><strong>ผู้บันทึก:</strong> {selectedDoc.recorded_by_name || '-'}</div>
               {selectedDoc.admin_signature && <div><strong>ลายเซ็นส่งมอบ (Admin):</strong> {selectedDoc.admin_signature}</div>}
+              {(selectedDoc.inspector_signature || selectedDoc.purchasing_signature) && (
+                <div>
+                  <strong>ลายเซ็นผู้ตรวจสอบ / จัดซื้อ:</strong>{' '}
+                  ผู้ตรวจสอบ: {selectedDoc.inspector_signature || '-'} / จัดซื้อ: {selectedDoc.purchasing_signature || '-'}
+                </div>
+              )}
               {selectedDoc.recipient_signature && <div><strong>ลายเซ็นผู้รับ:</strong> {selectedDoc.recipient_signature}</div>}
               {selectedDoc.note && <div><strong>หมายเหตุ:</strong> {selectedDoc.note}</div>}
               {isAdmin && selectedDoc.status === 'rejected' && (

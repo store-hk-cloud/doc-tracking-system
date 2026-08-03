@@ -85,6 +85,7 @@ export default function DeliveryPage() {
                   <th>No.</th>
                   <th>วันที่รับ</th>
                   <th>ผู้ส่ง</th>
+                  <th>เลขที่เอกสาร</th>
                   <th>เรื่อง</th>
                   <th>หน่วยงาน</th>
                   <th>ดำเนินการ</th>
@@ -96,6 +97,7 @@ export default function DeliveryPage() {
                     <td className="code-cell">{doc.running_no}</td>
                     <td>{doc.received_date}</td>
                     <td>{doc.sender}</td>
+                    <td>{doc.doc_number || '-'}</td>
                     <td>{doc.subject}</td>
                     <td>{doc.recipient_dept_name}</td>
                     <td>

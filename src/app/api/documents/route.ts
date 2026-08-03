@@ -100,6 +100,8 @@ export async function POST(request: NextRequest) {
         sender: body.sender,
         subject: body.subject,
         recipient_dept_id: body.recipient_dept_id,
+        inspector_signature: body.subject === 'ใบรับสินค้า' ? (body.inspector_signature || null) : null,
+        purchasing_signature: body.subject === 'ใบรับสินค้า' ? (body.purchasing_signature || null) : null,
         note: body.note || null,
         is_damaged: body.is_damaged || false,
         damage_image_url: body.damage_image_url || null,

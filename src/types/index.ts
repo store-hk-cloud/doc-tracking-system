@@ -56,6 +56,8 @@ export interface Document {
   subject: string;
   recipient_dept_id: string;
   recipient_dept_name?: string;
+  inspector_signature: string | null;
+  purchasing_signature: string | null;
   note: string | null;
   status: DocumentStatus;
   is_damaged: boolean;

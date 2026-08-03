@@ -27,9 +27,12 @@ export default function RegisterPage() {
     sender: '',
     subject: '',
     recipient_dept_id: '',
+    inspector_signature: '',
+    purchasing_signature: '',
     note: '',
     is_damaged: false,
   });
+  const isGoodsReceipt = form.subject === 'ใบรับสินค้า';
 
   // Photo lives only in memory (object URL / File) — never written to device storage.
   const clearPhoto = () => {
@@ -133,6 +136,8 @@ export default function RegisterPage() {
         sender: '',
         subject: '',
         recipient_dept_id: '',
+        inspector_signature: '',
+        purchasing_signature: '',
         note: '',
         is_damaged: false,
       });
@@ -206,6 +211,29 @@ export default function RegisterPage() {
               ))}
             </select>
           </div>
+
+          {isGoodsReceipt && (
+            <div className="form-row">
+              <div className="form-group">
+                <label>ผู้ตรวจสอบ</label>
+                <input
+                  type="text"
+                  value={form.inspector_signature}
+                  onChange={(e) => setForm({ ...form, inspector_signature: e.target.value })}
+                  placeholder="ชื่อ/ลายเซ็นผู้ตรวจสอบ"
+                />
+              </div>
+              <div className="form-group">
+                <label>จัดซื้อ</label>
+                <input
+                  type="text"
+                  value={form.purchasing_signature}
+                  onChange={(e) => setForm({ ...form, purchasing_signature: e.target.value })}
+                  placeholder="ชื่อ/ลายเซ็นจัดซื้อ"
+                />
+              </div>
+            </div>
+          )}
 
           <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <input

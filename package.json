@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "db:migrate:receipt-signatures": "node --env-file=.env.local scripts/run-receipt-signatures.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^7.0.0",
