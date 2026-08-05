@@ -29,12 +29,24 @@ export default function TrackingPage() {
   const isAdmin = profile?.role === 'super_admin' || profile?.role === 'admin';
   const isSuperAdmin = profile?.role === 'super_admin';
   const [selectedDoc, setSelectedDoc] = useState<any>(null);
+  const [signedCount, setSignedCount] = useState<number | null>(null);
+  const [closingAll, setClosingAll] = useState(false);
+  const [closeAllMessage, setCloseAllMessage] = useState('');
 
   useEffect(() => {
     window.fetch('/api/departments').then(r => r.json()).then(data => {
       if (data.success) setDepartments(data.data);
     });
   }, []);
+
+  const loadSignedCount = async () => {
+    if (!isAdmin) return;
+    const res = await window.fetch('/api/documents?status=signed');
+    const data = await res.json();
+    if (data.success) setSignedCount(data.data.filter((d: any) => d.delivery_log_id).length);
+  };
+
+  useEffect(() => { loadSignedCount(); }, [isAdmin]);
 
   const loadDocs = async () => {
     setLoading(true);
@@ -72,6 +84,38 @@ export default function TrackingPage() {
     } else {
       window.alert(data.error || 'เกิดข้อผิดพลาด');
     }
+  };
+
+  const handleCloseAllSigned = async () => {
+    setCloseAllMessage('');
+    const res = await window.fetch('/api/documents?status=signed');
+    const data = await res.json();
+    if (!data.success) return;
+    const targets = data.data.filter((d: any) => d.delivery_log_id);
+    if (targets.length === 0) {
+      setSignedCount(0);
+      return;
+    }
+    if (!window.confirm(`ปิดงานเอกสารที่ลงลายเซ็นผู้รับแล้วทั้งหมด ${targets.length} รายการ?`)) return;
+    setClosingAll(true);
+    const results = await Promise.all(
+      targets.map((d: any) =>
+        window
+          .fetch(`/api/deliveries/${d.delivery_log_id}/verify`, { method: 'PUT' })
+          .then((r) => r.json())
+          .catch(() => ({ success: false }))
+      )
+    );
+    const okCount = results.filter((r: any) => r.success).length;
+    const failCount = results.length - okCount;
+    setCloseAllMessage(
+      failCount > 0
+        ? `✅ ปิดงานสำเร็จ ${okCount} รายการ, ❌ ล้มเหลว ${failCount} รายการ`
+        : `✅ ปิดงานสำเร็จ ${okCount} รายการ`
+    );
+    setClosingAll(false);
+    await loadSignedCount();
+    await loadDocs();
   };
 
   const handleRedeliver = async (doc: any) => {
@@ -129,6 +173,29 @@ export default function TrackingPage() {
               </button>
             ))}
           </div>
+
+          {isAdmin && signedCount !== null && signedCount > 0 && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                marginTop: 12,
+                padding: '10px 14px',
+                background: 'var(--primary-soft)',
+                borderRadius: 8,
+                flexWrap: 'wrap',
+              }}
+            >
+              <span style={{ fontWeight: 700 }}>
+                มีเอกสารที่ลงลายเซ็นผู้รับแล้ว {signedCount} รายการ ยังไม่ถูกปิดงาน (รวมเอกสารเก่า)
+              </span>
+              <button className="secondary-button" style={{ width: 'auto', padding: '0 16px' }} onClick={handleCloseAllSigned} disabled={closingAll}>
+                {closingAll ? 'กำลังปิดงาน...' : '🔒 ปิดงานทั้งหมด'}
+              </button>
+            </div>
+          )}
+          {closeAllMessage && <div className="toast success" style={{ position: 'static', marginTop: 12 }}>{closeAllMessage}</div>}
         </div>
       </div>
 
