@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
       .single();
     const recipientName = recipient?.full_name || auth.context!.user.email || '';
     const isVerified = body.is_verified === true;
-    const newStatus = isVerified ? 'signed' : 'rejected';
+    const newStatus = isVerified ? 'closed' : 'rejected';
 
     // Atomically flip the document out of 'delivered' first. If two requests race,
     // only one WHERE status='delivered' update can succeed — the loser gets 409
