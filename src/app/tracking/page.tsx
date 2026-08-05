@@ -61,6 +61,19 @@ export default function TrackingPage() {
     }
   };
 
+  const handleCloseTask = async (doc: any) => {
+    if (!doc.delivery_log_id) return;
+    if (!window.confirm(`ปิดงานเอกสาร #${doc.running_no} "${doc.subject}"?`)) return;
+    const res = await window.fetch(`/api/deliveries/${doc.delivery_log_id}/verify`, { method: 'PUT' });
+    const data = await res.json();
+    if (data.success) {
+      setDocs(docs.map((d: any) => (d.id === doc.id ? { ...d, status: 'closed' } : d)));
+      setSelectedDoc((current: any) => (current && current.id === doc.id ? { ...current, status: 'closed' } : current));
+    } else {
+      window.alert(data.error || 'เกิดข้อผิดพลาด');
+    }
+  };
+
   const handleRedeliver = async (doc: any) => {
     if (!window.confirm(`ส่งเอกสาร #${doc.running_no} ให้ผู้รับเซ็นใหม่?`)) return;
     const res = await window.fetch(`/api/documents/${doc.id}/redeliver`, { method: 'PUT' });
@@ -220,6 +233,14 @@ export default function TrackingPage() {
                   style={{ marginTop: 8, background: 'var(--warning)', color: 'white', border: 'none', padding: '10px', borderRadius: 8, cursor: 'pointer' }}
                 >
                   📮 ส่งเซ็นใหม่
+                </button>
+              )}
+              {isAdmin && selectedDoc.status === 'signed' && selectedDoc.delivery_log_id && (
+                <button
+                  onClick={() => handleCloseTask(selectedDoc)}
+                  style={{ marginTop: 8, background: 'var(--success)', color: 'white', border: 'none', padding: '10px', borderRadius: 8, cursor: 'pointer' }}
+                >
+                  🔒 ปิดงานเลย
                 </button>
               )}
               {isSuperAdmin && (

@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
       supabase.from('profiles').select('id, full_name').in('id', profileIds.length ? profileIds : ['none']),
       supabase
         .from('delivery_logs')
-        .select('document_id, recipient_signature, recipient_signed_at')
+        .select('id, document_id, recipient_signature, recipient_signed_at, is_verified, verified_by_admin')
         .in('document_id', docIds.length ? docIds : ['none'])
         .order('created_at', { ascending: false }),
     ]);
@@ -58,10 +58,16 @@ export async function GET(request: NextRequest) {
     const deptMap = new Map((departments || []).map((d: any) => [d.id, d.name]));
     const profileMap = new Map((profiles || []).map((p: any) => [p.id, p.full_name]));
     // delivery_logs is ordered newest-first, so the first entry per document wins (latest attempt).
-    const recipientSignatureMap = new Map<string, { signature: string; signedAt: string }>();
+    const recipientSignatureMap = new Map<string, { id: string; signature: string; signedAt: string; isVerified: boolean; verifiedByAdmin: boolean }>();
     for (const log of deliveries || []) {
       if (!recipientSignatureMap.has(log.document_id)) {
-        recipientSignatureMap.set(log.document_id, { signature: log.recipient_signature, signedAt: log.recipient_signed_at });
+        recipientSignatureMap.set(log.document_id, {
+          id: log.id,
+          signature: log.recipient_signature,
+          signedAt: log.recipient_signed_at,
+          isVerified: log.is_verified,
+          verifiedByAdmin: log.verified_by_admin,
+        });
       }
     }
 
@@ -71,6 +77,9 @@ export async function GET(request: NextRequest) {
       recorded_by_name: profileMap.get(d.recorded_by) || null,
       recipient_signature: recipientSignatureMap.get(d.id)?.signature || null,
       recipient_signed_at: recipientSignatureMap.get(d.id)?.signedAt || null,
+      delivery_log_id: recipientSignatureMap.get(d.id)?.id || null,
+      recipient_verified: recipientSignatureMap.get(d.id)?.isVerified ?? null,
+      recipient_verified_by_admin: recipientSignatureMap.get(d.id)?.verifiedByAdmin ?? null,
     }));
 
     return NextResponse.json({ success: true, data: mapped });
