@@ -12,9 +12,9 @@ export async function GET() {
     const supabase = getServiceSupabase();
     const today = new Date().toISOString().split('T')[0];
 
-    let query = supabase.from('documents').select('status, is_damaged, received_date, recipient_dept_id');
+    let query = supabase.from('document_recipients').select('status, department_id, documents!inner(is_damaged, received_date)');
     if (auth.context?.profile.role === 'user') {
-      query = query.eq('recipient_dept_id', auth.context.profile.department_id || '00000000-0000-0000-0000-000000000000');
+      query = query.eq('department_id', auth.context.profile.department_id || '00000000-0000-0000-0000-000000000000');
     }
     const { data: all, error } = await query;
 
@@ -22,13 +22,13 @@ export async function GET() {
 
     const stats = {
       total: all?.length || 0,
-      today: all?.filter((d: any) => d.received_date === today).length || 0,
+      today: all?.filter((d: any) => d.documents?.received_date === today).length || 0,
       registered: all?.filter((d: any) => d.status === 'registered').length || 0,
       delivered: all?.filter((d: any) => d.status === 'delivered').length || 0,
       signed: all?.filter((d: any) => d.status === 'signed').length || 0,
       closed: all?.filter((d: any) => d.status === 'closed').length || 0,
       rejected: all?.filter((d: any) => d.status === 'rejected').length || 0,
-      damaged: all?.filter((d: any) => d.is_damaged).length || 0,
+      damaged: all?.filter((d: any) => d.documents?.is_damaged).length || 0,
     };
 
     return NextResponse.json({ success: true, data: stats });

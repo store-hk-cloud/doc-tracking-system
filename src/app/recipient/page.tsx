@@ -93,7 +93,7 @@ export default function RecipientListPage() {
           .fetch('/api/deliveries', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ document_id: id, is_verified: true, verification_note: null }),
+            body: JSON.stringify({ document_recipient_id: id, is_verified: true, verification_note: null }),
           })
           .then((r) => r.json())
           .catch(() => ({ success: false }))

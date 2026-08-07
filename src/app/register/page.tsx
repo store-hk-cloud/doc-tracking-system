@@ -26,13 +26,22 @@ export default function RegisterPage() {
     tax_invoice_no: '',
     sender: '',
     subject: '',
-    recipient_dept_id: '',
+    recipient_dept_ids: [] as string[],
     inspector_signature: '',
     purchasing_signature: '',
     note: '',
     is_damaged: false,
   });
   const isGoodsReceipt = form.subject === 'ใบรับสินค้า';
+
+  const toggleDept = (deptId: string) => {
+    setForm((current) => ({
+      ...current,
+      recipient_dept_ids: current.recipient_dept_ids.includes(deptId)
+        ? current.recipient_dept_ids.filter((id) => id !== deptId)
+        : [...current.recipient_dept_ids, deptId],
+    }));
+  };
 
   // Photo lives only in memory (object URL / File) — never written to device storage.
   const clearPhoto = () => {
@@ -95,8 +104,8 @@ export default function RegisterPage() {
     setError('');
     setSuccess('');
 
-    if (!form.sender || !form.subject || !form.recipient_dept_id) {
-      setError('กรุณากรอกข้อมูลที่จำเป็น (ผู้ส่ง, เรื่อง, หน่วยงาน)');
+    if (!form.sender || !form.subject || form.recipient_dept_ids.length === 0) {
+      setError('กรุณากรอกข้อมูลที่จำเป็น (ผู้ส่ง, เรื่อง, หน่วยงานอย่างน้อย 1 หน่วยงาน)');
       setLoading(false);
       return;
     }
@@ -135,7 +144,7 @@ export default function RegisterPage() {
         tax_invoice_no: '',
         sender: '',
         subject: '',
-        recipient_dept_id: '',
+        recipient_dept_ids: [],
         inspector_signature: '',
         purchasing_signature: '',
         note: '',
@@ -203,13 +212,20 @@ export default function RegisterPage() {
           </div>
 
           <div className="form-group">
-            <label>หน่วยงานผู้รับ *</label>
-            <select value={form.recipient_dept_id} onChange={(e) => setForm({ ...form, recipient_dept_id: e.target.value })} required>
-              <option value="">-- เลือกหน่วยงาน --</option>
+            <label>หน่วยงานผู้รับ * (เลือกได้มากกว่า 1 หน่วยงาน)</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }} role="group" aria-label="หน่วยงานผู้รับ">
               {departments.map((d: any) => (
-                <option key={d.id} value={d.id}>{d.name} ({d.code})</option>
+                <button
+                  key={d.id}
+                  type="button"
+                  className={`document-type-chip ${form.recipient_dept_ids.includes(d.id) ? 'active' : ''}`}
+                  aria-pressed={form.recipient_dept_ids.includes(d.id)}
+                  onClick={() => toggleDept(d.id)}
+                >
+                  {d.name} ({d.code})
+                </button>
               ))}
-            </select>
+            </div>
           </div>
 
           {isGoodsReceipt && (

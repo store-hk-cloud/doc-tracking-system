@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
 import { updateRow, findRowByValue } from '@/lib/google-sheets';
 import { notifyDepartment } from '@/lib/upstash';
-import { requireRoles } from '@/lib/supabase/auth-helpers';
+import { forbiddenResponse, requireRoles } from '@/lib/supabase/auth-helpers';
 
+// [id] here is a document_recipients.id — delivery is scoped to one
+// department's copy of a document, not the whole document.
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await requireRoles(['super_admin', 'admin']);
+    const auth = await requireRoles(['super_admin', 'admin', 'user']);
     if (auth.response) return auth.response;
 
     const { id } = await params;
@@ -17,21 +19,25 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ success: false, error: 'admin_signature is required' }, { status: 400 });
     }
 
-    const { data: existingDocumentData, error: existingDocumentError } = await supabase
-      .from('documents')
-      .select('status')
+    const { data: existingRecipient, error: existingError } = await supabase
+      .from('document_recipients')
+      .select('status, department_id, document_id')
       .eq('id', id)
       .single();
-    const existingDocument = existingDocumentData as { status: string } | null;
-    if (existingDocumentError || !existingDocument) {
+    if (existingError || !existingRecipient) {
       return NextResponse.json({ success: false, error: 'Document not found' }, { status: 404 });
     }
-    if (existingDocument.status !== 'registered') {
+    // Only 'user' is restricted to their own department here; admin/super_admin
+    // may still deliver to any department (unchanged from before this feature).
+    if (auth.context!.profile.role === 'user' && auth.context!.profile.department_id !== existingRecipient.department_id) {
+      return forbiddenResponse();
+    }
+    if (existingRecipient.status !== 'registered') {
       return NextResponse.json({ success: false, error: 'Only registered documents can be signed for delivery' }, { status: 409 });
     }
 
-    const { data, error } = await supabase
-      .from('documents')
+    const { data: recipient, error } = await supabase
+      .from('document_recipients')
       .update({
         admin_signature: body.admin_signature,
         admin_signed_at: new Date().toISOString(),
@@ -42,56 +48,46 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       .eq('id', id)
       .select()
       .single();
-
     if (error) throw error;
 
-    // Get department and profile names separately
+    const { data: doc } = await supabase.from('documents').select('*').eq('id', recipient.document_id).single();
+    if (!doc) throw new Error('Parent document not found');
+
     let deptName = '';
-    if (data.recipient_dept_id) {
-      const { data: dept } = await supabase.from('departments').select('name').eq('id', data.recipient_dept_id).single();
-      deptName = dept?.name || '';
-    }
+    const { data: dept } = await supabase.from('departments').select('name').eq('id', recipient.department_id).single();
+    deptName = dept?.name || '';
+
     let profName = '';
-    if (data.recorded_by) {
-      const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', data.recorded_by).single();
+    if (doc.recorded_by) {
+      const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', doc.recorded_by).single();
       profName = prof?.full_name || '';
     }
 
     // Notify department via Upstash
-    await notifyDepartment(data.recipient_dept_id, {
+    await notifyDepartment(recipient.department_id, {
       title: '📦 เอกสารใหม่ถึงหน่วยงาน',
-      body: `เอกสาร #${data.running_no}: ${data.subject} จาก ${data.sender}`,
-      docId: data.id,
-      runningNo: data.running_no,
+      body: `เอกสาร #${doc.running_no}: ${doc.subject} จาก ${doc.sender}`,
+      docId: recipient.id,
+      runningNo: doc.running_no,
     });
 
-    // Sync to Sheets (update existing row with admin signature)
-    const row = await findRowByValue('เอกสารเข้า', 1, String(data.running_no));
+    // Sync to Sheets (update this department's row only)
+    const row = await findRowByValue('เอกสารเข้า', 21, recipient.id);
     if (row) {
       await updateRow('เอกสารเข้า', row, [
-        String(data.running_no),           // A: Running No.
-        data.received_date,                // B: วันที่รับ
-        data.doc_number || '',             // C: เลขที่เอกสาร
-        data.sender,                       // D: ผู้ส่ง
-        data.subject,                      // E: เรื่อง
-        deptName,                          // F: หน่วยงาน
-        'delivered',                       // G: สถานะ
-        data.admin_signature || '',        // H: ลายเซ็น Admin
-        data.admin_signed_at || '',        // I: เวลา Admin ลงนาม
-        '',                                // J: ชื่อผู้รับ (waiting for recipient)
-        '',                                // K: ลายเซ็นผู้รับ
-        '',                                // L: เวลาผู้รับลงนาม
-        '',                                // M: ผลการตรวจสอบ
-        '',                                // N: หมายเหตุ (ผู้รับ)
-        data.is_damaged ? 'ใช่' : 'ไม่',    // O: เสียหาย
-        data.damage_image_url || '',        // P: รูปความเสียหาย
-        data.note || '',                    // Q: หมายเหตุ
-        profName,                          // R: ผู้บันทึก
-        data.updated_at,                   // S: updated_at
+        String(doc.running_no), doc.received_date, doc.doc_number || '',
+        doc.sender, doc.subject, deptName,
+        'delivered', recipient.admin_signature || '', recipient.admin_signed_at || '',
+        '', '', '', '', '',
+        doc.is_damaged ? 'ใช่' : 'ไม่', doc.damage_image_url || '', doc.note || '',
+        profName, recipient.updated_at, doc.tax_invoice_no || '', recipient.id,
       ]);
     }
 
-    return NextResponse.json({ success: true, data: { ...data, recipient_dept_name: deptName, recorded_by_name: profName } });
+    return NextResponse.json({
+      success: true,
+      data: { ...doc, ...recipient, id: recipient.id, document_id: doc.id, recipient_dept_id: recipient.department_id, recipient_dept_name: deptName, recorded_by_name: profName },
+    });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }

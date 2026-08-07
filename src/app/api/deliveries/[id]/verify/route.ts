@@ -13,12 +13,12 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     const { data: existingDeliveryData, error: existingDeliveryError } = await supabase
       .from('delivery_logs')
-      .select('id, document_id, is_verified, verified_by_admin')
+      .select('id, document_recipient_id, is_verified, verified_by_admin')
       .eq('id', id)
       .single();
     const existingDelivery = existingDeliveryData as {
       id: string;
-      document_id: string;
+      document_recipient_id: string;
       is_verified: boolean;
       verified_by_admin: boolean;
     } | null;
@@ -44,34 +44,35 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     if (deliveryError) throw deliveryError;
 
-    // Update document to closed
-    const { data: doc } = await supabase
-      .from('documents')
+    // Update this department's recipient row to closed
+    const { data: recipient } = await supabase
+      .from('document_recipients')
       .update({ status: 'closed' })
-      .eq('id', delivery.document_id)
+      .eq('id', delivery.document_recipient_id)
       .select()
       .single();
 
     // Sync to Sheets
-    if (doc) {
-      // Get department name
-      let deptName = '';
-      if (doc.recipient_dept_id) {
-        const { data: dept } = await supabase.from('departments').select('name').eq('id', doc.recipient_dept_id).single();
+    if (recipient) {
+      const { data: doc } = await supabase.from('documents').select('*').eq('id', recipient.document_id).single();
+      if (doc) {
+        let deptName = '';
+        const { data: dept } = await supabase.from('departments').select('name').eq('id', recipient.department_id).single();
         deptName = dept?.name || '';
-      }
 
-      const row = await findRowByValue('เอกสารเข้า', 1, String(doc.running_no));
-      if (row) {
-        updateRow('เอกสารเข้า', row, [
-          String(doc.running_no), doc.received_date, doc.doc_number || '',
-          doc.sender, doc.subject, deptName,
-          'closed', doc.admin_signature || '', doc.admin_signed_at || '',
-          delivery.recipient_signature, delivery.recipient_signed_at,
-          doc.is_damaged ? 'ใช่' : 'ไม่',
-          doc.damage_image_url || '', doc.note || '',
-          '', doc.created_at, doc.updated_at,
-        ]);
+        const row = await findRowByValue('เอกสารเข้า', 21, recipient.id);
+        if (row) {
+          updateRow('เอกสารเข้า', row, [
+            String(doc.running_no), doc.received_date, doc.doc_number || '',
+            doc.sender, doc.subject, deptName,
+            'closed', recipient.admin_signature || '', recipient.admin_signed_at || '',
+            delivery.recipient_signature, delivery.recipient_signature, delivery.recipient_signed_at,
+            'ถูกต้อง', '',
+            doc.is_damaged ? 'ใช่' : 'ไม่',
+            doc.damage_image_url || '', doc.note || '',
+            '', recipient.updated_at, doc.tax_invoice_no || '', recipient.id,
+          ]);
+        }
       }
     }
 

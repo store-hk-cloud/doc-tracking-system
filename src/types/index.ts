@@ -46,8 +46,13 @@ export const DOCUMENT_STATUS_COLORS: Record<DocumentStatus, string> = {
 };
 
 // ── Document ──
+// NOTE: since multi-department support, each "document" a client sees is really
+// one document_recipients row flattened with its parent document's shared fields.
+// `id` = document_recipients.id (used for sign/deliveries/redeliver/delete),
+// `document_id` = the shared documents.id (rarely needed directly by the UI).
 export interface Document {
   id: string;
+  document_id: string;
   running_no: number;
   received_date: string;
   doc_number: string | null;

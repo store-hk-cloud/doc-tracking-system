@@ -3,6 +3,7 @@ import { getServiceSupabase } from '@/lib/supabase/admin';
 import { updateRow, findRowByValue } from '@/lib/google-sheets';
 import { canAccessDepartment, forbiddenResponse, requireRoles } from '@/lib/supabase/auth-helpers';
 
+// [id] here is a document_recipients.id — a specific department's copy of a document.
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const auth = await requireRoles(['super_admin', 'admin', 'user']);
@@ -10,21 +11,24 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
     const { id } = await params;
     const supabase = getServiceSupabase();
-    const { data, error } = await supabase
-      .from('documents')
+    const { data: recipient, error: recipientError } = await supabase
+      .from('document_recipients')
       .select('*')
       .eq('id', id)
       .single();
+    if (recipientError || !recipient) {
+      return NextResponse.json({ success: false, error: 'Document not found' }, { status: 404 });
+    }
+    if (!canAccessDepartment(auth.context!, recipient.department_id)) return forbiddenResponse();
+
+    const { data, error } = await supabase.from('documents').select('*').eq('id', recipient.document_id).single();
     if (error) throw error;
-    if (!canAccessDepartment(auth.context!, data.recipient_dept_id)) return forbiddenResponse();
 
     // Get department and profile names separately
     let recipient_dept_name = null;
     let recorded_by_name = null;
-    if (data.recipient_dept_id) {
-      const { data: dept } = await supabase.from('departments').select('name').eq('id', data.recipient_dept_id).single();
-      recipient_dept_name = dept?.name || null;
-    }
+    const { data: dept } = await supabase.from('departments').select('name').eq('id', recipient.department_id).single();
+    recipient_dept_name = dept?.name || null;
     if (data.recorded_by) {
       const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', data.recorded_by).single();
       recorded_by_name = prof?.full_name || null;
@@ -32,13 +36,23 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
     return NextResponse.json({
       success: true,
-      data: { ...data, recipient_dept_name, recorded_by_name },
+      data: {
+        ...data,
+        ...recipient,
+        id: recipient.id,
+        document_id: data.id,
+        recipient_dept_id: recipient.department_id,
+        recipient_dept_name,
+        recorded_by_name,
+      },
     });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
 
+// NOTE: unlike GET/DELETE above, [id] here is a documents.id (the shared row) —
+// this endpoint edits document-level fields and currently has no UI caller.
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const auth = await requireRoles(['super_admin', 'admin']);
@@ -122,6 +136,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   }
 }
 
+// [id] here is a document_recipients.id — deletes only that department's link.
+// If it was the last remaining recipient of the parent document, the shared
+// document row is deleted too (nothing left pointing at it).
 export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const auth = await requireRoles(['super_admin']);
@@ -129,8 +146,29 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
 
     const { id } = await params;
     const supabase = getServiceSupabase();
-    const { error } = await supabase.from('documents').delete().eq('id', id);
-    if (error) throw error;
+
+    const { data: recipient, error: fetchError } = await supabase
+      .from('document_recipients')
+      .select('document_id')
+      .eq('id', id)
+      .single();
+    if (fetchError || !recipient) {
+      return NextResponse.json({ success: false, error: 'Document not found' }, { status: 404 });
+    }
+
+    const { error: deleteError } = await supabase.from('document_recipients').delete().eq('id', id);
+    if (deleteError) throw deleteError;
+
+    const { count } = await supabase
+      .from('document_recipients')
+      .select('id', { count: 'exact', head: true })
+      .eq('document_id', recipient.document_id);
+
+    if (!count) {
+      const { error: docDeleteError } = await supabase.from('documents').delete().eq('id', recipient.document_id);
+      if (docDeleteError) throw docDeleteError;
+    }
+
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

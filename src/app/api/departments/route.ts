@@ -54,7 +54,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     const [{ count: docCount }, { count: profileCount }] = await Promise.all([
-      supabase.from('documents').select('id', { count: 'exact', head: true }).eq('recipient_dept_id', id),
+      supabase.from('document_recipients').select('id', { count: 'exact', head: true }).eq('department_id', id),
       supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('department_id', id),
     ]);
     if ((docCount || 0) > 0 || (profileCount || 0) > 0) {

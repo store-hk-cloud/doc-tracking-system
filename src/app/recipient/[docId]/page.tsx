@@ -25,7 +25,7 @@ export default function RecipientPage() {
         if (data.success) {
           setDoc(data.data);
           // Check if already signed via delivery logs
-          const deliveryRes = await window.fetch('/api/deliveries?document_id=' + docId);
+          const deliveryRes = await window.fetch('/api/deliveries?document_recipient_id=' + docId);
           const deliveryData = await deliveryRes.json();
           if (deliveryData.success && deliveryData.data.length > 0) {
             setExistingDelivery(deliveryData.data[0]);
@@ -51,7 +51,7 @@ export default function RecipientPage() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        document_id: docId,
+        document_recipient_id: docId,
         is_verified: verified,
         verification_note: verified ? null : verifyNote,
       }),

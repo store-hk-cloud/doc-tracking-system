@@ -25,6 +25,8 @@ const HEADERS = [
   'หมายเหตุ',          // Q - note at creation
   'ผู้บันทึก',          // R
   'updated_at',        // S
+  'เลขใบกำกับภาษี',     // T
+  'รหัสอ้างอิง',        // U - document_recipients.id, used to find/update this row
 ];
 
 /** Get today's date as YYYY-MM-DD */
@@ -69,7 +71,7 @@ async function getOrCreateSpreadsheet(): Promise<string> {
     // Write headers
     await sheets.spreadsheets.values.update({
       spreadsheetId: cachedSpreadsheetId,
-      range: `${today}!A1:S1`,
+      range: `${today}!A1:U1`,
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: [HEADERS] },
     });
@@ -117,7 +119,7 @@ async function getOrCreateDailySheet(): Promise<string> {
     // Write headers
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `${today}!A1:S1`,
+      range: `${today}!A1:U1`,
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: [HEADERS] },
     });
@@ -143,7 +145,7 @@ export async function appendRow(sheetName: string, values: string[]) {
     const today = await getOrCreateDailySheet();
     await sheets.spreadsheets.values.append({
       spreadsheetId,
-      range: `${today}!A:S`,
+      range: `${today}!A:U`,
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: [values] },
     });
@@ -159,7 +161,7 @@ export async function updateRow(sheetName: string, rowIndex: number, values: str
     const today = todaySheetName();
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `${today}!A${rowIndex}:S${rowIndex}`,
+      range: `${today}!A${rowIndex}:U${rowIndex}`,
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: [values] },
     });
@@ -175,7 +177,7 @@ export async function updateRowInSheet(sheet: string, rowIndex: number, values: 
     const sheets = getSheetsClient();
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `${sheet}!A${rowIndex}:S${rowIndex}`,
+      range: `${sheet}!A${rowIndex}:U${rowIndex}`,
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: [values] },
     });
@@ -198,7 +200,7 @@ async function findRowByValueAndSheet(column: number, value: string): Promise<{ 
   for (const sheet of targetSheets) {
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `${sheet}!A:S`,
+      range: `${sheet}!A:U`,
     });
     const rows = res.data.values || [];
     for (let i = 1; i < rows.length; i++) {

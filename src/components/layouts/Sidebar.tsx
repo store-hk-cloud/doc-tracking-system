@@ -14,7 +14,7 @@ export function Sidebar() {
   const items = [
     { path: '/dashboard', label: '📊 Dashboard', roles: ['super_admin', 'admin', 'user'] },
     { path: '/register', label: '📝 ลงทะเบียน', roles: ['super_admin', 'admin', 'user'] },
-    { path: '/delivery', label: '📦 ส่งมอบ', roles: ['super_admin', 'admin'] },
+    { path: '/delivery', label: '📦 ส่งมอบ', roles: ['super_admin', 'admin', 'user'] },
     { path: '/recipient', label: '✍️ รับเอกสาร', roles: ['super_admin', 'admin', 'user'] },
     { path: '/tracking', label: '🔍 ติดตาม', roles: ['super_admin', 'admin', 'user'] },
     { path: '/reports', label: '📈 รายงาน', roles: ['super_admin', 'admin', 'user'] },
