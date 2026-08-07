@@ -199,6 +199,7 @@ export default function DeliveryPage() {
             <div style={{ display: 'grid', gap: 8, marginBottom: 16, fontSize: '0.9rem' }}>
               <div><strong>ผู้ส่ง:</strong> {selectedDoc.sender}</div>
               <div><strong>เรื่อง:</strong> {selectedDoc.subject}</div>
+              <div><strong>เลขที่เอกสาร:</strong> {selectedDoc.doc_number || '-'}</div>
               <div><strong>หน่วยงาน:</strong> {selectedDoc.recipient_dept_name}</div>
               <div><strong>วันที่รับ:</strong> {selectedDoc.received_date}</div>
             </div>
@@ -236,6 +237,14 @@ export default function DeliveryPage() {
           <div className="scan-popup-sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420, margin: '0 auto' }}>
             <div className="scan-popup-handle" />
             <h3 style={{ marginBottom: 12 }}>✍️ เซ็นรับ — {signField.label} #{signField.doc.running_no}</h3>
+
+            <div style={{ display: 'grid', gap: 8, marginBottom: 16, fontSize: '0.9rem' }}>
+              <div><strong>ผู้ส่ง:</strong> {signField.doc.sender}</div>
+              <div><strong>เรื่อง:</strong> {signField.doc.subject}</div>
+              <div><strong>เลขที่เอกสาร:</strong> {signField.doc.doc_number || '-'}</div>
+              <div><strong>หน่วยงาน:</strong> {signField.doc.recipient_dept_name}</div>
+              <div><strong>วันที่รับ:</strong> {signField.doc.received_date}</div>
+            </div>
 
             <div className="form-group">
               <label>ชื่อ{signField.label} *</label>
