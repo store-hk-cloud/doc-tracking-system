@@ -14,6 +14,11 @@ export default function DeliveryPage() {
   const [showModal, setShowModal] = useState(false);
   const [error, setError] = useState('');
 
+  const [signField, setSignField] = useState<{ doc: any; field: 'inspector_signature' | 'purchasing_signature'; label: string } | null>(null);
+  const [signFieldValue, setSignFieldValue] = useState('');
+  const [signFieldSubmitting, setSignFieldSubmitting] = useState(false);
+  const [signFieldError, setSignFieldError] = useState('');
+
   const fetchDocs = async () => {
     try {
       const res = await fetch('/api/documents?status=registered');
@@ -58,6 +63,26 @@ export default function DeliveryPage() {
     } else {
       setError(data.error || 'เกิดข้อผิดพลาด');
     }
+  };
+
+  const handleSignField = async () => {
+    if (!signField || !signFieldValue.trim()) return;
+    setSignFieldSubmitting(true);
+    setSignFieldError('');
+    const res = await fetch(`/api/documents/${signField.doc.id}/sign`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [signField.field]: signFieldValue }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      setSignField(null);
+      setSignFieldValue('');
+      fetchDocs();
+    } else {
+      setSignFieldError(data.error || 'เกิดข้อผิดพลาด');
+    }
+    setSignFieldSubmitting(false);
   };
 
   return (
@@ -115,8 +140,47 @@ export default function DeliveryPage() {
                         ✍️ ส่งมอบ
                       </button>
                     </td>
-                    <td>{doc.inspector_signature || '-'}</td>
-                    <td>{doc.purchasing_signature || '-'}</td>
+                    {doc.subject === 'ใบรับสินค้า' ? (
+                      <>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span>{doc.inspector_signature || '-'}</span>
+                            <button
+                              className="ghost-button"
+                              style={{ width: 'auto', padding: '0 10px', minHeight: 28, fontSize: '0.78rem' }}
+                              onClick={() => {
+                                setSignField({ doc, field: 'inspector_signature', label: 'ผู้ตรวจสอบ' });
+                                setSignFieldValue(doc.inspector_signature || '');
+                                setSignFieldError('');
+                              }}
+                            >
+                              {doc.inspector_signature ? '✏️ แก้ไข' : '✍️ เซ็น'}
+                            </button>
+                          </div>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span>{doc.purchasing_signature || '-'}</span>
+                            <button
+                              className="ghost-button"
+                              style={{ width: 'auto', padding: '0 10px', minHeight: 28, fontSize: '0.78rem' }}
+                              onClick={() => {
+                                setSignField({ doc, field: 'purchasing_signature', label: 'จัดซื้อ' });
+                                setSignFieldValue(doc.purchasing_signature || '');
+                                setSignFieldError('');
+                              }}
+                            >
+                              {doc.purchasing_signature ? '✏️ แก้ไข' : '✍️ เซ็น'}
+                            </button>
+                          </div>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td>-</td>
+                        <td>-</td>
+                      </>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -162,6 +226,40 @@ export default function DeliveryPage() {
             </div>
 
             <button className="scan-popup-close" onClick={() => setShowModal(false)}>ปิด</button>
+          </div>
+        </div>
+      )}
+
+      {/* Inspector / purchasing single-field sign popup */}
+      {signField && (
+        <div className="scan-popup-overlay" onClick={() => setSignField(null)}>
+          <div className="scan-popup-sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420, margin: '0 auto' }}>
+            <div className="scan-popup-handle" />
+            <h3 style={{ marginBottom: 12 }}>✍️ เซ็นรับ — {signField.label} #{signField.doc.running_no}</h3>
+
+            <div className="form-group">
+              <label>ชื่อ{signField.label} *</label>
+              <input
+                type="text"
+                value={signFieldValue}
+                onChange={(e) => setSignFieldValue(e.target.value)}
+                placeholder={`พิมพ์ชื่อ${signField.label}`}
+                style={{ fontFamily: 'Caveat, cursive', fontSize: '1.3rem' }}
+              />
+            </div>
+
+            {signFieldError && <div className="toast error" style={{ position: 'static', marginBottom: 8 }}>{signFieldError}</div>}
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+              <button className="ghost-button" onClick={() => setSignField(null)} style={{ flex: 1 }}>
+                ยกเลิก
+              </button>
+              <button className="secondary-button" onClick={handleSignField} disabled={signFieldSubmitting} style={{ flex: 1 }}>
+                {signFieldSubmitting ? 'กำลังบันทึก...' : '✅ ยืนยัน'}
+              </button>
+            </div>
+
+            <button className="scan-popup-close" onClick={() => setSignField(null)}>ปิด</button>
           </div>
         </div>
       )}

@@ -15,8 +15,11 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const supabase = getServiceSupabase();
     const body = await request.json();
 
-    if (!body.admin_signature) {
-      return NextResponse.json({ success: false, error: 'admin_signature is required' }, { status: 400 });
+    const isDelivering = !!body.admin_signature;
+    const hasInspectorSig = body.inspector_signature !== undefined;
+    const hasPurchasingSig = body.purchasing_signature !== undefined;
+    if (!isDelivering && !hasInspectorSig && !hasPurchasingSig) {
+      return NextResponse.json({ success: false, error: 'admin_signature, inspector_signature or purchasing_signature is required' }, { status: 400 });
     }
 
     const { data: existingRecipient, error: existingError } = await supabase
@@ -36,14 +39,14 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ success: false, error: 'Only registered documents can be signed for delivery' }, { status: 409 });
     }
 
+    // Signing inspector/purchasing alone does NOT move status to 'delivered' —
+    // only providing admin_signature actually delivers the document.
     const { data: recipient, error } = await supabase
       .from('document_recipients')
       .update({
-        admin_signature: body.admin_signature,
-        admin_signed_at: new Date().toISOString(),
-        status: 'delivered',
-        ...(body.inspector_signature !== undefined ? { inspector_signature: body.inspector_signature || null } : {}),
-        ...(body.purchasing_signature !== undefined ? { purchasing_signature: body.purchasing_signature || null } : {}),
+        ...(isDelivering ? { admin_signature: body.admin_signature, admin_signed_at: new Date().toISOString(), status: 'delivered' } : {}),
+        ...(hasInspectorSig ? { inspector_signature: body.inspector_signature || null } : {}),
+        ...(hasPurchasingSig ? { purchasing_signature: body.purchasing_signature || null } : {}),
       })
       .eq('id', id)
       .select()
@@ -63,13 +66,15 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       profName = prof?.full_name || '';
     }
 
-    // Notify department via Upstash
-    await notifyDepartment(recipient.department_id, {
-      title: '📦 เอกสารใหม่ถึงหน่วยงาน',
-      body: `เอกสาร #${doc.running_no}: ${doc.subject} จาก ${doc.sender}`,
-      docId: recipient.id,
-      runningNo: doc.running_no,
-    });
+    // Notify department via Upstash only when the document is actually delivered
+    if (isDelivering) {
+      await notifyDepartment(recipient.department_id, {
+        title: '📦 เอกสารใหม่ถึงหน่วยงาน',
+        body: `เอกสาร #${doc.running_no}: ${doc.subject} จาก ${doc.sender}`,
+        docId: recipient.id,
+        runningNo: doc.running_no,
+      });
+    }
 
     // Sync to Sheets (update this department's row only)
     const row = await findRowByValue('เอกสารเข้า', 21, recipient.id);
@@ -77,7 +82,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       await updateRow('เอกสารเข้า', row, [
         String(doc.running_no), doc.received_date, doc.doc_number || '',
         doc.sender, doc.subject, deptName,
-        'delivered', recipient.admin_signature || '', recipient.admin_signed_at || '',
+        recipient.status, recipient.admin_signature || '', recipient.admin_signed_at || '',
         '', '', '', '', '',
         doc.is_damaged ? 'ใช่' : 'ไม่', doc.damage_image_url || '', doc.note || '',
         profName, recipient.updated_at, doc.tax_invoice_no || '', recipient.id,
