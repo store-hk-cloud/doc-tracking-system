@@ -11,11 +11,8 @@ export default function DeliveryPage() {
   const [loading, setLoading] = useState(true);
   const [selectedDoc, setSelectedDoc] = useState<any>(null);
   const [signature, setSignature] = useState('');
-  const [inspectorSig, setInspectorSig] = useState('');
-  const [purchasingSig, setPurchasingSig] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [error, setError] = useState('');
-  const isGoodsReceipt = selectedDoc?.subject === 'ใบรับสินค้า';
 
   const fetchDocs = async () => {
     try {
@@ -50,10 +47,7 @@ export default function DeliveryPage() {
     const res = await fetch(`/api/documents/${selectedDoc.id}/sign`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        admin_signature: signature,
-        ...(isGoodsReceipt ? { inspector_signature: inspectorSig, purchasing_signature: purchasingSig } : {}),
-      }),
+      body: JSON.stringify({ admin_signature: signature }),
     });
     const data = await res.json();
     if (data.success) {
@@ -95,6 +89,8 @@ export default function DeliveryPage() {
                   <th>เรื่อง</th>
                   <th>หน่วยงาน</th>
                   <th>ดำเนินการ</th>
+                  <th>ผู้ตรวจสอบ</th>
+                  <th>จัดซื้อ</th>
                 </tr>
               </thead>
               <tbody>
@@ -113,14 +109,14 @@ export default function DeliveryPage() {
                           setSelectedDoc(doc);
                           setShowModal(true);
                           setSignature('');
-                          setInspectorSig(doc.inspector_signature || '');
-                          setPurchasingSig(doc.purchasing_signature || '');
                           setError('');
                         }}
                       >
                         ✍️ ส่งมอบ
                       </button>
                     </td>
+                    <td>{doc.inspector_signature || '-'}</td>
+                    <td>{doc.purchasing_signature || '-'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -153,29 +149,6 @@ export default function DeliveryPage() {
                 style={{ fontFamily: 'Caveat, cursive', fontSize: '1.3rem' }}
               />
             </div>
-
-            {isGoodsReceipt && (
-              <div className="form-row">
-                <div className="form-group">
-                  <label>ผู้ตรวจสอบ</label>
-                  <input
-                    type="text"
-                    value={inspectorSig}
-                    onChange={(e) => setInspectorSig(e.target.value)}
-                    placeholder="ชื่อ/ลายเซ็นผู้ตรวจสอบ"
-                  />
-                </div>
-                <div className="form-group">
-                  <label>จัดซื้อ</label>
-                  <input
-                    type="text"
-                    value={purchasingSig}
-                    onChange={(e) => setPurchasingSig(e.target.value)}
-                    placeholder="ชื่อ/ลายเซ็นจัดซื้อ"
-                  />
-                </div>
-              </div>
-            )}
 
             {error && <div className="toast error" style={{ position: 'static', marginBottom: 8 }}>{error}</div>}
 
