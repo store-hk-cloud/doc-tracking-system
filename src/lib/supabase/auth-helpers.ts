@@ -51,5 +51,5 @@ export async function requireRoles(roles: UserRole[]) {
 }
 
 export function canAccessDepartment(context: AuthContext, departmentId: string | null | undefined) {
-  return context.profile.role !== 'user' || context.profile.department_id === departmentId;
+  return context.profile.department_id === departmentId;
 }

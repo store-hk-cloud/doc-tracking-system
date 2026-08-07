@@ -62,7 +62,10 @@ export default function RecipientListPage() {
     if (tab === 'closed' && !closedLoaded) loadClosed();
   }, [tab]);
 
+  const canSign = (doc: any) => !!profile?.department_id && profile.department_id === doc.recipient_dept_id;
+
   const visiblePending = pendingDocs.filter((d: any) => (d.admin_signed_at || '').split('T')[0] === pendingDate);
+  const signablePending = visiblePending.filter(canSign);
 
   const toggleSelect = (id: string) => {
     setSelectedIds((current) => {
@@ -74,7 +77,7 @@ export default function RecipientListPage() {
 
   const toggleSelectAll = () => {
     setSelectedIds((current) =>
-      current.size === visiblePending.length ? new Set() : new Set(visiblePending.map((d: any) => d.id))
+      current.size === signablePending.length ? new Set() : new Set(signablePending.map((d: any) => d.id))
     );
   };
 
@@ -174,7 +177,7 @@ export default function RecipientListPage() {
                     <th>
                       <input
                         type="checkbox"
-                        checked={selectedIds.size === visiblePending.length && visiblePending.length > 0}
+                        checked={selectedIds.size === signablePending.length && signablePending.length > 0}
                         onChange={toggleSelectAll}
                       />
                     </th>
@@ -183,29 +186,44 @@ export default function RecipientListPage() {
                     <th>เลขที่เอกสาร</th>
                     <th>ผู้ส่ง</th>
                     <th>เรื่อง</th>
-                    <th>หน่วยงาน</th>
+                    <th>ผู้ส่งมอบ</th>
+                    <th>ผู้ตรวจสอบ</th>
+                    <th>จัดซื้อ</th>
+                    <th>ปลายทาง</th>
                     <th>ดำเนินการ</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {visiblePending.map((doc: any) => (
-                    <tr key={doc.id}>
-                      <td>
-                        <input type="checkbox" checked={selectedIds.has(doc.id)} onChange={() => toggleSelect(doc.id)} />
-                      </td>
-                      <td className="code-cell">{doc.running_no}</td>
-                      <td>{doc.received_date}</td>
-                      <td>{doc.doc_number || '-'}</td>
-                      <td>{doc.sender}</td>
-                      <td>{doc.subject}</td>
-                      <td>{doc.recipient_dept_name}</td>
-                      <td>
-                        <a href={`/recipient/${doc.id}`} className="table-action-button" style={{ textDecoration: 'none', display: 'inline-flex', padding: '6px 14px' }}>
-                          ✍️ ลงชื่อรับ
-                        </a>
-                      </td>
-                    </tr>
-                  ))}
+                  {visiblePending.map((doc: any) => {
+                    const eligible = canSign(doc);
+                    return (
+                      <tr key={doc.id}>
+                        <td>
+                          {eligible && (
+                            <input type="checkbox" checked={selectedIds.has(doc.id)} onChange={() => toggleSelect(doc.id)} />
+                          )}
+                        </td>
+                        <td className="code-cell">{doc.running_no}</td>
+                        <td>{doc.received_date}</td>
+                        <td>{doc.doc_number || '-'}</td>
+                        <td>{doc.sender}</td>
+                        <td>{doc.subject}</td>
+                        <td>{doc.admin_signature || '-'}</td>
+                        <td>{doc.inspector_signature || '-'}</td>
+                        <td>{doc.purchasing_signature || '-'}</td>
+                        <td>{doc.recipient_dept_name}</td>
+                        <td>
+                          {eligible ? (
+                            <a href={`/recipient/${doc.id}`} className="table-action-button" style={{ textDecoration: 'none', display: 'inline-flex', padding: '6px 14px' }}>
+                              ✍️ ลงชื่อรับ
+                            </a>
+                          ) : (
+                            <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>หน่วยงานอื่น</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -257,7 +275,10 @@ export default function RecipientListPage() {
                     <th>เลขที่เอกสาร</th>
                     <th>ผู้ส่ง</th>
                     <th>เรื่อง</th>
-                    <th>หน่วยงาน</th>
+                    <th>ผู้ส่งมอบ</th>
+                    <th>ผู้ตรวจสอบ</th>
+                    <th>จัดซื้อ</th>
+                    <th>ปลายทาง</th>
                     <th>สถานะ</th>
                   </tr>
                 </thead>
@@ -269,6 +290,9 @@ export default function RecipientListPage() {
                       <td>{doc.doc_number || '-'}</td>
                       <td>{doc.sender}</td>
                       <td>{doc.subject}</td>
+                      <td>{doc.admin_signature || '-'}</td>
+                      <td>{doc.inspector_signature || '-'}</td>
+                      <td>{doc.purchasing_signature || '-'}</td>
                       <td>{doc.recipient_dept_name}</td>
                       <td>
                         <span className="status-badge success">ปิดงานแล้ว</span>

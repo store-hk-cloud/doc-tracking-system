@@ -11,8 +11,11 @@ export default function DeliveryPage() {
   const [loading, setLoading] = useState(true);
   const [selectedDoc, setSelectedDoc] = useState<any>(null);
   const [signature, setSignature] = useState('');
+  const [inspectorSig, setInspectorSig] = useState('');
+  const [purchasingSig, setPurchasingSig] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [error, setError] = useState('');
+  const isGoodsReceipt = selectedDoc?.subject === 'ใบรับสินค้า';
 
   const fetchDocs = async () => {
     try {
@@ -47,7 +50,10 @@ export default function DeliveryPage() {
     const res = await fetch(`/api/documents/${selectedDoc.id}/sign`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ admin_signature: signature }),
+      body: JSON.stringify({
+        admin_signature: signature,
+        ...(isGoodsReceipt ? { inspector_signature: inspectorSig, purchasing_signature: purchasingSig } : {}),
+      }),
     });
     const data = await res.json();
     if (data.success) {
@@ -103,7 +109,14 @@ export default function DeliveryPage() {
                     <td>
                       <button
                         className="table-action-button"
-                        onClick={() => { setSelectedDoc(doc); setShowModal(true); setSignature(''); setError(''); }}
+                        onClick={() => {
+                          setSelectedDoc(doc);
+                          setShowModal(true);
+                          setSignature('');
+                          setInspectorSig(doc.inspector_signature || '');
+                          setPurchasingSig(doc.purchasing_signature || '');
+                          setError('');
+                        }}
                       >
                         ✍️ ส่งมอบ
                       </button>
@@ -140,6 +153,29 @@ export default function DeliveryPage() {
                 style={{ fontFamily: 'Caveat, cursive', fontSize: '1.3rem' }}
               />
             </div>
+
+            {isGoodsReceipt && (
+              <div className="form-row">
+                <div className="form-group">
+                  <label>ผู้ตรวจสอบ</label>
+                  <input
+                    type="text"
+                    value={inspectorSig}
+                    onChange={(e) => setInspectorSig(e.target.value)}
+                    placeholder="ชื่อ/ลายเซ็นผู้ตรวจสอบ"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>จัดซื้อ</label>
+                  <input
+                    type="text"
+                    value={purchasingSig}
+                    onChange={(e) => setPurchasingSig(e.target.value)}
+                    placeholder="ชื่อ/ลายเซ็นจัดซื้อ"
+                  />
+                </div>
+              </div>
+            )}
 
             {error && <div className="toast error" style={{ position: 'static', marginBottom: 8 }}>{error}</div>}
 

@@ -36,6 +36,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         admin_signature: body.admin_signature,
         admin_signed_at: new Date().toISOString(),
         status: 'delivered',
+        ...(body.inspector_signature !== undefined ? { inspector_signature: body.inspector_signature || null } : {}),
+        ...(body.purchasing_signature !== undefined ? { purchasing_signature: body.purchasing_signature || null } : {}),
       })
       .eq('id', id)
       .select()
