@@ -208,8 +208,8 @@ export default function DeliveryPage() {
               placeholder="พิมพ์ชื่อผู้ส่งมอบ (ใช้กับทุกรายการที่เลือก)"
               style={{ flex: '1 1 260px', minHeight: 38, fontFamily: 'Caveat, cursive', fontSize: '1.1rem' }}
             />
-            <button className="secondary-button" style={{ width: 'auto', padding: '0 16px' }} onClick={handleBulkSign} disabled={bulkSigning}>
-              {bulkSigning ? 'กำลังส่งมอบ...' : '✅ ส่งมอบทั้งหมด'}
+            <button className="ghost-button" style={{ width: 'auto', padding: '0 14px' }} onClick={handleBulkSign} disabled={bulkSigning}>
+              {bulkSigning ? 'กำลังส่งมอบ...' : `✅ ส่งมอบทั้งหมด (${selectedIds.size})`}
             </button>
             {eligibleForBulkField.length > 0 && (
               <>
