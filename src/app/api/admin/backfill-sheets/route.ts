@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
 import { requireRoles } from '@/lib/supabase/auth-helpers';
-import { listSheetTabs, getSheetValues, batchUpdateRows, appendRows } from '@/lib/google-sheets';
+import { listSheetTabs, getSheetValues, batchUpdateRowsOrThrow, appendRowsOrThrow, getSpreadsheetUrl } from '@/lib/google-sheets';
 
 // One-time/repeatable maintenance endpoint covering two kinds of drift between
 // Supabase and Google Sheets:
@@ -103,16 +103,19 @@ export async function GET() {
 
     // One API call per sheet tab needing updates, and one more for all appends
     // combined — looping a call per row is what blows through Sheets' quota.
+    // Use the throwing variants here (unlike normal sign/deliver actions) so a
+    // failed write surfaces as an error instead of silently reporting success.
     for (const [sheet, list] of bySheet) {
-      await batchUpdateRows(sheet, list);
+      await batchUpdateRowsOrThrow(sheet, list);
     }
-    await appendRows('เอกสารเข้า', toAppend);
+    await appendRowsOrThrow('เอกสารเข้า', toAppend);
 
     const updated = [...bySheet.values()].reduce((sum, list) => sum + list.length, 0);
     const appended = toAppend.length;
 
     return NextResponse.json({
       success: true,
+      spreadsheetUrl: await getSpreadsheetUrl(),
       tabsScanned: tabs.length,
       updated,
       appended,

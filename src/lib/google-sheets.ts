@@ -164,20 +164,27 @@ export async function getSheetValues(sheet: string): Promise<string[][]> {
 
 /** Overwrite multiple full rows (A:U) within a single sheet tab in one API call. */
 export async function batchUpdateRows(sheet: string, updates: { row: number; values: string[] }[]) {
-  if (updates.length === 0) return;
   try {
-    const spreadsheetId = await getSpreadsheetId();
-    const sheets = getSheetsClient();
-    await sheets.spreadsheets.values.batchUpdate({
-      spreadsheetId,
-      requestBody: {
-        valueInputOption: 'USER_ENTERED',
-        data: updates.map((u) => ({ range: `${sheet}!A${u.row}:U${u.row}`, values: [u.values] })),
-      },
-    });
+    await batchUpdateRowsOrThrow(sheet, updates);
   } catch (error) {
     console.error('[Google Sheets] Batch update error:', error);
   }
+}
+
+// Throwing variant — use where the caller needs to know a write actually
+// succeeded (e.g. an admin-triggered backfill), instead of the fire-and-forget
+// swallow-errors behavior other callers rely on.
+export async function batchUpdateRowsOrThrow(sheet: string, updates: { row: number; values: string[] }[]) {
+  if (updates.length === 0) return;
+  const spreadsheetId = await getSpreadsheetId();
+  const sheets = getSheetsClient();
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      valueInputOption: 'USER_ENTERED',
+      data: updates.map((u) => ({ range: `${sheet}!A${u.row}:U${u.row}`, values: [u.values] })),
+    },
+  });
 }
 
 export async function appendRow(sheetName: string, values: string[]) {
@@ -188,20 +195,25 @@ export async function appendRow(sheetName: string, values: string[]) {
 // when writing more than one row at once (e.g. bulk backfills), since each
 // appendRow call otherwise costs its own read+write quota.
 export async function appendRows(sheetName: string, rows: string[][]) {
-  if (rows.length === 0) return;
   try {
-    const spreadsheetId = await getSpreadsheetId();
-    const sheets = getSheetsClient();
-    const today = await getOrCreateDailySheet();
-    await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: `${today}!A:U`,
-      valueInputOption: 'USER_ENTERED',
-      requestBody: { values: rows },
-    });
+    await appendRowsOrThrow(sheetName, rows);
   } catch (error) {
     console.error(`[Google Sheets] Append error:`, error);
   }
+}
+
+// Throwing variant — see batchUpdateRowsOrThrow.
+export async function appendRowsOrThrow(sheetName: string, rows: string[][]) {
+  if (rows.length === 0) return;
+  const spreadsheetId = await getSpreadsheetId();
+  const sheets = getSheetsClient();
+  const today = await getOrCreateDailySheet();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: `${today}!A:U`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: rows },
+  });
 }
 
 // Update a row in a specific sheet tab (use findRowLocation first — a row may
