@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const statuses = searchParams.getAll('status');
     const dept_id = searchParams.get('dept_id');
+    const scope = searchParams.get('scope');
     const keyword = searchParams.get('keyword');
     const date_from = searchParams.get('date_from');
     const date_to = searchParams.get('date_to');
@@ -40,7 +41,10 @@ export async function GET(request: NextRequest) {
       .select('*')
       .in('document_id', Array.from(docMap.keys()));
 
-    if (auth.context?.profile.role === 'user') {
+    // scope=mine (used by the delivery page) shows documents the user themself
+    // registered, across all departments — not the usual own-department filter.
+    const isMineScope = scope === 'mine' && auth.context?.profile.role === 'user';
+    if (auth.context?.profile.role === 'user' && !isMineScope) {
       recQuery = recQuery.eq('department_id', auth.context.profile.department_id || '00000000-0000-0000-0000-000000000000');
     }
     if (statuses.length === 1) recQuery = recQuery.eq('status', statuses[0]);
@@ -51,6 +55,9 @@ export async function GET(request: NextRequest) {
     if (recError) throw recError;
 
     let rows = recipientsData || [];
+    if (isMineScope) {
+      rows = rows.filter((r: any) => docMap.get(r.document_id)?.recorded_by === auth.context!.user.id);
+    }
     rows.sort((a: any, b: any) => (docMap.get(b.document_id)?.running_no || 0) - (docMap.get(a.document_id)?.running_no || 0));
     if (limit > 0) rows = rows.slice(0, limit);
 

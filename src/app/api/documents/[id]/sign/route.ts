@@ -24,15 +24,18 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     const { data: existingRecipient, error: existingError } = await supabase
       .from('document_recipients')
-      .select('status, department_id, document_id')
+      .select('status, department_id, document_id, documents(recorded_by)')
       .eq('id', id)
       .single();
     if (existingError || !existingRecipient) {
       return NextResponse.json({ success: false, error: 'Document not found' }, { status: 404 });
     }
-    // Only 'user' is restricted to their own department here; admin/super_admin
-    // may still deliver to any department (unchanged from before this feature).
-    if (auth.context!.profile.role === 'user' && auth.context!.profile.department_id !== existingRecipient.department_id) {
+    // 'user' may deliver to their own department OR any document they registered
+    // themselves (cross-department); admin/super_admin are unrestricted either way.
+    const recordedBy = (existingRecipient as any).documents?.recorded_by;
+    const isOwnDept = auth.context!.profile.department_id === existingRecipient.department_id;
+    const isOwnDoc = recordedBy === auth.context!.user.id;
+    if (auth.context!.profile.role === 'user' && !isOwnDept && !isOwnDoc) {
       return forbiddenResponse();
     }
     if (existingRecipient.status !== 'registered') {

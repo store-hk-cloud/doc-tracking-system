@@ -33,7 +33,7 @@ export default function DeliveryPage() {
 
   const fetchDocs = async () => {
     try {
-      const res = await fetch('/api/documents?status=registered');
+      const res = await fetch('/api/documents?status=registered&scope=mine');
       const data = await res.json();
       if (data.success) setDocs(data.data);
     } catch (e) {
