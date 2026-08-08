@@ -1,67 +1,22 @@
 import { NextResponse } from 'next/server';
-import { getSheetsClient } from '@/lib/google-auth';
-import { createClient } from '@supabase/supabase-js';
 import { requireRoles } from '@/lib/supabase/auth-helpers';
-import { HEADERS } from '@/lib/google-sheets';
+import { getSpreadsheetUrl } from '@/lib/google-sheets';
 
 export async function GET() {
   try {
     const auth = await requireRoles(['super_admin']);
     if (auth.response) return auth.response;
 
-    // Check if already exists
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    let spreadsheetId: string | null = null;
+    // Always resolve through the same logic the app uses to actually read/write
+    // (env var first, then Supabase app_settings, then auto-create) — this used
+    // to have its own separate Supabase-only lookup here, which could point at
+    // a stale spreadsheet ID different from the one the app was really syncing to.
+    const url = await getSpreadsheetUrl();
+    if (!url) throw new Error('ไม่พบ Google Sheet และสร้างใหม่ไม่สำเร็จ');
 
-    if (supabaseUrl && supabaseKey) {
-      const sb = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } });
-      const { data } = await sb.from('app_settings').select('value').eq('key', 'google_spreadsheet_id').single();
-      if (data?.value) {
-        spreadsheetId = data.value;
-      }
-    }
-
-    if (spreadsheetId) {
-      // Redirect directly to the spreadsheet
-      return NextResponse.redirect(`https://docs.google.com/spreadsheets/d/${spreadsheetId}`);
-    }
-
-    // Create new spreadsheet
-    const sheets = getSheetsClient();
-    const today = new Date().toISOString().split('T')[0];
-    
-    const res = await sheets.spreadsheets.create({
-      requestBody: {
-        properties: { title: 'จดหมาย พัสดุ เอกสารภายใน' },
-        sheets: [{ properties: { title: today } }],
-      },
-    });
-
-    spreadsheetId = res.data.spreadsheetId!;
-
-    // Write headers (unified layout, 21 columns)
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `${today}!A1:U1`,
-      valueInputOption: 'USER_ENTERED',
-      requestBody: { values: [HEADERS] },
-    });
-
-    // Persist to Supabase
-    if (supabaseUrl && supabaseKey) {
-      const sb = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } });
-      await sb.from('app_settings').upsert(
-        { key: 'google_spreadsheet_id', value: spreadsheetId },
-        { onConflict: 'key' }
-      );
-    }
-
-    // Redirect to the newly created spreadsheet
-    return NextResponse.redirect(`https://docs.google.com/spreadsheets/d/${spreadsheetId}`);
+    return NextResponse.redirect(url);
   } catch (error: any) {
     console.error('[Setup Sheets] Error:', error);
-    // Return HTML page with error
     return new NextResponse(
       `<html><body style="font-family:sans-serif;padding:40px;text-align:center">
         <h2>❌ ไม่สามารถสร้าง/เปิด Google Sheet</h2>
