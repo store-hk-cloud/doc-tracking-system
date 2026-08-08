@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
-import { updateRow, findRowByValue } from '@/lib/google-sheets';
+import { updateRowInSheet, findRowLocation } from '@/lib/google-sheets';
 import { canAccessDepartment, forbiddenResponse, requireRoles } from '@/lib/supabase/auth-helpers';
 
 export async function GET(request: NextRequest) {
@@ -137,9 +137,9 @@ export async function POST(request: NextRequest) {
         profName = prof?.full_name || '';
       }
 
-      const row = await findRowByValue('เอกสารเข้า', 21, recipient.id);
-      if (row) {
-        await updateRow('เอกสารเข้า', row, [
+      const location = await findRowLocation(21, recipient.id);
+      if (location) {
+        await updateRowInSheet(location.sheet, location.row, [
           String(doc.running_no),           // A: Running No.
           doc.received_date,                // B: วันที่รับ
           doc.doc_number || '',             // C: เลขที่เอกสาร

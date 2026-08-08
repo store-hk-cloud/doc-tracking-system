@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
-import { updateRow, findRowByValue } from '@/lib/google-sheets';
+import { updateRowInSheet, findRowLocation } from '@/lib/google-sheets';
 import { notifyDepartment } from '@/lib/upstash';
 import { forbiddenResponse, requireRoles } from '@/lib/supabase/auth-helpers';
 
@@ -76,10 +76,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       });
     }
 
-    // Sync to Sheets (update this department's row only)
-    const row = await findRowByValue('เอกสารเข้า', 21, recipient.id);
-    if (row) {
-      await updateRow('เอกสารเข้า', row, [
+    // Sync to Sheets (update this department's row only, wherever its tab actually is)
+    const location = await findRowLocation(21, recipient.id);
+    if (location) {
+      await updateRowInSheet(location.sheet, location.row, [
         String(doc.running_no), doc.received_date, doc.doc_number || '',
         doc.sender, doc.subject, deptName,
         recipient.status, recipient.admin_signature || '', recipient.admin_signed_at || '',

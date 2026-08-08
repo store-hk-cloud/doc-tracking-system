@@ -72,6 +72,17 @@ export function Sidebar() {
         >
           📗 ไปยัง Google Sheets
         </a>
+        {role === 'super_admin' && (
+          <a
+            href="/api/admin/backfill-sheets"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="sidebar-item"
+            style={{ textDecoration: 'none', marginBottom: 4 }}
+          >
+            🔄 อัปเดตข้อมูลเก่าใน Sheets
+          </a>
+        )}
         <div className="account-pill" style={{ width: '100%' }}>
           <span style={{ fontWeight: 700 }}>{profile?.full_name || 'ผู้ใช้'}</span>
           <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>({profile?.role === 'super_admin' ? 'ผู้ดูแลระบบ' : profile?.role === 'admin' ? 'ธุรการ' : 'ผู้ใช้'})</span>

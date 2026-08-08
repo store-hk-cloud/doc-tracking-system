@@ -5,7 +5,7 @@ import { createClient } from '@supabase/supabase-js';
  * NEW unified header - 1 row has everything:
  * document info + admin sign + recipient sign + delivery result
  */
-const HEADERS = [
+export const HEADERS = [
   'Running No.',       // A
   'วันที่รับ',          // B
   'เลขที่เอกสาร',       // C
@@ -129,12 +129,46 @@ async function getOrCreateDailySheet(): Promise<string> {
   return today;
 }
 
-async function getSpreadsheetId(): Promise<string> {
+export async function getSpreadsheetId(): Promise<string> {
   try {
     return await getOrCreateSpreadsheet();
   } catch (error) {
     console.error('[Google Sheets] Failed to get/create spreadsheet:', error);
     throw error;
+  }
+}
+
+/** List every existing sheet tab name (e.g. daily tabs), newest-first as they appear in the spreadsheet. */
+export async function listSheetTabs(): Promise<string[]> {
+  const spreadsheetId = await getSpreadsheetId();
+  const sheets = getSheetsClient();
+  const { data: info } = await sheets.spreadsheets.get({ spreadsheetId });
+  return (info?.sheets || []).map((s: any) => s.properties?.title).filter(Boolean);
+}
+
+/** Read all rows (including header) of a given sheet tab, columns A:U. */
+export async function getSheetValues(sheet: string): Promise<string[][]> {
+  const spreadsheetId = await getSpreadsheetId();
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${sheet}!A:U` });
+  return res.data.values || [];
+}
+
+/** Overwrite multiple full rows (A:U) within a single sheet tab in one API call. */
+export async function batchUpdateRows(sheet: string, updates: { row: number; values: string[] }[]) {
+  if (updates.length === 0) return;
+  try {
+    const spreadsheetId = await getSpreadsheetId();
+    const sheets = getSheetsClient();
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        valueInputOption: 'USER_ENTERED',
+        data: updates.map((u) => ({ range: `${sheet}!A${u.row}:U${u.row}`, values: [u.values] })),
+      },
+    });
+  } catch (error) {
+    console.error('[Google Sheets] Batch update error:', error);
   }
 }
 
@@ -154,23 +188,8 @@ export async function appendRow(sheetName: string, values: string[]) {
   }
 }
 
-export async function updateRow(sheetName: string, rowIndex: number, values: string[]) {
-  try {
-    const spreadsheetId = await getSpreadsheetId();
-    const sheets = getSheetsClient();
-    const today = todaySheetName();
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `${today}!A${rowIndex}:U${rowIndex}`,
-      valueInputOption: 'USER_ENTERED',
-      requestBody: { values: [values] },
-    });
-  } catch (error) {
-    console.error(`[Google Sheets] Update error:`, error);
-  }
-}
-
-// Update a row in a specific sheet (used by findRowByValue result)
+// Update a row in a specific sheet tab (use findRowLocation first — a row may
+// live in an older daily tab, not today's, once its document isn't from today).
 export async function updateRowInSheet(sheet: string, rowIndex: number, values: string[]) {
   try {
     const spreadsheetId = await getSpreadsheetId();
@@ -186,39 +205,35 @@ export async function updateRowInSheet(sheet: string, rowIndex: number, values: 
   }
 }
 
-async function findRowByValueAndSheet(column: number, value: string): Promise<{ sheet: string; row: number } | null> {
-  const spreadsheetId = await getSpreadsheetId();
-  const sheets = getSheetsClient();
-  const today = todaySheetName();
-  const { data: info } = await sheets.spreadsheets.get({ spreadsheetId });
-  const allSheets = (info?.sheets || []).map((s: any) => s.properties?.title).filter(Boolean);
+// Returns which sheet TAB a row lives in, not just its row number — a match found
+// in an older daily tab must be updated there, not in today's tab (see updateRowInSheet).
+export async function findRowLocation(column: number, value: string): Promise<{ sheet: string; row: number } | null> {
+  try {
+    const spreadsheetId = await getSpreadsheetId();
+    const sheets = getSheetsClient();
+    const today = todaySheetName();
+    const { data: info } = await sheets.spreadsheets.get({ spreadsheetId });
+    const allSheets = (info?.sheets || []).map((s: any) => s.properties?.title).filter(Boolean);
 
-  const targetSheets = allSheets.includes(today)
-    ? [today, ...allSheets.filter((s: string) => s !== today)]
-    : allSheets;
+    const targetSheets = allSheets.includes(today)
+      ? [today, ...allSheets.filter((s: string) => s !== today)]
+      : allSheets;
 
-  for (const sheet of targetSheets) {
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: `${sheet}!A:U`,
-    });
-    const rows = res.data.values || [];
-    for (let i = 1; i < rows.length; i++) {
-      if (rows[i][column - 1]?.toString() === value) {
-        return { sheet, row: i + 1 };
+    for (const sheet of targetSheets) {
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: `${sheet}!A:U`,
+      });
+      const rows = res.data.values || [];
+      for (let i = 1; i < rows.length; i++) {
+        if (rows[i][column - 1]?.toString() === value) {
+          return { sheet, row: i + 1 };
+        }
       }
     }
-  }
-  return null;
-}
-
-// Backward-compatible: return just the row number (for today's sheet)
-export async function findRowByValue(_sheetName: string, column: number, value: string): Promise<number | null> {
-  try {
-    const result = await findRowByValueAndSheet(column, value);
-    return result ? result.row : null;
+    return null;
   } catch (error) {
-    console.error(`[Google Sheets] Find error:`, error);
+    console.error('[Google Sheets] Find error:', error);
     return null;
   }
 }

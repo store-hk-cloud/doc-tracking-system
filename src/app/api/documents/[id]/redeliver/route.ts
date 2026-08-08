@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
-import { updateRow, findRowByValue } from '@/lib/google-sheets';
+import { updateRowInSheet, findRowLocation } from '@/lib/google-sheets';
 import { requireRoles } from '@/lib/supabase/auth-helpers';
 
 // [id] here is a document_recipients.id. Resets a rejected department copy
@@ -41,9 +41,9 @@ export async function PUT(_request: NextRequest, { params }: { params: Promise<{
       profName = prof?.full_name || '';
     }
 
-    const row = await findRowByValue('เอกสารเข้า', 21, recipient.id);
-    if (row) {
-      await updateRow('เอกสารเข้า', row, [
+    const location = await findRowLocation(21, recipient.id);
+    if (location) {
+      await updateRowInSheet(location.sheet, location.row, [
         String(data.running_no), data.received_date, data.doc_number || '',
         data.sender, data.subject, deptName,
         'delivered', recipient.admin_signature || '', recipient.admin_signed_at || '',

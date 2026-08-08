@@ -2,28 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSheetsClient } from '@/lib/google-auth';
 import { createClient } from '@supabase/supabase-js';
 import { requireRoles } from '@/lib/supabase/auth-helpers';
-
-const HEADERS = [
-  'Running No.',       // A
-  'วันที่รับ',          // B
-  'เลขที่เอกสาร',       // C
-  'ผู้ส่ง',             // D
-  'เรื่อง',             // E
-  'หน่วยงาน',          // F
-  'สถานะ',             // G
-  'ลายเซ็น Admin',     // H
-  'เวลา Admin ลงนาม',  // I
-  'ชื่อผู้รับ',         // J
-  'ลายเซ็นผู้รับ',      // K
-  'เวลาผู้รับลงนาม',    // L
-  'ผลการตรวจสอบ',      // M
-  'หมายเหตุ (ผู้รับ)',  // N
-  'เสียหาย',           // O
-  'รูปความเสียหาย',    // P
-  'หมายเหตุ',          // Q
-  'ผู้บันทึก',          // R
-  'updated_at',        // S
-];
+import { HEADERS } from '@/lib/google-sheets';
 
 export async function GET() {
   try {
@@ -61,10 +40,10 @@ export async function GET() {
 
     spreadsheetId = res.data.spreadsheetId!;
 
-    // Write headers (new unified layout, 19 columns)
+    // Write headers (unified layout, 21 columns)
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `${today}!A1:S1`,
+      range: `${today}!A1:U1`,
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: [HEADERS] },
     });

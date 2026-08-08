@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
-import { updateRow, findRowByValue } from '@/lib/google-sheets';
+import { updateRowInSheet, findRowLocation } from '@/lib/google-sheets';
 import { canAccessDepartment, forbiddenResponse, requireRoles } from '@/lib/supabase/auth-helpers';
 
 // [id] here is a document_recipients.id — a specific department's copy of a document.
@@ -99,13 +99,6 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     if (error) throw error;
 
-    // Get department name
-    let deptName = '';
-    if (data.recipient_dept_id) {
-      const { data: dept } = await supabase.from('departments').select('name').eq('id', data.recipient_dept_id).single();
-      deptName = dept?.name || '';
-    }
-
     // Get profile name
     let profName = '';
     if (data.recorded_by) {
@@ -113,24 +106,28 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       profName = prof?.full_name || '';
     }
 
-    // Sync to Sheets
-    const row = await findRowByValue('เอกสารเข้า', 1, String(data.running_no));
-    if (row) {
-      updateRow('เอกสารเข้า', row, [
-        String(data.running_no), data.received_date, data.doc_number || '',
-        data.sender, data.subject, deptName,
-        data.status, data.admin_signature || '', data.admin_signed_at || '',
-        '', '', data.is_damaged ? 'ใช่' : 'ไม่',
-        data.damage_image_url || '', data.note || '',
-        profName, data.created_at, data.updated_at,
-        data.tax_invoice_no || '',
-      ]);
+    // Sync to Sheets: this document may be linked to multiple departments, each
+    // with its own sheet row (found via its own document_recipients.id).
+    const { data: recipients } = await supabase.from('document_recipients').select('*').eq('document_id', data.id);
+    const deptIds = [...new Set((recipients || []).map((r: any) => r.department_id).filter(Boolean))];
+    const { data: depts } = await supabase.from('departments').select('id, name').in('id', deptIds.length ? deptIds : ['none']);
+    const deptNameMap = new Map((depts || []).map((d: any) => [d.id, d.name]));
+
+    for (const r of recipients || []) {
+      const location = await findRowLocation(21, r.id);
+      if (location) {
+        await updateRowInSheet(location.sheet, location.row, [
+          String(data.running_no), data.received_date, data.doc_number || '',
+          data.sender, data.subject, deptNameMap.get(r.department_id) || '',
+          r.status, r.admin_signature || '', r.admin_signed_at || '',
+          '', '', '', '', '',
+          data.is_damaged ? 'ใช่' : 'ไม่', data.damage_image_url || '', data.note || '',
+          profName, r.updated_at, data.tax_invoice_no || '', r.id,
+        ]);
+      }
     }
 
-    return NextResponse.json({
-      success: true,
-      data: { ...data, recipient_dept_name: deptName },
-    });
+    return NextResponse.json({ success: true, data });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
