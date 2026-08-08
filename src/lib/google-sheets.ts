@@ -1,5 +1,10 @@
 import { getSheetsClient } from './google-auth';
-import { createClient } from '@supabase/supabase-js';
+
+// Permanently pinned to this spreadsheet — do not resolve this from a mutable
+// DB row again (a stale app_settings.google_spreadsheet_id value previously
+// caused the app to silently sync to a different spreadsheet than this one).
+// Set the GOOGLE_SHEETS_SPREADSHEET_ID env var to override, if ever needed.
+const PINNED_SPREADSHEET_ID = '1qremvBM2GKrh5IXV9JH9KNZ6W-M8TFXgOi5_ReitEWI';
 
 /**
  * NEW unified header - 1 row has everything:
@@ -34,60 +39,8 @@ function todaySheetName(): string {
   return new Date().toISOString().split('T')[0];
 }
 
-let cachedSpreadsheetId: string | null = null;
-
 async function getOrCreateSpreadsheet(): Promise<string> {
-  // Check env
-  if (process.env.GOOGLE_SHEETS_SPREADSHEET_ID) {
-    return process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
-  }
-
-  // Check cache
-  if (cachedSpreadsheetId) return cachedSpreadsheetId;
-
-  // Try to get from Supabase (persisted across deploys)
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (supabaseUrl && supabaseKey) {
-    const sb = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } });
-    const { data } = await sb.from('app_settings').select('value').eq('key', 'google_spreadsheet_id').single();
-    if (data?.value) {
-      cachedSpreadsheetId = data.value;
-    }
-  }
-
-  if (!cachedSpreadsheetId) {
-    // Auto-create spreadsheet with today's sheet
-    const sheets = getSheetsClient();
-    const today = todaySheetName();
-    const res = await sheets.spreadsheets.create({
-      requestBody: {
-        properties: { title: `จดหมาย พัสดุ เอกสารภายใน` },
-        sheets: [{ properties: { title: today } }],
-      },
-    });
-    cachedSpreadsheetId = res.data.spreadsheetId!;
-
-    // Write headers
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: cachedSpreadsheetId,
-      range: `${today}!A1:U1`,
-      valueInputOption: 'USER_ENTERED',
-      requestBody: { values: [HEADERS] },
-    });
-
-    // Persist to Supabase
-    if (supabaseUrl && supabaseKey) {
-      const sb = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } });
-      await sb.from('app_settings').upsert(
-        { key: 'google_spreadsheet_id', value: cachedSpreadsheetId },
-        { onConflict: 'key' }
-      );
-    }
-    console.log(`[Google Sheets] Created spreadsheet: ${cachedSpreadsheetId}`);
-  }
-
-  return cachedSpreadsheetId;
+  return process.env.GOOGLE_SHEETS_SPREADSHEET_ID || PINNED_SPREADSHEET_ID;
 }
 
 /**
