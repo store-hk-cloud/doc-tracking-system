@@ -24,6 +24,11 @@ export default function DeliveryPage() {
   const [bulkSigning, setBulkSigning] = useState(false);
   const [bulkMessage, setBulkMessage] = useState('');
 
+  const [bulkField, setBulkField] = useState<{ field: 'inspector_signature' | 'purchasing_signature'; label: string } | null>(null);
+  const [bulkFieldValue, setBulkFieldValue] = useState('');
+  const [bulkFieldSubmitting, setBulkFieldSubmitting] = useState(false);
+  const [bulkFieldError, setBulkFieldError] = useState('');
+
   const fetchDocs = async () => {
     try {
       const res = await fetch('/api/documents?status=registered');
@@ -138,6 +143,37 @@ export default function DeliveryPage() {
     fetchDocs();
   };
 
+  const eligibleForBulkField = docs.filter((d: any) => selectedIds.has(d.id) && d.subject === 'ใบรับสินค้า');
+
+  const handleBulkField = async () => {
+    if (!bulkField || eligibleForBulkField.length === 0 || !bulkFieldValue.trim()) return;
+    if (!window.confirm(`ยืนยันเซ็น${bulkField.label} ${eligibleForBulkField.length} รายการ?`)) return;
+    setBulkFieldSubmitting(true);
+    setBulkFieldError('');
+    const results = await Promise.all(
+      eligibleForBulkField.map((doc: any) =>
+        fetch(`/api/documents/${doc.id}/sign`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [bulkField.field]: bulkFieldValue }),
+        })
+          .then((r) => r.json())
+          .catch(() => ({ success: false }))
+      )
+    );
+    const okCount = results.filter((r: any) => r.success).length;
+    const failCount = results.length - okCount;
+    setBulkMessage(
+      failCount > 0
+        ? `✅ เซ็น${bulkField.label}สำเร็จ ${okCount} รายการ, ❌ ล้มเหลว ${failCount} รายการ`
+        : `✅ เซ็น${bulkField.label}สำเร็จ ${okCount} รายการ`
+    );
+    setBulkField(null);
+    setBulkFieldValue('');
+    setBulkFieldSubmitting(false);
+    fetchDocs();
+  };
+
   return (
     <div>
       <div className="app-title" style={{ marginBottom: 20 }}>
@@ -175,6 +211,24 @@ export default function DeliveryPage() {
             <button className="secondary-button" style={{ width: 'auto', padding: '0 16px' }} onClick={handleBulkSign} disabled={bulkSigning}>
               {bulkSigning ? 'กำลังส่งมอบ...' : '✅ ส่งมอบทั้งหมด'}
             </button>
+            {eligibleForBulkField.length > 0 && (
+              <>
+                <button
+                  className="ghost-button"
+                  style={{ width: 'auto', padding: '0 14px' }}
+                  onClick={() => { setBulkField({ field: 'inspector_signature', label: 'ผู้ตรวจสอบ' }); setBulkFieldValue(''); setBulkFieldError(''); }}
+                >
+                  ✍️ เซ็นผู้ตรวจสอบทั้งหมด ({eligibleForBulkField.length})
+                </button>
+                <button
+                  className="ghost-button"
+                  style={{ width: 'auto', padding: '0 14px' }}
+                  onClick={() => { setBulkField({ field: 'purchasing_signature', label: 'จัดซื้อ' }); setBulkFieldValue(''); setBulkFieldError(''); }}
+                >
+                  ✍️ เซ็นจัดซื้อทั้งหมด ({eligibleForBulkField.length})
+                </button>
+              </>
+            )}
           </div>
         )}
 
@@ -363,6 +417,40 @@ export default function DeliveryPage() {
             </div>
 
             <button className="scan-popup-close" onClick={() => setSignField(null)}>ปิด</button>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk inspector / purchasing sign popup */}
+      {bulkField && (
+        <div className="scan-popup-overlay" onClick={() => setBulkField(null)}>
+          <div className="scan-popup-sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420, margin: '0 auto' }}>
+            <div className="scan-popup-handle" />
+            <h3 style={{ marginBottom: 12 }}>✍️ เซ็นรับ — {bulkField.label} ({eligibleForBulkField.length} รายการ)</h3>
+
+            <div className="form-group">
+              <label>ชื่อ{bulkField.label} (ใช้กับทุกรายการที่เลือก) *</label>
+              <input
+                type="text"
+                value={bulkFieldValue}
+                onChange={(e) => setBulkFieldValue(e.target.value)}
+                placeholder={`พิมพ์ชื่อ${bulkField.label}`}
+                style={{ fontFamily: 'Caveat, cursive', fontSize: '1.3rem' }}
+              />
+            </div>
+
+            {bulkFieldError && <div className="toast error" style={{ position: 'static', marginBottom: 8 }}>{bulkFieldError}</div>}
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+              <button className="ghost-button" onClick={() => setBulkField(null)} style={{ flex: 1 }}>
+                ยกเลิก
+              </button>
+              <button className="secondary-button" onClick={handleBulkField} disabled={bulkFieldSubmitting} style={{ flex: 1 }}>
+                {bulkFieldSubmitting ? 'กำลังบันทึก...' : '✅ ยืนยัน'}
+              </button>
+            </div>
+
+            <button className="scan-popup-close" onClick={() => setBulkField(null)}>ปิด</button>
           </div>
         </div>
       )}
