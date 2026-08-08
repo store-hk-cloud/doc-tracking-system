@@ -19,6 +19,11 @@ export default function DeliveryPage() {
   const [signFieldSubmitting, setSignFieldSubmitting] = useState(false);
   const [signFieldError, setSignFieldError] = useState('');
 
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkSignature, setBulkSignature] = useState('');
+  const [bulkSigning, setBulkSigning] = useState(false);
+  const [bulkMessage, setBulkMessage] = useState('');
+
   const fetchDocs = async () => {
     try {
       const res = await fetch('/api/documents?status=registered');
@@ -85,6 +90,54 @@ export default function DeliveryPage() {
     setSignFieldSubmitting(false);
   };
 
+  const toggleSelect = (id: string) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedIds((current) =>
+      current.size === docs.length ? new Set() : new Set(docs.map((d: any) => d.id))
+    );
+  };
+
+  const handleBulkSign = async () => {
+    if (selectedIds.size === 0) return;
+    if (!bulkSignature.trim()) {
+      setBulkMessage('กรุณาพิมพ์ชื่อผู้ส่งมอบก่อน');
+      return;
+    }
+    if (!window.confirm(`ยืนยันส่งมอบเอกสาร ${selectedIds.size} รายการ?`)) return;
+    setBulkSigning(true);
+    setBulkMessage('');
+    const ids = Array.from(selectedIds);
+    const results = await Promise.all(
+      ids.map((id) =>
+        fetch(`/api/documents/${id}/sign`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_signature: bulkSignature }),
+        })
+          .then((r) => r.json())
+          .catch(() => ({ success: false }))
+      )
+    );
+    const okCount = results.filter((r: any) => r.success).length;
+    const failCount = results.length - okCount;
+    setBulkMessage(
+      failCount > 0
+        ? `✅ ส่งมอบสำเร็จ ${okCount} รายการ, ❌ ล้มเหลว ${failCount} รายการ`
+        : `✅ ส่งมอบสำเร็จ ${okCount} รายการ`
+    );
+    setSelectedIds(new Set());
+    setBulkSignature('');
+    setBulkSigning(false);
+    fetchDocs();
+  };
+
   return (
     <div>
       <div className="app-title" style={{ marginBottom: 20 }}>
@@ -98,6 +151,35 @@ export default function DeliveryPage() {
           <span className="eyebrow">📋 รายการรอส่งมอบ ({docs.length} รายการ)</span>
         </div>
 
+        {selectedIds.size > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              marginBottom: 12,
+              padding: '10px 14px',
+              background: 'var(--primary-soft)',
+              borderRadius: 8,
+              flexWrap: 'wrap',
+            }}
+          >
+            <span style={{ fontWeight: 700 }}>เลือกแล้ว {selectedIds.size} รายการ</span>
+            <input
+              type="text"
+              value={bulkSignature}
+              onChange={(e) => setBulkSignature(e.target.value)}
+              placeholder="พิมพ์ชื่อผู้ส่งมอบ (ใช้กับทุกรายการที่เลือก)"
+              style={{ flex: '1 1 260px', minHeight: 38, fontFamily: 'Caveat, cursive', fontSize: '1.1rem' }}
+            />
+            <button className="secondary-button" style={{ width: 'auto', padding: '0 16px' }} onClick={handleBulkSign} disabled={bulkSigning}>
+              {bulkSigning ? 'กำลังส่งมอบ...' : '✅ ส่งมอบทั้งหมด'}
+            </button>
+          </div>
+        )}
+
+        {bulkMessage && <div className="toast success" style={{ position: 'static', marginBottom: 12 }}>{bulkMessage}</div>}
+
         {loading ? (
           <div className="empty-search">กำลังโหลด...</div>
         ) : docs.length === 0 ? (
@@ -107,6 +189,13 @@ export default function DeliveryPage() {
             <table>
               <thead>
                 <tr>
+                  <th>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.size === docs.length && docs.length > 0}
+                      onChange={toggleSelectAll}
+                    />
+                  </th>
                   <th>No.</th>
                   <th>วันที่รับ</th>
                   <th>ผู้ส่ง</th>
@@ -121,6 +210,9 @@ export default function DeliveryPage() {
               <tbody>
                 {docs.map((doc: any) => (
                   <tr key={doc.id}>
+                    <td>
+                      <input type="checkbox" checked={selectedIds.has(doc.id)} onChange={() => toggleSelect(doc.id)} />
+                    </td>
                     <td className="code-cell">{doc.running_no}</td>
                     <td>{doc.received_date}</td>
                     <td>{doc.sender}</td>
