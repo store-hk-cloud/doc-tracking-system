@@ -94,10 +94,16 @@ async function getOrCreateSpreadsheet(): Promise<string> {
  * Get or create today's sheet tab.
  * Newest day is inserted at index 0 (leftmost).
  */
+// Avoids re-checking/re-creating today's tab on every single append within the
+// same warm serverless instance — cuts a metadata read per call down to one.
+let dailySheetEnsuredFor: string | null = null;
+
 async function getOrCreateDailySheet(): Promise<string> {
   const spreadsheetId = await getSpreadsheetId();
   const sheets = getSheetsClient();
   const today = todaySheetName();
+
+  if (dailySheetEnsuredFor === today) return today;
 
   // Get existing sheets
   const { data: sheetInfo } = await sheets.spreadsheets.get({ spreadsheetId });
@@ -125,6 +131,8 @@ async function getOrCreateDailySheet(): Promise<string> {
     });
     console.log(`[Google Sheets] Created daily sheet: ${today}`);
   }
+
+  dailySheetEnsuredFor = today;
 
   return today;
 }
@@ -173,6 +181,14 @@ export async function batchUpdateRows(sheet: string, updates: { row: number; val
 }
 
 export async function appendRow(sheetName: string, values: string[]) {
+  return appendRows(sheetName, [values]);
+}
+
+// Append many rows in a single API call — use this instead of looping appendRow
+// when writing more than one row at once (e.g. bulk backfills), since each
+// appendRow call otherwise costs its own read+write quota.
+export async function appendRows(sheetName: string, rows: string[][]) {
+  if (rows.length === 0) return;
   try {
     const spreadsheetId = await getSpreadsheetId();
     const sheets = getSheetsClient();
@@ -181,7 +197,7 @@ export async function appendRow(sheetName: string, values: string[]) {
       spreadsheetId,
       range: `${today}!A:U`,
       valueInputOption: 'USER_ENTERED',
-      requestBody: { values: [values] },
+      requestBody: { values: rows },
     });
   } catch (error) {
     console.error(`[Google Sheets] Append error:`, error);

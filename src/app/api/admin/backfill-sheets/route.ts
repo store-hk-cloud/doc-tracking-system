@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
 import { requireRoles } from '@/lib/supabase/auth-helpers';
-import { listSheetTabs, getSheetValues, batchUpdateRows, appendRow } from '@/lib/google-sheets';
+import { listSheetTabs, getSheetValues, batchUpdateRows, appendRows } from '@/lib/google-sheets';
 
 // One-time/repeatable maintenance endpoint covering two kinds of drift between
 // Supabase and Google Sheets:
@@ -80,8 +80,7 @@ export async function GET() {
     };
 
     const bySheet = new Map<string, { row: number; values: string[] }[]>();
-    let updated = 0;
-    let appended = 0;
+    const toAppend: string[][] = [];
 
     for (const r of recipients || []) {
       if (refSet.has(r.id)) continue; // already correctly synced somewhere
@@ -97,16 +96,20 @@ export async function GET() {
         const list = bySheet.get(reusableBlankRow.sheet) || [];
         list.push({ row: reusableBlankRow.row, values: buildValues(doc, r) });
         bySheet.set(reusableBlankRow.sheet, list);
-        updated++;
       } else {
-        await appendRow('เอกสารเข้า', buildValues(doc, r));
-        appended++;
+        toAppend.push(buildValues(doc, r));
       }
     }
 
+    // One API call per sheet tab needing updates, and one more for all appends
+    // combined — looping a call per row is what blows through Sheets' quota.
     for (const [sheet, list] of bySheet) {
       await batchUpdateRows(sheet, list);
     }
+    await appendRows('เอกสารเข้า', toAppend);
+
+    const updated = [...bySheet.values()].reduce((sum, list) => sum + list.length, 0);
+    const appended = toAppend.length;
 
     return NextResponse.json({
       success: true,
