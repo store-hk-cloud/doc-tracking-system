@@ -23,6 +23,8 @@ export default function DeliveryPage() {
   const [bulkSignature, setBulkSignature] = useState('');
   const [bulkSigning, setBulkSigning] = useState(false);
   const [bulkMessage, setBulkMessage] = useState('');
+  const [showBulkSignModal, setShowBulkSignModal] = useState(false);
+  const [bulkSignError, setBulkSignError] = useState('');
 
   const [bulkField, setBulkField] = useState<{ field: 'inspector_signature' | 'purchasing_signature'; label: string } | null>(null);
   const [bulkFieldValue, setBulkFieldValue] = useState('');
@@ -112,11 +114,12 @@ export default function DeliveryPage() {
   const handleBulkSign = async () => {
     if (selectedIds.size === 0) return;
     if (!bulkSignature.trim()) {
-      setBulkMessage('กรุณาพิมพ์ชื่อผู้ส่งมอบก่อน');
+      setBulkSignError('กรุณาพิมพ์ชื่อผู้ส่งมอบก่อน');
       return;
     }
     if (!window.confirm(`ยืนยันส่งมอบเอกสาร ${selectedIds.size} รายการ?`)) return;
     setBulkSigning(true);
+    setBulkSignError('');
     setBulkMessage('');
     const ids = Array.from(selectedIds);
     const results = await Promise.all(
@@ -140,6 +143,7 @@ export default function DeliveryPage() {
     setSelectedIds(new Set());
     setBulkSignature('');
     setBulkSigning(false);
+    setShowBulkSignModal(false);
     fetchDocs();
   };
 
@@ -201,15 +205,12 @@ export default function DeliveryPage() {
             }}
           >
             <span style={{ fontWeight: 700 }}>เลือกแล้ว {selectedIds.size} รายการ</span>
-            <input
-              type="text"
-              value={bulkSignature}
-              onChange={(e) => setBulkSignature(e.target.value)}
-              placeholder="พิมพ์ชื่อผู้ส่งมอบ (ใช้กับทุกรายการที่เลือก)"
-              style={{ flex: '1 1 260px', minHeight: 38, fontFamily: 'Caveat, cursive', fontSize: '1.1rem' }}
-            />
-            <button className="ghost-button" style={{ width: 'auto', padding: '0 14px' }} onClick={handleBulkSign} disabled={bulkSigning}>
-              {bulkSigning ? 'กำลังส่งมอบ...' : `✅ ส่งมอบทั้งหมด (${selectedIds.size})`}
+            <button
+              className="ghost-button"
+              style={{ width: 'auto', padding: '0 14px' }}
+              onClick={() => { setShowBulkSignModal(true); setBulkSignature(''); setBulkSignError(''); }}
+            >
+              ✅ ส่งมอบทั้งหมด ({selectedIds.size})
             </button>
             {eligibleForBulkField.length > 0 && (
               <>
@@ -374,6 +375,40 @@ export default function DeliveryPage() {
             </div>
 
             <button className="scan-popup-close" onClick={() => setShowModal(false)}>ปิด</button>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk deliver sign popup */}
+      {showBulkSignModal && (
+        <div className="scan-popup-overlay" onClick={() => setShowBulkSignModal(false)}>
+          <div className="scan-popup-sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420, margin: '0 auto' }}>
+            <div className="scan-popup-handle" />
+            <h3 style={{ marginBottom: 12 }}>✍️ ส่งมอบทั้งหมด ({selectedIds.size} รายการ)</h3>
+
+            <div className="form-group">
+              <label>ลายเซ็นผู้ส่งมอบ (ใช้กับทุกรายการที่เลือก) *</label>
+              <input
+                type="text"
+                value={bulkSignature}
+                onChange={(e) => setBulkSignature(e.target.value)}
+                placeholder="พิมพ์ชื่อผู้ส่งมอบ"
+                style={{ fontFamily: 'Caveat, cursive', fontSize: '1.3rem' }}
+              />
+            </div>
+
+            {bulkSignError && <div className="toast error" style={{ position: 'static', marginBottom: 8 }}>{bulkSignError}</div>}
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+              <button className="ghost-button" onClick={() => setShowBulkSignModal(false)} style={{ flex: 1 }}>
+                ยกเลิก
+              </button>
+              <button className="secondary-button" onClick={handleBulkSign} disabled={bulkSigning} style={{ flex: 1 }}>
+                {bulkSigning ? 'กำลังส่งมอบ...' : '✅ ยืนยัน'}
+              </button>
+            </div>
+
+            <button className="scan-popup-close" onClick={() => setShowBulkSignModal(false)}>ปิด</button>
           </div>
         </div>
       )}
