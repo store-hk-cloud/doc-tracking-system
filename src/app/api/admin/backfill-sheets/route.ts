@@ -1,14 +1,15 @@
 import { NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
 import { requireRoles } from '@/lib/supabase/auth-helpers';
-import { listSheetTabs, getSheetValues, batchUpdateRows } from '@/lib/google-sheets';
+import { listSheetTabs, getSheetValues, batchUpdateRows, appendRow } from '@/lib/google-sheets';
 
-// One-time/repeatable maintenance endpoint: historical Google Sheets rows created
-// before the multi-department refactor have no value in column U (รหัสอ้างอิง), so
-// later updates (sign/deliveries/redeliver/verify) can no longer find them via
-// findRowLocation and silently stop syncing. This scans every sheet tab, matches
-// blank-U rows back to their document_recipients row by running_no, and rewrites
-// them with current data plus the missing reference id.
+// One-time/repeatable maintenance endpoint covering two kinds of drift between
+// Supabase and Google Sheets:
+//  1. Legacy rows that exist but predate the "รหัสอ้างอิง" column (U) — these get
+//     updated in place once matched back to their document_recipients row.
+//  2. Documents/recipients that never made it into Sheets at all (e.g. an append
+//     silently failed) — these get appended fresh since there's no historical
+//     row to place them "on" other than today's tab.
 export async function GET() {
   try {
     const auth = await requireRoles(['super_admin']);
@@ -17,31 +18,26 @@ export async function GET() {
     const supabase = getServiceSupabase();
     const tabs = await listSheetTabs();
 
-    const pending: { sheet: string; row: number; runningNo: string }[] = [];
+    const refSet = new Set<string>();
+    const runningNoRows = new Map<string, { sheet: string; row: number; hasRef: boolean }[]>();
     for (const sheet of tabs) {
       const rows = await getSheetValues(sheet);
       for (let i = 1; i < rows.length; i++) {
         const runningNo = rows[i][0];
         const ref = rows[i][20];
-        if (runningNo && !ref) {
-          pending.push({ sheet, row: i + 1, runningNo: String(runningNo) });
+        if (ref) refSet.add(String(ref));
+        if (runningNo) {
+          const list = runningNoRows.get(String(runningNo)) || [];
+          list.push({ sheet, row: i + 1, hasRef: !!ref });
+          runningNoRows.set(String(runningNo), list);
         }
       }
     }
 
-    if (pending.length === 0) {
-      return NextResponse.json({ success: true, tabsScanned: tabs.length, updated: 0, skipped: 0, message: 'ไม่มีแถวเก่าที่ต้องอัปเดต' });
-    }
+    const { data: docs } = await supabase.from('documents').select('*');
+    const { data: recipients } = await supabase.from('document_recipients').select('*');
+    const docById = new Map((docs || []).map((d: any) => [d.id, d]));
 
-    const runningNos = [...new Set(pending.map((p) => p.runningNo))];
-    const { data: docs } = await supabase.from('documents').select('*').in('running_no', runningNos);
-    const docByRunningNo = new Map((docs || []).map((d: any) => [String(d.running_no), d]));
-    const docIds = (docs || []).map((d: any) => d.id);
-
-    const { data: recipients } = await supabase
-      .from('document_recipients')
-      .select('*')
-      .in('document_id', docIds.length ? docIds : ['none']);
     const recipientsByDoc = new Map<string, any[]>();
     for (const r of recipients || []) {
       const list = recipientsByDoc.get(r.document_id) || [];
@@ -69,24 +65,10 @@ export async function GET() {
       if (!deliveryByRecipient.has(log.document_recipient_id)) deliveryByRecipient.set(log.document_recipient_id, log);
     }
 
-    const bySheet = new Map<string, { row: number; values: string[] }[]>();
-    let updated = 0;
-    let skipped = 0;
-
-    for (const p of pending) {
-      const doc = docByRunningNo.get(p.runningNo);
-      const recs = doc ? recipientsByDoc.get(doc.id) || [] : [];
-      // Only handle the unambiguous legacy case: exactly one recipient per document.
-      // Rows for documents with >1 recipient are new enough to already carry a
-      // reference id, so this should only ever skip genuinely orphaned rows.
-      if (!doc || recs.length !== 1) {
-        skipped++;
-        continue;
-      }
-      const r = recs[0];
+    const buildValues = (doc: any, r: any) => {
       const delivery = deliveryByRecipient.get(r.id);
       const profName = profileMap.get(doc.recorded_by) || '';
-      const values = [
+      return [
         String(doc.running_no), doc.received_date, doc.doc_number || '',
         doc.sender, doc.subject, deptMap.get(r.department_id) || '',
         r.status, r.admin_signature || '', r.admin_signed_at || '',
@@ -95,17 +77,44 @@ export async function GET() {
         doc.is_damaged ? 'ใช่' : 'ไม่', doc.damage_image_url || '', doc.note || '',
         profName, r.updated_at, doc.tax_invoice_no || '', r.id,
       ];
-      const list = bySheet.get(p.sheet) || [];
-      list.push({ row: p.row, values });
-      bySheet.set(p.sheet, list);
-      updated++;
+    };
+
+    const bySheet = new Map<string, { row: number; values: string[] }[]>();
+    let updated = 0;
+    let appended = 0;
+
+    for (const r of recipients || []) {
+      if (refSet.has(r.id)) continue; // already correctly synced somewhere
+
+      const doc = docById.get(r.document_id);
+      if (!doc) continue;
+
+      const siblingRows = runningNoRows.get(String(doc.running_no)) || [];
+      const recsForDoc = recipientsByDoc.get(r.document_id) || [];
+      const reusableBlankRow = recsForDoc.length === 1 ? siblingRows.find((row) => !row.hasRef) : undefined;
+
+      if (reusableBlankRow) {
+        const list = bySheet.get(reusableBlankRow.sheet) || [];
+        list.push({ row: reusableBlankRow.row, values: buildValues(doc, r) });
+        bySheet.set(reusableBlankRow.sheet, list);
+        updated++;
+      } else {
+        await appendRow('เอกสารเข้า', buildValues(doc, r));
+        appended++;
+      }
     }
 
     for (const [sheet, list] of bySheet) {
       await batchUpdateRows(sheet, list);
     }
 
-    return NextResponse.json({ success: true, tabsScanned: tabs.length, updated, skipped });
+    return NextResponse.json({
+      success: true,
+      tabsScanned: tabs.length,
+      updated,
+      appended,
+      message: updated === 0 && appended === 0 ? 'ข้อมูลใน Sheets ครบถ้วนแล้ว ไม่มีอะไรต้องแก้' : undefined,
+    });
   } catch (error: any) {
     console.error('[Backfill Sheets] Error:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
