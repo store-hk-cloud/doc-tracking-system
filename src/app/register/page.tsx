@@ -9,29 +9,41 @@ const DOCUMENT_TYPES = [
   'ใบเบิก', 'ใบรับสินค้าสำเร็จรูป', 'ใบรับสินค้า', 'ใบโอนสินค้า', 'เอกสารอื่นๆ',
 ];
 
+const initialForm = {
+  received_date: new Date().toISOString().split('T')[0],
+  doc_number: '',
+  tax_invoice_no: '',
+  sender: '',
+  subject: '',
+  recipient_dept_ids: [] as string[],
+  inspector_signature: '',
+  purchasing_signature: '',
+  note: '',
+  is_damaged: false,
+};
+
+type QueueItem = {
+  id: string;
+  form: typeof initialForm;
+  photoFile: File | null;
+  photoPreview: string;
+  error?: string;
+};
+
 export default function RegisterPage() {
   const { user } = useAuth();
   const supabase = createClient();
   const [departments, setDepartments] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState('');
   const [sharing, setSharing] = useState(false);
 
-  const [form, setForm] = useState({
-    received_date: new Date().toISOString().split('T')[0],
-    doc_number: '',
-    tax_invoice_no: '',
-    sender: '',
-    subject: '',
-    recipient_dept_ids: [] as string[],
-    inspector_signature: '',
-    purchasing_signature: '',
-    note: '',
-    is_damaged: false,
-  });
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  const [form, setForm] = useState({ ...initialForm });
   const isGoodsReceipt = form.subject === 'ใบรับสินค้า';
 
   const toggleDept = (deptId: string) => {
@@ -98,29 +110,44 @@ export default function RegisterPage() {
     };
   }, [photoPreview]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleAddToQueue = (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError('');
     setSuccess('');
 
     if (!form.sender || !form.subject || form.recipient_dept_ids.length === 0) {
       setError('กรุณากรอกข้อมูลที่จำเป็น (ผู้ส่ง, เรื่อง, หน่วยงานอย่างน้อย 1 หน่วยงาน)');
-      setLoading(false);
       return;
     }
 
+    setQueue((current) => [
+      ...current,
+      { id: crypto.randomUUID(), form: { ...form }, photoFile, photoPreview },
+    ]);
+    setForm({ ...initialForm });
+    // Ownership of the photo/preview moves into the queue item — don't revoke it here.
+    setPhotoFile(null);
+    setPhotoPreview('');
+  };
+
+  const handleRemoveFromQueue = (id: string) => {
+    setQueue((current) => {
+      const item = current.find((q) => q.id === id);
+      if (item?.photoPreview) URL.revokeObjectURL(item.photoPreview);
+      return current.filter((q) => q.id !== id);
+    });
+  };
+
+  const submitQueueItem = async (item: QueueItem) => {
     let damage_image_url = '';
-    if (form.is_damaged && photoFile) {
+    if (item.form.is_damaged && item.photoFile) {
       const uploadForm = new FormData();
-      uploadForm.append('file', photoFile);
+      uploadForm.append('file', item.photoFile);
       uploadForm.append('folder', 'damage');
       const uploadRes = await fetch('/api/upload-to-drive', { method: 'POST', body: uploadForm });
       const uploadData = await uploadRes.json();
       if (!uploadData.success) {
-        setError(`อัปโหลดรูปไม่สำเร็จ: ${uploadData.error}`);
-        setLoading(false);
-        return;
+        return { success: false, error: `อัปโหลดรูปไม่สำเร็จ: ${uploadData.error}` };
       }
       damage_image_url = uploadData.data.viewLink;
     }
@@ -128,34 +155,47 @@ export default function RegisterPage() {
     const res = await fetch('/api/documents', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...form,
-        damage_image_url,
-        recorded_by: user?.id,
-      }),
+      body: JSON.stringify({ ...item.form, damage_image_url, recorded_by: user?.id }),
+    });
+    const data = await res.json();
+    return data.success
+      ? { success: true, running_no: data.data.running_no }
+      : { success: false, error: data.error || 'เกิดข้อผิดพลาด' };
+  };
+
+  const handleSaveAll = async () => {
+    if (queue.length === 0) return;
+    setSaving(true);
+    setError('');
+    setSuccess('');
+
+    const results = await Promise.all(
+      queue.map((item) => submitQueueItem(item).catch(() => ({ success: false, error: 'เกิดข้อผิดพลาด' })))
+    );
+
+    const succeededRunningNos: number[] = [];
+    const stillPending: QueueItem[] = [];
+    queue.forEach((item, i) => {
+      const result = results[i];
+      if (result.success) {
+        succeededRunningNos.push(result.running_no!);
+        if (item.photoPreview) URL.revokeObjectURL(item.photoPreview);
+      } else {
+        stillPending.push({ ...item, error: result.error });
+      }
     });
 
-    const data = await res.json();
-    if (data.success) {
-      setSuccess(`✅ ลงทะเบียนสำเร็จ! Running No. #${data.data.running_no}`);
-      setForm({
-        received_date: new Date().toISOString().split('T')[0],
-        doc_number: '',
-        tax_invoice_no: '',
-        sender: '',
-        subject: '',
-        recipient_dept_ids: [],
-        inspector_signature: '',
-        purchasing_signature: '',
-        note: '',
-        is_damaged: false,
-      });
-      clearPhoto();
-    } else {
-      setError(data.error || 'เกิดข้อผิดพลาด');
+    setQueue(stillPending);
+    if (succeededRunningNos.length > 0) {
+      setSuccess(`✅ บันทึกสำเร็จ ${succeededRunningNos.length} รายการ (Running No. ${succeededRunningNos.map((n) => `#${n}`).join(', ')})`);
     }
-    setLoading(false);
+    if (stillPending.length > 0) {
+      setError(`❌ บันทึกไม่สำเร็จ ${stillPending.length} รายการ — ดูรายละเอียดในตารางด้านล่างแล้วลองใหม่`);
+    }
+    setSaving(false);
   };
+
+  const deptName = (id: string) => departments.find((d: any) => d.id === id)?.name || id;
 
   return (
     <div>
@@ -182,7 +222,7 @@ export default function RegisterPage() {
       {error && <div className="toast error" style={{ position: 'static', marginBottom: 12 }}>{error}</div>}
 
       <div className="scan-panel">
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleAddToQueue}>
           <div className="form-row">
             <div className="form-group">
               <label>วันที่รับ *</label>
@@ -331,11 +371,73 @@ export default function RegisterPage() {
             <textarea value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="หมายเหตุเพิ่มเติม..." />
           </div>
 
-          <button type="submit" className="secondary-button" disabled={loading} style={{ marginTop: 8 }}>
-            {loading ? 'กำลังบันทึก...' : '💾 บันทึกเอกสาร'}
+          <button type="submit" className="secondary-button" style={{ marginTop: 8 }}>
+            ➕ เพิ่มเข้ารายการที่รอบันทึก
           </button>
         </form>
       </div>
+
+      {queue.length > 0 && (
+        <div className="scan-panel" style={{ marginTop: 16 }}>
+          <div className="packer-header">
+            <span className="eyebrow">📋 รายการที่รอบันทึก ({queue.length} รายการ)</span>
+          </div>
+
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>วันที่รับ</th>
+                  <th>เลขที่เอกสาร</th>
+                  <th>ผู้ส่ง</th>
+                  <th>เรื่อง</th>
+                  <th>หน่วยงาน</th>
+                  <th>ลบ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {queue.map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.form.received_date}</td>
+                    <td>{item.form.doc_number || '-'}</td>
+                    <td>{item.form.sender}</td>
+                    <td>{item.form.subject}</td>
+                    <td>{item.form.recipient_dept_ids.map(deptName).join(', ')}</td>
+                    <td>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveFromQueue(item.id)}
+                        style={{ background: 'var(--danger)', color: 'white', border: 'none', padding: '4px 10px', borderRadius: 6, cursor: 'pointer', fontSize: '0.8rem' }}
+                      >
+                        🗑
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {queue.some((q) => q.error) && (
+            <div style={{ marginTop: 10, display: 'grid', gap: 4 }}>
+              {queue.filter((q) => q.error).map((q) => (
+                <div key={q.id} className="toast error" style={{ position: 'static' }}>
+                  {q.form.sender} — {q.error}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={handleSaveAll}
+            disabled={saving}
+            style={{ marginTop: 12 }}
+          >
+            {saving ? 'กำลังบันทึก...' : `💾 บันทึกทั้งหมด (${queue.length})`}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
