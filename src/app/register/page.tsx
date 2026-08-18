@@ -9,26 +9,26 @@ const DOCUMENT_TYPES = [
   'ใบเบิก', 'ใบรับสินค้าสำเร็จรูป', 'ใบรับสินค้า', 'ใบโอนสินค้า', 'เอกสารอื่นๆ',
 ];
 
-const initialForm = {
-  received_date: new Date().toISOString().split('T')[0],
-  doc_number: '',
-  tax_invoice_no: '',
-  sender: '',
-  subject: '',
-  recipient_dept_ids: [] as string[],
-  inspector_signature: '',
-  purchasing_signature: '',
-  note: '',
-  is_damaged: false,
-};
+function emptyRow() {
+  return {
+    id: crypto.randomUUID(),
+    received_date: new Date().toISOString().split('T')[0],
+    doc_number: '',
+    tax_invoice_no: '',
+    sender: '',
+    subject: '',
+    recipient_dept_ids: [] as string[],
+    inspector_signature: '',
+    purchasing_signature: '',
+    note: '',
+    is_damaged: false,
+    photoFile: null as File | null,
+    photoPreview: '',
+    error: undefined as string | undefined,
+  };
+}
 
-type QueueItem = {
-  id: string;
-  form: typeof initialForm;
-  photoFile: File | null;
-  photoPreview: string;
-  error?: string;
-};
+type Row = ReturnType<typeof emptyRow>;
 
 export default function RegisterPage() {
   const { user } = useAuth();
@@ -36,67 +36,12 @@ export default function RegisterPage() {
   const [departments, setDepartments] = useState<any[]>([]);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [photoPreview, setPhotoPreview] = useState('');
   const [sharing, setSharing] = useState(false);
-
-  const [queue, setQueue] = useState<QueueItem[]>([]);
   const [saving, setSaving] = useState(false);
 
-  const [form, setForm] = useState({ ...initialForm });
-  const isGoodsReceipt = form.subject === 'ใบรับสินค้า';
-
-  const toggleDept = (deptId: string) => {
-    setForm((current) => ({
-      ...current,
-      recipient_dept_ids: current.recipient_dept_ids.includes(deptId)
-        ? current.recipient_dept_ids.filter((id) => id !== deptId)
-        : [...current.recipient_dept_ids, deptId],
-    }));
-  };
-
-  // Photo lives only in memory (object URL / File) — never written to device storage.
-  const clearPhoto = () => {
-    if (photoPreview) URL.revokeObjectURL(photoPreview);
-    setPhotoFile(null);
-    setPhotoPreview('');
-  };
-
-  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    if (photoPreview) URL.revokeObjectURL(photoPreview);
-    setPhotoFile(file);
-    setPhotoPreview(URL.createObjectURL(file));
-  };
-
-  const handleShareLine = async () => {
-    if (!photoFile) return;
-    const nav = navigator as Navigator & { canShare?: (data?: ShareData) => boolean };
-    if (!nav.share || !nav.canShare || !nav.canShare({ files: [photoFile] })) {
-      setError('อุปกรณ์นี้ไม่รองรับการแชร์รูปโดยตรง กรุณาบันทึกรูปแล้วแชร์ผ่านแอป LINE เอง');
-      return;
-    }
-    setSharing(true);
-    try {
-      await nav.share({
-        files: [photoFile],
-        title: 'รูปความเสียหาย',
-        text: `พัสดุ/เอกสารเสียหาย: ${form.subject || ''} (${form.sender || ''})`,
-      });
-    } catch (err: any) {
-      if (err?.name !== 'AbortError') setError('แชร์รูปไม่สำเร็จ');
-    }
-    setSharing(false);
-  };
-
-  const selectDocumentType = (type: string) => {
-    setForm((current) => ({
-      ...current,
-      subject: type,
-    }));
-  };
+  const [rows, setRows] = useState<Row[]>([emptyRow()]);
+  const [deptPopupRowId, setDeptPopupRowId] = useState<string | null>(null);
+  const [photoPopupRowId, setPhotoPopupRowId] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.from('departments').select('*').order('name').then(({ data }) => {
@@ -106,43 +51,73 @@ export default function RegisterPage() {
 
   useEffect(() => {
     return () => {
-      if (photoPreview) URL.revokeObjectURL(photoPreview);
+      rows.forEach((r) => { if (r.photoPreview) URL.revokeObjectURL(r.photoPreview); });
     };
-  }, [photoPreview]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const handleAddToQueue = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setSuccess('');
-
-    if (!form.sender || !form.subject || form.recipient_dept_ids.length === 0) {
-      setError('กรุณากรอกข้อมูลที่จำเป็น (ผู้ส่ง, เรื่อง, หน่วยงานอย่างน้อย 1 หน่วยงาน)');
-      return;
-    }
-
-    setQueue((current) => [
-      ...current,
-      { id: crypto.randomUUID(), form: { ...form }, photoFile, photoPreview },
-    ]);
-    setForm({ ...initialForm });
-    // Ownership of the photo/preview moves into the queue item — don't revoke it here.
-    setPhotoFile(null);
-    setPhotoPreview('');
+  const updateRow = (id: string, patch: Partial<Row>) => {
+    setRows((current) => current.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   };
 
-  const handleRemoveFromQueue = (id: string) => {
-    setQueue((current) => {
-      const item = current.find((q) => q.id === id);
-      if (item?.photoPreview) URL.revokeObjectURL(item.photoPreview);
-      return current.filter((q) => q.id !== id);
+  const addRow = () => setRows((current) => [...current, emptyRow()]);
+
+  const removeRow = (id: string) => {
+    setRows((current) => {
+      const row = current.find((r) => r.id === id);
+      if (row?.photoPreview) URL.revokeObjectURL(row.photoPreview);
+      return current.filter((r) => r.id !== id);
     });
   };
 
-  const submitQueueItem = async (item: QueueItem) => {
+  const toggleDept = (rowId: string, deptId: string) => {
+    setRows((current) => current.map((r) => (
+      r.id === rowId
+        ? { ...r, recipient_dept_ids: r.recipient_dept_ids.includes(deptId) ? r.recipient_dept_ids.filter((id) => id !== deptId) : [...r.recipient_dept_ids, deptId] }
+        : r
+    )));
+  };
+
+  const clearRowPhoto = (id: string) => {
+    const row = rows.find((r) => r.id === id);
+    if (row?.photoPreview) URL.revokeObjectURL(row.photoPreview);
+    updateRow(id, { photoFile: null, photoPreview: '' });
+  };
+
+  const handlePhotoChange = (rowId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    const row = rows.find((r) => r.id === rowId);
+    if (row?.photoPreview) URL.revokeObjectURL(row.photoPreview);
+    updateRow(rowId, { photoFile: file, photoPreview: URL.createObjectURL(file) });
+  };
+
+  const handleShareLine = async (row: Row) => {
+    if (!row.photoFile) return;
+    const nav = navigator as Navigator & { canShare?: (data?: ShareData) => boolean };
+    if (!nav.share || !nav.canShare || !nav.canShare({ files: [row.photoFile] })) {
+      setError('อุปกรณ์นี้ไม่รองรับการแชร์รูปโดยตรง กรุณาบันทึกรูปแล้วแชร์ผ่านแอป LINE เอง');
+      return;
+    }
+    setSharing(true);
+    try {
+      await nav.share({
+        files: [row.photoFile],
+        title: 'รูปความเสียหาย',
+        text: `พัสดุ/เอกสารเสียหาย: ${row.subject || ''} (${row.sender || ''})`,
+      });
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') setError('แชร์รูปไม่สำเร็จ');
+    }
+    setSharing(false);
+  };
+
+  const submitRow = async (row: Row) => {
     let damage_image_url = '';
-    if (item.form.is_damaged && item.photoFile) {
+    if (row.is_damaged && row.photoFile) {
       const uploadForm = new FormData();
-      uploadForm.append('file', item.photoFile);
+      uploadForm.append('file', row.photoFile);
       uploadForm.append('folder', 'damage');
       const uploadRes = await fetch('/api/upload-to-drive', { method: 'POST', body: uploadForm });
       const uploadData = await uploadRes.json();
@@ -155,7 +130,20 @@ export default function RegisterPage() {
     const res = await fetch('/api/documents', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...item.form, damage_image_url, recorded_by: user?.id }),
+      body: JSON.stringify({
+        received_date: row.received_date,
+        doc_number: row.doc_number,
+        tax_invoice_no: row.tax_invoice_no,
+        sender: row.sender,
+        subject: row.subject,
+        recipient_dept_ids: row.recipient_dept_ids,
+        inspector_signature: row.inspector_signature,
+        purchasing_signature: row.purchasing_signature,
+        note: row.note,
+        is_damaged: row.is_damaged,
+        damage_image_url,
+        recorded_by: user?.id,
+      }),
     });
     const data = await res.json();
     return data.success
@@ -164,55 +152,64 @@ export default function RegisterPage() {
   };
 
   const handleSaveAll = async () => {
-    if (queue.length === 0) return;
-    setSaving(true);
     setError('');
     setSuccess('');
 
+    const validRows: Row[] = [];
+    const invalidIds = new Set<string>();
+    setRows((current) => current.map((r) => {
+      if (!r.sender || !r.subject || r.recipient_dept_ids.length === 0) {
+        invalidIds.add(r.id);
+        return { ...r, error: 'กรุณากรอกผู้ส่ง, เรื่อง และเลือกหน่วยงานอย่างน้อย 1 หน่วยงาน' };
+      }
+      return { ...r, error: undefined };
+    }));
+    rows.forEach((r) => { if (!invalidIds.has(r.id)) validRows.push(r); });
+
+    if (validRows.length === 0) {
+      setError('กรุณากรอกข้อมูลที่จำเป็นให้ครบอย่างน้อย 1 แถวก่อนบันทึก');
+      return;
+    }
+
+    setSaving(true);
     const results = await Promise.all(
-      queue.map((item) => submitQueueItem(item).catch(() => ({ success: false, error: 'เกิดข้อผิดพลาด' })))
+      validRows.map((row) => submitRow(row).catch(() => ({ success: false, error: 'เกิดข้อผิดพลาด' })))
     );
 
     const succeededRunningNos: number[] = [];
-    const stillPending: QueueItem[] = [];
-    queue.forEach((item, i) => {
+    const failedIds = new Map<string, string>();
+    validRows.forEach((row, i) => {
       const result = results[i];
       if (result.success) {
         succeededRunningNos.push(result.running_no!);
-        if (item.photoPreview) URL.revokeObjectURL(item.photoPreview);
+        if (row.photoPreview) URL.revokeObjectURL(row.photoPreview);
       } else {
-        stillPending.push({ ...item, error: result.error });
+        failedIds.set(row.id, result.error || 'เกิดข้อผิดพลาด');
       }
     });
 
-    setQueue(stillPending);
+    setRows((current) => {
+      const remaining = current
+        .filter((r) => !(validRows.some((v) => v.id === r.id) && !failedIds.has(r.id)))
+        .map((r) => (failedIds.has(r.id) ? { ...r, error: failedIds.get(r.id) } : r));
+      return remaining.length > 0 ? remaining : [emptyRow()];
+    });
+
     if (succeededRunningNos.length > 0) {
       setSuccess(`✅ บันทึกสำเร็จ ${succeededRunningNos.length} รายการ (Running No. ${succeededRunningNos.map((n) => `#${n}`).join(', ')})`);
     }
-    if (stillPending.length > 0) {
-      setError(`❌ บันทึกไม่สำเร็จ ${stillPending.length} รายการ — ดูรายละเอียดในตารางด้านล่างแล้วลองใหม่`);
+    if (failedIds.size > 0 || invalidIds.size > 0) {
+      setError(`❌ บันทึกไม่สำเร็จ ${failedIds.size + invalidIds.size} รายการ — ดูรายละเอียดในตารางแล้วลองใหม่`);
     }
     setSaving(false);
   };
 
-  const deptName = (id: string) => departments.find((d: any) => d.id === id)?.name || id;
+  const deptPopupRow = rows.find((r) => r.id === deptPopupRowId);
+  const photoPopupRow = rows.find((r) => r.id === photoPopupRowId);
 
   return (
     <div>
       <div className="app-title" style={{ marginBottom: 20 }}>
-        <div className="document-type-strip" role="group" aria-label="รายการเอกสาร">
-          {DOCUMENT_TYPES.map((type) => (
-            <button
-              key={type}
-              type="button"
-              className={`document-type-chip ${form.subject === type ? 'active' : ''}`}
-              aria-pressed={form.subject === type}
-              onClick={() => selectDocumentType(type)}
-            >
-              {type}
-            </button>
-          ))}
-        </div>
         <div className="title-badge">📝 ลงทะเบียน</div>
         <h2>ลงทะเบียนเอกสารเข้า</h2>
         <div className="title-accent" />
@@ -221,221 +218,235 @@ export default function RegisterPage() {
       {success && <div className="toast success" style={{ position: 'static', marginBottom: 12 }}>{success}</div>}
       {error && <div className="toast error" style={{ position: 'static', marginBottom: 12 }}>{error}</div>}
 
+      <datalist id="document-types">
+        {DOCUMENT_TYPES.map((type) => <option key={type} value={type} />)}
+      </datalist>
+
       <div className="scan-panel">
-        <form onSubmit={handleAddToQueue}>
-          <div className="form-row">
-            <div className="form-group">
-              <label>วันที่รับ *</label>
-              <input type="date" value={form.received_date} onChange={(e) => setForm({ ...form, received_date: e.target.value })} />
-            </div>
-            <div className="form-group">
-              <label>เลขที่เอกสาร</label>
-              <input type="text" value={form.doc_number} onChange={(e) => setForm({ ...form, doc_number: e.target.value })} placeholder="เช่น INV-2024-001" />
-            </div>
-          </div>
+        <div className="packer-header">
+          <span className="eyebrow">📋 รายการเอกสาร ({rows.length} แถว)</span>
+        </div>
 
-          <div className="form-row">
-            <div className="form-group">
-              <label>เลขใบกำกับภาษี</label>
-              <input type="text" value={form.tax_invoice_no} onChange={(e) => setForm({ ...form, tax_invoice_no: e.target.value })} placeholder="เลขใบกำกับภาษี" />
-            </div>
-          </div>
-
-          <div className="form-group">
-            <label>ผู้ส่ง *</label>
-            <input type="text" value={form.sender} onChange={(e) => setForm({ ...form, sender: e.target.value })} placeholder="ชื่อผู้ส่ง / บริษัท" required />
-          </div>
-
-          <div className="form-group">
-            <label>เรื่อง *</label>
-            <input type="text" value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} placeholder="หัวข้อเอกสาร" required />
-          </div>
-
-          <div className="form-group">
-            <label>หน่วยงานผู้รับ * (เลือกได้มากกว่า 1 หน่วยงาน)</label>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }} role="group" aria-label="หน่วยงานผู้รับ">
-              {departments.map((d: any) => (
-                <button
-                  key={d.id}
-                  type="button"
-                  className={`document-type-chip ${form.recipient_dept_ids.includes(d.id) ? 'active' : ''}`}
-                  aria-pressed={form.recipient_dept_ids.includes(d.id)}
-                  onClick={() => toggleDept(d.id)}
-                >
-                  {d.name} ({d.code})
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {isGoodsReceipt && (
-            <div className="form-row">
-              <div className="form-group">
-                <label>ผู้ตรวจสอบ</label>
-                <input
-                  type="text"
-                  value={form.inspector_signature}
-                  onChange={(e) => setForm({ ...form, inspector_signature: e.target.value })}
-                  placeholder="ชื่อ/ลายเซ็นผู้ตรวจสอบ"
-                />
-              </div>
-              <div className="form-group">
-                <label>จัดซื้อ</label>
-                <input
-                  type="text"
-                  value={form.purchasing_signature}
-                  onChange={(e) => setForm({ ...form, purchasing_signature: e.target.value })}
-                  placeholder="ชื่อ/ลายเซ็นจัดซื้อ"
-                />
-              </div>
-            </div>
-          )}
-
-          <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <input
-              type="checkbox"
-              id="is_damaged"
-              checked={form.is_damaged}
-              onChange={(e) => {
-                const checked = e.target.checked;
-                setForm({ ...form, is_damaged: checked });
-                if (!checked) clearPhoto();
-              }}
-              style={{ width: 20, height: 20 }}
-            />
-            <label htmlFor="is_damaged" style={{ margin: 0 }}>พัสดุ/เอกสารเสียหาย (ถ่ายรูปไว้ใน Google Drive)</label>
-          </div>
-
-          {form.is_damaged && (
-            <div className="form-group">
-              <label>รูปความเสียหาย</label>
-              {!photoPreview ? (
-                <label
-                  htmlFor="damage_photo"
-                  className="ghost-button"
-                  style={{ display: 'inline-flex', width: 'auto', padding: '0 20px', cursor: 'pointer' }}
-                >
-                  📷 ถ่ายรูป / เลือกรูป
-                </label>
-              ) : (
-                <div style={{ display: 'grid', gap: 10 }}>
-                  <img
-                    src={photoPreview}
-                    alt="รูปความเสียหาย"
-                    style={{ maxWidth: 220, borderRadius: 8, border: '1px solid var(--line)' }}
-                  />
-                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={handleShareLine}
-                      disabled={sharing}
-                      style={{ width: 'auto', padding: '0 16px' }}
-                    >
-                      {sharing ? 'กำลังแชร์...' : '📤 แชร์ไลน์'}
-                    </button>
-                    <label
-                      htmlFor="damage_photo"
-                      className="ghost-button"
-                      style={{ display: 'inline-flex', width: 'auto', padding: '0 16px', cursor: 'pointer' }}
-                    >
-                      🔄 ถ่ายใหม่
-                    </label>
-                    <button
-                      type="button"
-                      className="ghost-button"
-                      onClick={clearPhoto}
-                      style={{ width: 'auto', padding: '0 16px' }}
-                    >
-                      🗑 ลบรูป
-                    </button>
-                  </div>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>
-                    รูปจะถูกเก็บไว้ชั่วคราวในเครื่องระหว่างทำรายการนี้เท่านั้น ไม่ถูกบันทึกลงเครื่อง — เมื่อกดบันทึกเอกสาร รูปจะถูกอัปโหลดขึ้น Google Drive โดยตรง
-                  </div>
-                </div>
-              )}
-              <input
-                id="damage_photo"
-                type="file"
-                accept="image/*"
-                capture="environment"
-                onChange={handlePhotoChange}
-                style={{ display: 'none' }}
-              />
-            </div>
-          )}
-
-          <div className="form-group">
-            <label>หมายเหตุ</label>
-            <textarea value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="หมายเหตุเพิ่มเติม..." />
-          </div>
-
-          <button type="submit" className="secondary-button" style={{ marginTop: 8 }}>
-            ➕ เพิ่มเข้ารายการที่รอบันทึก
-          </button>
-        </form>
-      </div>
-
-      {queue.length > 0 && (
-        <div className="scan-panel" style={{ marginTop: 16 }}>
-          <div className="packer-header">
-            <span className="eyebrow">📋 รายการที่รอบันทึก ({queue.length} รายการ)</span>
-          </div>
-
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>วันที่รับ</th>
-                  <th>เลขที่เอกสาร</th>
-                  <th>ผู้ส่ง</th>
-                  <th>เรื่อง</th>
-                  <th>หน่วยงาน</th>
-                  <th>ลบ</th>
-                </tr>
-              </thead>
-              <tbody>
-                {queue.map((item) => (
-                  <tr key={item.id}>
-                    <td>{item.form.received_date}</td>
-                    <td>{item.form.doc_number || '-'}</td>
-                    <td>{item.form.sender}</td>
-                    <td>{item.form.subject}</td>
-                    <td>{item.form.recipient_dept_ids.map(deptName).join(', ')}</td>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>วันที่รับ</th>
+                <th>เลขที่เอกสาร</th>
+                <th>เลขใบกำกับภาษี</th>
+                <th>ผู้ส่ง *</th>
+                <th>เรื่อง *</th>
+                <th>หน่วยงาน *</th>
+                <th>ผู้ตรวจสอบ</th>
+                <th>จัดซื้อ</th>
+                <th>เสียหาย</th>
+                <th>หมายเหตุ</th>
+                <th>ลบ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const isGoodsReceipt = row.subject === 'ใบรับสินค้า';
+                return (
+                  <tr key={row.id}>
+                    <td>
+                      <input type="date" value={row.received_date} onChange={(e) => updateRow(row.id, { received_date: e.target.value })} style={{ minWidth: 140 }} />
+                    </td>
+                    <td>
+                      <input type="text" value={row.doc_number} onChange={(e) => updateRow(row.id, { doc_number: e.target.value })} placeholder="เช่น INV-2024-001" style={{ minWidth: 140 }} />
+                    </td>
+                    <td>
+                      <input type="text" value={row.tax_invoice_no} onChange={(e) => updateRow(row.id, { tax_invoice_no: e.target.value })} placeholder="เลขใบกำกับภาษี" style={{ minWidth: 140 }} />
+                    </td>
+                    <td>
+                      <input type="text" value={row.sender} onChange={(e) => updateRow(row.id, { sender: e.target.value })} placeholder="ชื่อผู้ส่ง / บริษัท" style={{ minWidth: 160 }} />
+                    </td>
+                    <td>
+                      <input type="text" list="document-types" value={row.subject} onChange={(e) => updateRow(row.id, { subject: e.target.value })} placeholder="หัวข้อเอกสาร" style={{ minWidth: 160 }} />
+                    </td>
+                    <td>
+                      <button type="button" className="ghost-button" style={{ width: 'auto', padding: '0 12px', whiteSpace: 'nowrap' }} onClick={() => setDeptPopupRowId(row.id)}>
+                        🏢 {row.recipient_dept_ids.length > 0 ? `เลือกแล้ว (${row.recipient_dept_ids.length})` : 'เลือกหน่วยงาน'}
+                      </button>
+                    </td>
+                    <td>
+                      <input
+                        type="text"
+                        value={row.inspector_signature}
+                        onChange={(e) => updateRow(row.id, { inspector_signature: e.target.value })}
+                        placeholder={isGoodsReceipt ? 'ชื่อผู้ตรวจสอบ' : '-'}
+                        disabled={!isGoodsReceipt}
+                        style={{ minWidth: 130 }}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="text"
+                        value={row.purchasing_signature}
+                        onChange={(e) => updateRow(row.id, { purchasing_signature: e.target.value })}
+                        placeholder={isGoodsReceipt ? 'ชื่อจัดซื้อ' : '-'}
+                        disabled={!isGoodsReceipt}
+                        style={{ minWidth: 130 }}
+                      />
+                    </td>
+                    <td>
+                      <button type="button" className="ghost-button" style={{ width: 'auto', padding: '0 12px', whiteSpace: 'nowrap' }} onClick={() => setPhotoPopupRowId(row.id)}>
+                        {row.is_damaged ? '✅ เสียหาย' : '📷 ระบุ'}
+                      </button>
+                    </td>
+                    <td>
+                      <input type="text" value={row.note} onChange={(e) => updateRow(row.id, { note: e.target.value })} placeholder="หมายเหตุ..." style={{ minWidth: 140 }} />
+                    </td>
                     <td>
                       <button
                         type="button"
-                        onClick={() => handleRemoveFromQueue(item.id)}
+                        onClick={() => removeRow(row.id)}
                         style={{ background: 'var(--danger)', color: 'white', border: 'none', padding: '4px 10px', borderRadius: 6, cursor: 'pointer', fontSize: '0.8rem' }}
                       >
                         🗑
                       </button>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {rows.some((r) => r.error) && (
+          <div style={{ marginTop: 10, display: 'grid', gap: 4 }}>
+            {rows.filter((r) => r.error).map((r) => (
+              <div key={r.id} className="toast error" style={{ position: 'static' }}>
+                {r.sender || '(ไม่มีชื่อผู้ส่ง)'} — {r.error}
+              </div>
+            ))}
           </div>
-          {queue.some((q) => q.error) && (
-            <div style={{ marginTop: 10, display: 'grid', gap: 4 }}>
-              {queue.filter((q) => q.error).map((q) => (
-                <div key={q.id} className="toast error" style={{ position: 'static' }}>
-                  {q.form.sender} — {q.error}
-                </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
+          <button type="button" className="ghost-button" style={{ width: 'auto', padding: '0 20px' }} onClick={addRow}>
+            + เพิ่มแถว
+          </button>
+          <button type="button" className="secondary-button" style={{ width: 'auto', padding: '0 20px' }} onClick={handleSaveAll} disabled={saving}>
+            {saving ? 'กำลังบันทึก...' : `💾 บันทึกทั้งหมด (${rows.length})`}
+          </button>
+        </div>
+      </div>
+
+      {/* Department picker popup */}
+      {deptPopupRow && (
+        <div className="scan-popup-overlay" onClick={() => setDeptPopupRowId(null)}>
+          <div className="scan-popup-sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 500, margin: '0 auto' }}>
+            <div className="scan-popup-handle" />
+            <h3 style={{ marginBottom: 12 }}>🏢 เลือกหน่วยงานผู้รับ (เลือกได้มากกว่า 1)</h3>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }} role="group" aria-label="หน่วยงานผู้รับ">
+              {departments.map((d: any) => (
+                <button
+                  key={d.id}
+                  type="button"
+                  className={`document-type-chip ${deptPopupRow.recipient_dept_ids.includes(d.id) ? 'active' : ''}`}
+                  aria-pressed={deptPopupRow.recipient_dept_ids.includes(d.id)}
+                  onClick={() => toggleDept(deptPopupRow.id, d.id)}
+                >
+                  {d.name} ({d.code})
+                </button>
               ))}
             </div>
-          )}
+            <button className="secondary-button" onClick={() => setDeptPopupRowId(null)} style={{ marginTop: 16 }}>
+              ✅ เสร็จสิ้น
+            </button>
+            <button className="scan-popup-close" onClick={() => setDeptPopupRowId(null)}>ปิด</button>
+          </div>
+        </div>
+      )}
 
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={handleSaveAll}
-            disabled={saving}
-            style={{ marginTop: 12 }}
-          >
-            {saving ? 'กำลังบันทึก...' : `💾 บันทึกทั้งหมด (${queue.length})`}
-          </button>
+      {/* Damage + photo popup */}
+      {photoPopupRow && (
+        <div className="scan-popup-overlay" onClick={() => setPhotoPopupRowId(null)}>
+          <div className="scan-popup-sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 500, margin: '0 auto' }}>
+            <div className="scan-popup-handle" />
+            <h3 style={{ marginBottom: 12 }}>📷 ความเสียหาย — {photoPopupRow.sender || '(ยังไม่ระบุผู้ส่ง)'}</h3>
+
+            <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <input
+                type="checkbox"
+                id={`is_damaged_${photoPopupRow.id}`}
+                checked={photoPopupRow.is_damaged}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  updateRow(photoPopupRow.id, { is_damaged: checked });
+                  if (!checked) clearRowPhoto(photoPopupRow.id);
+                }}
+                style={{ width: 20, height: 20 }}
+              />
+              <label htmlFor={`is_damaged_${photoPopupRow.id}`} style={{ margin: 0 }}>พัสดุ/เอกสารเสียหาย (ถ่ายรูปไว้ใน Google Drive)</label>
+            </div>
+
+            {photoPopupRow.is_damaged && (
+              <div className="form-group">
+                <label>รูปความเสียหาย</label>
+                {!photoPopupRow.photoPreview ? (
+                  <label
+                    htmlFor={`damage_photo_${photoPopupRow.id}`}
+                    className="ghost-button"
+                    style={{ display: 'inline-flex', width: 'auto', padding: '0 20px', cursor: 'pointer' }}
+                  >
+                    📷 ถ่ายรูป / เลือกรูป
+                  </label>
+                ) : (
+                  <div style={{ display: 'grid', gap: 10 }}>
+                    <img
+                      src={photoPopupRow.photoPreview}
+                      alt="รูปความเสียหาย"
+                      style={{ maxWidth: 220, borderRadius: 8, border: '1px solid var(--line)' }}
+                    />
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => handleShareLine(photoPopupRow)}
+                        disabled={sharing}
+                        style={{ width: 'auto', padding: '0 16px' }}
+                      >
+                        {sharing ? 'กำลังแชร์...' : '📤 แชร์ไลน์'}
+                      </button>
+                      <label
+                        htmlFor={`damage_photo_${photoPopupRow.id}`}
+                        className="ghost-button"
+                        style={{ display: 'inline-flex', width: 'auto', padding: '0 16px', cursor: 'pointer' }}
+                      >
+                        🔄 ถ่ายใหม่
+                      </label>
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={() => clearRowPhoto(photoPopupRow.id)}
+                        style={{ width: 'auto', padding: '0 16px' }}
+                      >
+                        🗑 ลบรูป
+                      </button>
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>
+                      รูปจะถูกเก็บไว้ชั่วคราวในเครื่องระหว่างทำรายการนี้เท่านั้น ไม่ถูกบันทึกลงเครื่อง — เมื่อกดบันทึกทั้งหมด รูปจะถูกอัปโหลดขึ้น Google Drive โดยตรง
+                    </div>
+                  </div>
+                )}
+                <input
+                  id={`damage_photo_${photoPopupRow.id}`}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={(e) => handlePhotoChange(photoPopupRow.id, e)}
+                  style={{ display: 'none' }}
+                />
+              </div>
+            )}
+
+            <button className="secondary-button" onClick={() => setPhotoPopupRowId(null)} style={{ marginTop: 8 }}>
+              ✅ เสร็จสิ้น
+            </button>
+            <button className="scan-popup-close" onClick={() => setPhotoPopupRowId(null)}>ปิด</button>
+          </div>
         </div>
       )}
     </div>
