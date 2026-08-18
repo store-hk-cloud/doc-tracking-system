@@ -41,7 +41,7 @@ export default function RegisterPage() {
 
   const [rows, setRows] = useState<Row[]>([emptyRow()]);
   const [deptPopupRowId, setDeptPopupRowId] = useState<string | null>(null);
-  const [photoPopupRowId, setPhotoPopupRowId] = useState<string | null>(null);
+  const [detailsPopupRowId, setDetailsPopupRowId] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.from('departments').select('*').order('name').then(({ data }) => {
@@ -205,7 +205,9 @@ export default function RegisterPage() {
   };
 
   const deptPopupRow = rows.find((r) => r.id === deptPopupRowId);
-  const photoPopupRow = rows.find((r) => r.id === photoPopupRowId);
+  const detailsPopupRow = rows.find((r) => r.id === detailsPopupRowId);
+  const hasExtraDetails = (row: Row) =>
+    !!(row.tax_invoice_no || row.inspector_signature || row.purchasing_signature || row.note || row.is_damaged);
 
   return (
     <div>
@@ -233,82 +235,49 @@ export default function RegisterPage() {
               <tr>
                 <th>วันที่รับ</th>
                 <th>เลขที่เอกสาร</th>
-                <th>เลขใบกำกับภาษี</th>
                 <th>ผู้ส่ง *</th>
                 <th>เรื่อง *</th>
                 <th>หน่วยงาน *</th>
-                <th>ผู้ตรวจสอบ</th>
-                <th>จัดซื้อ</th>
-                <th>เสียหาย</th>
-                <th>หมายเหตุ</th>
+                <th>เพิ่มเติม</th>
                 <th>ลบ</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => {
-                const isGoodsReceipt = row.subject === 'ใบรับสินค้า';
-                return (
-                  <tr key={row.id}>
-                    <td>
-                      <input type="date" value={row.received_date} onChange={(e) => updateRow(row.id, { received_date: e.target.value })} style={{ minWidth: 140 }} />
-                    </td>
-                    <td>
-                      <input type="text" value={row.doc_number} onChange={(e) => updateRow(row.id, { doc_number: e.target.value })} placeholder="เช่น INV-2024-001" style={{ minWidth: 140 }} />
-                    </td>
-                    <td>
-                      <input type="text" value={row.tax_invoice_no} onChange={(e) => updateRow(row.id, { tax_invoice_no: e.target.value })} placeholder="เลขใบกำกับภาษี" style={{ minWidth: 140 }} />
-                    </td>
-                    <td>
-                      <input type="text" value={row.sender} onChange={(e) => updateRow(row.id, { sender: e.target.value })} placeholder="ชื่อผู้ส่ง / บริษัท" style={{ minWidth: 160 }} />
-                    </td>
-                    <td>
-                      <input type="text" list="document-types" value={row.subject} onChange={(e) => updateRow(row.id, { subject: e.target.value })} placeholder="หัวข้อเอกสาร" style={{ minWidth: 160 }} />
-                    </td>
-                    <td>
-                      <button type="button" className="ghost-button" style={{ width: 'auto', padding: '0 12px', whiteSpace: 'nowrap' }} onClick={() => setDeptPopupRowId(row.id)}>
-                        🏢 {row.recipient_dept_ids.length > 0 ? `เลือกแล้ว (${row.recipient_dept_ids.length})` : 'เลือกหน่วยงาน'}
-                      </button>
-                    </td>
-                    <td>
-                      <input
-                        type="text"
-                        value={row.inspector_signature}
-                        onChange={(e) => updateRow(row.id, { inspector_signature: e.target.value })}
-                        placeholder={isGoodsReceipt ? 'ชื่อผู้ตรวจสอบ' : '-'}
-                        disabled={!isGoodsReceipt}
-                        style={{ minWidth: 130 }}
-                      />
-                    </td>
-                    <td>
-                      <input
-                        type="text"
-                        value={row.purchasing_signature}
-                        onChange={(e) => updateRow(row.id, { purchasing_signature: e.target.value })}
-                        placeholder={isGoodsReceipt ? 'ชื่อจัดซื้อ' : '-'}
-                        disabled={!isGoodsReceipt}
-                        style={{ minWidth: 130 }}
-                      />
-                    </td>
-                    <td>
-                      <button type="button" className="ghost-button" style={{ width: 'auto', padding: '0 12px', whiteSpace: 'nowrap' }} onClick={() => setPhotoPopupRowId(row.id)}>
-                        {row.is_damaged ? '✅ เสียหาย' : '📷 ระบุ'}
-                      </button>
-                    </td>
-                    <td>
-                      <input type="text" value={row.note} onChange={(e) => updateRow(row.id, { note: e.target.value })} placeholder="หมายเหตุ..." style={{ minWidth: 140 }} />
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        onClick={() => removeRow(row.id)}
-                        style={{ background: 'var(--danger)', color: 'white', border: 'none', padding: '4px 10px', borderRadius: 6, cursor: 'pointer', fontSize: '0.8rem' }}
-                      >
-                        🗑
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
+              {rows.map((row) => (
+                <tr key={row.id}>
+                  <td>
+                    <input type="date" value={row.received_date} onChange={(e) => updateRow(row.id, { received_date: e.target.value })} style={{ minWidth: 130 }} />
+                  </td>
+                  <td>
+                    <input type="text" value={row.doc_number} onChange={(e) => updateRow(row.id, { doc_number: e.target.value })} placeholder="เช่น INV-2024-001" style={{ minWidth: 120 }} />
+                  </td>
+                  <td>
+                    <input type="text" value={row.sender} onChange={(e) => updateRow(row.id, { sender: e.target.value })} placeholder="ชื่อผู้ส่ง / บริษัท" style={{ minWidth: 140 }} />
+                  </td>
+                  <td>
+                    <input type="text" list="document-types" value={row.subject} onChange={(e) => updateRow(row.id, { subject: e.target.value })} placeholder="หัวข้อเอกสาร" style={{ minWidth: 140 }} />
+                  </td>
+                  <td>
+                    <button type="button" className="ghost-button" style={{ width: 'auto', padding: '0 12px', whiteSpace: 'nowrap' }} onClick={() => setDeptPopupRowId(row.id)}>
+                      🏢 {row.recipient_dept_ids.length > 0 ? `เลือกแล้ว (${row.recipient_dept_ids.length})` : 'เลือกหน่วยงาน'}
+                    </button>
+                  </td>
+                  <td>
+                    <button type="button" className="ghost-button" style={{ width: 'auto', padding: '0 12px', whiteSpace: 'nowrap' }} onClick={() => setDetailsPopupRowId(row.id)}>
+                      {hasExtraDetails(row) ? '📎 มีข้อมูล' : '📎 ระบุ'}
+                    </button>
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      onClick={() => removeRow(row.id)}
+                      style={{ background: 'var(--danger)', color: 'white', border: 'none', padding: '4px 10px', borderRadius: 6, cursor: 'pointer', fontSize: '0.8rem' }}
+                    >
+                      🗑
+                    </button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -360,34 +329,72 @@ export default function RegisterPage() {
         </div>
       )}
 
-      {/* Damage + photo popup */}
-      {photoPopupRow && (
-        <div className="scan-popup-overlay" onClick={() => setPhotoPopupRowId(null)}>
+      {/* Extra details popup: tax invoice no., inspector/purchasing, note, damage + photo */}
+      {detailsPopupRow && (
+        <div className="scan-popup-overlay" onClick={() => setDetailsPopupRowId(null)}>
           <div className="scan-popup-sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 500, margin: '0 auto' }}>
             <div className="scan-popup-handle" />
-            <h3 style={{ marginBottom: 12 }}>📷 ความเสียหาย — {photoPopupRow.sender || '(ยังไม่ระบุผู้ส่ง)'}</h3>
+            <h3 style={{ marginBottom: 12 }}>📎 รายละเอียดเพิ่มเติม — {detailsPopupRow.sender || '(ยังไม่ระบุผู้ส่ง)'}</h3>
+
+            <div className="form-group">
+              <label>เลขใบกำกับภาษี</label>
+              <input
+                type="text"
+                value={detailsPopupRow.tax_invoice_no}
+                onChange={(e) => updateRow(detailsPopupRow.id, { tax_invoice_no: e.target.value })}
+                placeholder="เลขใบกำกับภาษี"
+              />
+            </div>
+
+            {detailsPopupRow.subject === 'ใบรับสินค้า' && (
+              <div className="form-row">
+                <div className="form-group">
+                  <label>ผู้ตรวจสอบ</label>
+                  <input
+                    type="text"
+                    value={detailsPopupRow.inspector_signature}
+                    onChange={(e) => updateRow(detailsPopupRow.id, { inspector_signature: e.target.value })}
+                    placeholder="ชื่อ/ลายเซ็นผู้ตรวจสอบ"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>จัดซื้อ</label>
+                  <input
+                    type="text"
+                    value={detailsPopupRow.purchasing_signature}
+                    onChange={(e) => updateRow(detailsPopupRow.id, { purchasing_signature: e.target.value })}
+                    placeholder="ชื่อ/ลายเซ็นจัดซื้อ"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="form-group">
+              <label>หมายเหตุ</label>
+              <textarea value={detailsPopupRow.note} onChange={(e) => updateRow(detailsPopupRow.id, { note: e.target.value })} placeholder="หมายเหตุเพิ่มเติม..." />
+            </div>
 
             <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <input
                 type="checkbox"
-                id={`is_damaged_${photoPopupRow.id}`}
-                checked={photoPopupRow.is_damaged}
+                id={`is_damaged_${detailsPopupRow.id}`}
+                checked={detailsPopupRow.is_damaged}
                 onChange={(e) => {
                   const checked = e.target.checked;
-                  updateRow(photoPopupRow.id, { is_damaged: checked });
-                  if (!checked) clearRowPhoto(photoPopupRow.id);
+                  updateRow(detailsPopupRow.id, { is_damaged: checked });
+                  if (!checked) clearRowPhoto(detailsPopupRow.id);
                 }}
                 style={{ width: 20, height: 20 }}
               />
-              <label htmlFor={`is_damaged_${photoPopupRow.id}`} style={{ margin: 0 }}>พัสดุ/เอกสารเสียหาย (ถ่ายรูปไว้ใน Google Drive)</label>
+              <label htmlFor={`is_damaged_${detailsPopupRow.id}`} style={{ margin: 0 }}>พัสดุ/เอกสารเสียหาย (ถ่ายรูปไว้ใน Google Drive)</label>
             </div>
 
-            {photoPopupRow.is_damaged && (
+            {detailsPopupRow.is_damaged && (
               <div className="form-group">
                 <label>รูปความเสียหาย</label>
-                {!photoPopupRow.photoPreview ? (
+                {!detailsPopupRow.photoPreview ? (
                   <label
-                    htmlFor={`damage_photo_${photoPopupRow.id}`}
+                    htmlFor={`damage_photo_${detailsPopupRow.id}`}
                     className="ghost-button"
                     style={{ display: 'inline-flex', width: 'auto', padding: '0 20px', cursor: 'pointer' }}
                   >
@@ -396,7 +403,7 @@ export default function RegisterPage() {
                 ) : (
                   <div style={{ display: 'grid', gap: 10 }}>
                     <img
-                      src={photoPopupRow.photoPreview}
+                      src={detailsPopupRow.photoPreview}
                       alt="รูปความเสียหาย"
                       style={{ maxWidth: 220, borderRadius: 8, border: '1px solid var(--line)' }}
                     />
@@ -404,14 +411,14 @@ export default function RegisterPage() {
                       <button
                         type="button"
                         className="secondary-button"
-                        onClick={() => handleShareLine(photoPopupRow)}
+                        onClick={() => handleShareLine(detailsPopupRow)}
                         disabled={sharing}
                         style={{ width: 'auto', padding: '0 16px' }}
                       >
                         {sharing ? 'กำลังแชร์...' : '📤 แชร์ไลน์'}
                       </button>
                       <label
-                        htmlFor={`damage_photo_${photoPopupRow.id}`}
+                        htmlFor={`damage_photo_${detailsPopupRow.id}`}
                         className="ghost-button"
                         style={{ display: 'inline-flex', width: 'auto', padding: '0 16px', cursor: 'pointer' }}
                       >
@@ -420,7 +427,7 @@ export default function RegisterPage() {
                       <button
                         type="button"
                         className="ghost-button"
-                        onClick={() => clearRowPhoto(photoPopupRow.id)}
+                        onClick={() => clearRowPhoto(detailsPopupRow.id)}
                         style={{ width: 'auto', padding: '0 16px' }}
                       >
                         🗑 ลบรูป
@@ -432,20 +439,20 @@ export default function RegisterPage() {
                   </div>
                 )}
                 <input
-                  id={`damage_photo_${photoPopupRow.id}`}
+                  id={`damage_photo_${detailsPopupRow.id}`}
                   type="file"
                   accept="image/*"
                   capture="environment"
-                  onChange={(e) => handlePhotoChange(photoPopupRow.id, e)}
+                  onChange={(e) => handlePhotoChange(detailsPopupRow.id, e)}
                   style={{ display: 'none' }}
                 />
               </div>
             )}
 
-            <button className="secondary-button" onClick={() => setPhotoPopupRowId(null)} style={{ marginTop: 8 }}>
+            <button className="secondary-button" onClick={() => setDetailsPopupRowId(null)} style={{ marginTop: 8 }}>
               ✅ เสร็จสิ้น
             </button>
-            <button className="scan-popup-close" onClick={() => setPhotoPopupRowId(null)}>ปิด</button>
+            <button className="scan-popup-close" onClick={() => setDetailsPopupRowId(null)}>ปิด</button>
           </div>
         </div>
       )}
