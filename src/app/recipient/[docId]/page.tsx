@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useParams } from 'next/navigation';
+import { getGoodsReceiptWorkflowAction, isGoodsReceipt } from '@/lib/document-workflow';
 
 export default function RecipientPage() {
   const { profile } = useAuth();
@@ -22,15 +23,18 @@ export default function RecipientPage() {
   const [signature, setSignature] = useState('');
   const [signatureTouched, setSignatureTouched] = useState(false);
 
-  const isGoodsReceipt = doc?.subject === 'ใบรับสินค้า';
-  const pendingApprovalStage = isGoodsReceipt && ['awaiting_inspector', 'awaiting_purchasing'].includes(doc?.status)
-    ? doc.status === 'awaiting_inspector' ? 'inspector_signature' : 'purchasing_signature'
+  const isGoodsReceiptDocument = isGoodsReceipt(doc?.subject);
+  const workflowAction = isGoodsReceiptDocument
+    ? getGoodsReceiptWorkflowAction(profile?.department_code, doc?.status)
     : null;
+  const pendingApprovalStage = workflowAction === 'inspector' ? 'inspector_signature'
+    : workflowAction === 'purchasing' ? 'purchasing_signature'
+      : null;
   const approvalStage = editingApprovalStage || pendingApprovalStage;
   const approvalLabel = approvalStage === 'inspector_signature' ? 'ผู้ตรวจสอบ' : 'จัดซื้อ';
-  const canReceive = doc?.status === 'delivered' || doc?.status === 'awaiting_recipient';
-  const canEditInspector = isGoodsReceipt && doc?.status === 'awaiting_purchasing';
-  const canEditPurchasing = isGoodsReceipt && doc?.status === 'awaiting_recipient';
+  const canReceive = isGoodsReceiptDocument ? workflowAction === 'recipient' : doc?.status === 'delivered';
+  const canEditInspector = workflowAction === 'inspector' && doc?.status === 'awaiting_purchasing';
+  const canEditPurchasing = workflowAction === 'purchasing' && doc?.status === 'awaiting_recipient';
 
   // เติมค่าเริ่มต้นเมื่อโปรไฟล์โหลดเสร็จ แต่ไม่ทับค่าที่ผู้ใช้พิมพ์แล้ว
   useEffect(() => {
@@ -167,7 +171,7 @@ export default function RecipientPage() {
             <span>หน่วยงานผู้รับ</span>
             <div style={{ fontWeight: 700 }}>{doc.recipient_dept_name}</div>
           </div>
-          {isGoodsReceipt && (
+          {isGoodsReceiptDocument && (
             <div className="field-control">
               <span>ขั้นตอนปัจจุบัน</span>
               <div style={{ fontWeight: 700 }}>
@@ -176,6 +180,12 @@ export default function RecipientPage() {
                     : doc.status === 'awaiting_recipient' ? 'รอผู้รับ'
                       : doc.status}
               </div>
+            </div>
+          )}
+          {doc.related_department_names?.length > 0 && (
+            <div className="field-control">
+              <span>หน่วยงานกำกับเอกสาร</span>
+              <div style={{ fontWeight: 700 }}>{doc.related_department_names.join(', ')}</div>
             </div>
           )}
           {doc.inspector_signature && (

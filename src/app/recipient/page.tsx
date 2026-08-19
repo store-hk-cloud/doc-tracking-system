@@ -2,19 +2,18 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { getGoodsReceiptWorkflowAction, isGoodsReceipt } from '@/lib/document-workflow';
 
 const todayStr = () => new Date().toISOString().split('T')[0];
 const PENDING_STATUSES = ['delivered', 'awaiting_inspector', 'awaiting_purchasing', 'awaiting_recipient'];
-const STAGE_LABELS: Record<string, string> = {
-  awaiting_inspector: 'เซ็นผู้ตรวจสอบ',
-  awaiting_purchasing: 'เซ็นจัดซื้อ',
-  awaiting_recipient: 'ลงชื่อรับ',
-  delivered: 'ลงชื่อรับ',
+const ACTION_LABELS: Record<string, string> = {
+  inspector: 'เซ็นผู้ตรวจสอบ',
+  purchasing: 'เซ็นจัดซื้อ',
+  recipient: 'ลงชื่อรับ',
 };
 
 export default function RecipientListPage() {
   const { profile } = useAuth();
-  const isAdmin = profile?.role === 'super_admin' || profile?.role === 'admin';
 
   const [tab, setTab] = useState<'pending' | 'closed'>('pending');
 
@@ -35,13 +34,13 @@ export default function RecipientListPage() {
   const [closedLoaded, setClosedLoaded] = useState(false);
   const [closedFilter, setClosedFilter] = useState({ keyword: '', date_from: '', date_to: '' });
 
-  const deptQuery = !isAdmin && profile?.department_id ? `&dept_id=${profile.department_id}` : '';
-
+  // API ตัดสิทธิ์ตามขั้น workflow แล้ว ห้ามกรองด้วย recipient_dept_id ที่หน้าเว็บ
+  // เพราะใบรับสินค้าเก็บ recipient เป็นบัญชี แม้ผู้ตรวจสอบ/จัดซื้ออยู่คนละหน่วยงาน.
   const loadPending = async () => {
     setPendingLoading(true);
     try {
       const statusQuery = PENDING_STATUSES.map((status) => `status=${status}`).join('&');
-      const res = await window.fetch(`/api/documents?${statusQuery}${deptQuery}`);
+      const res = await window.fetch(`/api/documents?${statusQuery}`);
       const data = await res.json();
       if (data.success) setPendingDocs(data.data.filter((d: any) => PENDING_STATUSES.includes(d.status)));
     } catch (e) {
@@ -53,7 +52,7 @@ export default function RecipientListPage() {
   const loadClosed = async () => {
     setClosedLoading(true);
     try {
-      let url = `/api/documents?status=closed&status=signed${deptQuery}`;
+      let url = '/api/documents?status=closed&status=signed';
       if (closedFilter.keyword) url += `&keyword=${encodeURIComponent(closedFilter.keyword)}`;
       if (closedFilter.date_from) url += `&date_from=${closedFilter.date_from}`;
       if (closedFilter.date_to) url += `&date_to=${closedFilter.date_to}`;
@@ -73,8 +72,10 @@ export default function RecipientListPage() {
     if (tab === 'closed' && !closedLoaded) loadClosed();
   }, [tab]);
 
-  const canSign = (doc: any) => !!profile?.department_id && profile.department_id === doc.recipient_dept_id;
-  const canReceive = (doc: any) => canSign(doc) && ['delivered', 'awaiting_recipient'].includes(doc.status);
+  const workflowAction = (doc: any) => isGoodsReceipt(doc.subject)
+    ? getGoodsReceiptWorkflowAction(profile?.department_code, doc.status)
+    : profile?.department_id === doc.recipient_dept_id && doc.status === 'delivered' ? 'recipient' : null;
+  const canReceive = (doc: any) => workflowAction(doc) === 'recipient';
 
   const visiblePending = pendingDocs.filter((d: any) => (d.admin_signed_at || '').split('T')[0] === pendingDate);
   const signablePending = visiblePending.filter(canReceive);
@@ -224,7 +225,7 @@ export default function RecipientListPage() {
                 </thead>
                 <tbody>
                   {visiblePending.map((doc: any) => {
-                    const eligible = canSign(doc);
+                    const action = workflowAction(doc);
                     const eligibleForBulkReceive = canReceive(doc);
                     return (
                       <tr key={doc.id}>
@@ -243,9 +244,9 @@ export default function RecipientListPage() {
                         <td>{doc.purchasing_signature || '-'}</td>
                         <td>{doc.recipient_dept_name}</td>
                         <td>
-                          {eligible ? (
+                          {action ? (
                             <a href={`/recipient/${doc.id}`} className="table-action-button" style={{ textDecoration: 'none', display: 'inline-flex', padding: '6px 14px' }}>
-                              ✍️ {STAGE_LABELS[doc.status] || 'ดำเนินการ'}
+                              ✍️ {ACTION_LABELS[action] || 'ดำเนินการ'}
                             </a>
                           ) : (
                             <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>หน่วยงานอื่น</span>

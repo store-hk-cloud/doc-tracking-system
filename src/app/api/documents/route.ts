@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
 import { appendRow } from '@/lib/google-sheets';
 import { requireRoles } from '@/lib/supabase/auth-helpers';
+import { ACCOUNTING_DEPARTMENT_CODE, canViewGoodsReceiptWorkflow, GOODS_RECEIPT_SUBJECT, isGoodsReceipt } from '@/lib/document-workflow';
 
-// เอกสารสองประเภทนี้เลือกหน่วยงานปลายทางเพิ่มได้ แต่ต้องมีฝ่ายบัญชีเป็น
-// ปลายทางหลักเสมอ ไม่ว่าผู้ใช้จะเลือกจากหน้าจอหรือเรียก API โดยตรงก็ตาม
+// เอกสารสองประเภทนี้ต้องมีฝ่ายบัญชีเป็นปลายทางหลักเสมอ. ใบเบิกเลือก
+// ปลายทางเพิ่มได้ ส่วนใบรับสินค้าเก็บหน่วยงานเพิ่มเป็น metadata ของเอกสาร.
 const ACCOUNTING_ONLY_DOCUMENT_TYPES = new Set(['ใบเบิก', 'ใบรับสินค้า']);
-const ACCOUNTING_DEPARTMENT_CODE = '0-ADM03';
 
 // A "document" returned to the client is a document_recipients row flattened
 // with its parent document's shared fields (see migration 006). A document
@@ -49,9 +49,6 @@ export async function GET(request: NextRequest) {
     // scope=mine (used by the delivery page) shows documents the user themself
     // registered, across all departments — not the usual own-department filter.
     const isMineScope = scope === 'mine' && auth.context?.profile.role === 'user';
-    if (auth.context?.profile.role === 'user' && !isMineScope) {
-      recQuery = recQuery.eq('department_id', auth.context.profile.department_id || '00000000-0000-0000-0000-000000000000');
-    }
     if (statuses.length === 1) recQuery = recQuery.eq('status', statuses[0]);
     else if (statuses.length > 1) recQuery = recQuery.in('status', statuses);
     if (dept_id) recQuery = recQuery.eq('department_id', dept_id);
@@ -62,6 +59,16 @@ export async function GET(request: NextRequest) {
     let rows = recipientsData || [];
     if (isMineScope) {
       rows = rows.filter((r: any) => docMap.get(r.document_id)?.recorded_by === auth.context!.user.id);
+    } else if (auth.context?.profile.role === 'user') {
+      // ใบรับสินค้าเป็น routing กลางหนึ่งชุด: หน่วยงานที่เลือกประกอบเอกสาร
+      // ไม่ได้เป็นปลายทางงาน จึงมองเห็นได้เฉพาะผู้ที่ถึงคิวของตนจริง.
+      rows = rows.filter((r: any) => {
+        const doc = docMap.get(r.document_id);
+        if (isGoodsReceipt(doc?.subject)) {
+          return canViewGoodsReceiptWorkflow(auth.context!.profile.department_code, r.status);
+        }
+        return r.department_id === auth.context!.profile.department_id;
+      });
     }
     rows.sort((a: any, b: any) => (docMap.get(b.document_id)?.running_no || 0) - (docMap.get(a.document_id)?.running_no || 0));
     if (limit > 0) rows = rows.slice(0, limit);
@@ -169,6 +176,12 @@ export async function POST(request: NextRequest) {
       ];
     }
 
+    // ใบรับสินค้าใช้ ACC/บัญชีเป็น document_recipient เพียงรายการเดียว
+    // ส่วนหน่วยงานที่ผู้ใช้เลือกเพิ่มเก็บเป็น metadata ไม่สร้างงานหรือสิทธิ์เซ็น.
+    const workflowRecipientDeptIds = subject === GOODS_RECEIPT_SUBJECT
+      ? deptIds.slice(0, 1)
+      : deptIds;
+
     const { data: doc, error: docError } = await supabase
       .from('documents')
       .insert({
@@ -183,7 +196,7 @@ export async function POST(request: NextRequest) {
         recorded_by: auth.context!.user.id,
         // Legacy single-recipient columns are left unset going forward;
         // document_recipients is now the source of truth for status/dept/signatures.
-        recipient_dept_id: deptIds[0],
+        recipient_dept_id: workflowRecipientDeptIds[0],
       })
       .select()
       .single();
@@ -191,9 +204,16 @@ export async function POST(request: NextRequest) {
 
     const { data: recipients, error: recError } = await supabase
       .from('document_recipients')
-      .insert(deptIds.map((department_id) => ({ document_id: doc.id, department_id, status: 'registered' })))
+      .insert(workflowRecipientDeptIds.map((department_id) => ({ document_id: doc.id, department_id, status: 'registered' })))
       .select();
     if (recError) throw recError;
+
+    if (subject === GOODS_RECEIPT_SUBJECT && deptIds.length > 0) {
+      const { error: tagsError } = await supabase
+        .from('document_department_tags')
+        .insert(deptIds.map((department_id) => ({ document_id: doc.id, department_id })));
+      if (tagsError) throw tagsError;
+    }
 
     let profName = '';
     if (doc.recorded_by) {

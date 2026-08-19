@@ -32,7 +32,7 @@ export default function ReportsPage() {
     if (filters.sender) url += `keyword=${encodeURIComponent(filters.sender)}&`;
     if (filters.dept_id) url += `dept_id=${filters.dept_id}&`;
     if (filters.status) url += `status=${filters.status}&`;
-    if (!isAdmin && profile?.department_id) url += `dept_id=${profile.department_id}&`;
+    // API กรองสิทธิ์ตาม workflow กลางของใบรับสินค้าอยู่แล้ว.
 
     const res = await fetch(url);
     const data = await res.json();

@@ -60,7 +60,8 @@ export default function TrackingPage() {
     if (filter.status) url += `status=${filter.status}&`;
     if (filter.keyword) url += `keyword=${encodeURIComponent(filter.keyword)}&`;
     if (filter.dept_id) url += `dept_id=${filter.dept_id}&`;
-    if (!isAdmin && profile?.department_id) url += `dept_id=${profile.department_id}&`;
+    // ปล่อยให้ API กรองตามขั้น workflow เพื่อให้คลังสินค้า/FAC-PP และจัดซื้อ
+    // เห็นเฉพาะใบรับสินค้าที่ถึงคิว แม้ recipient task อยู่ที่บัญชี.
 
     const res = await window.fetch(url);
     const data = await res.json();

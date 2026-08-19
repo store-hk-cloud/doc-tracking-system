@@ -93,6 +93,7 @@ export interface Document {
   subject: string;
   recipient_dept_id: string;
   recipient_dept_name?: string;
+  related_department_names?: string[];
   inspector_signature: string | null;
   inspector_signed_by?: string | null;
   inspector_signed_at?: string | null;

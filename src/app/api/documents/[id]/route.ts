@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
 import { updateRowInSheet, findRowLocation } from '@/lib/google-sheets';
 import { canAccessDepartment, forbiddenResponse, requireRoles } from '@/lib/supabase/auth-helpers';
+import { canViewGoodsReceiptWorkflow, isGoodsReceipt } from '@/lib/document-workflow';
 
 // [id] here is a document_recipients.id — a specific department's copy of a document.
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -19,15 +20,23 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     if (recipientError || !recipient) {
       return NextResponse.json({ success: false, error: 'Document not found' }, { status: 404 });
     }
-    if (!canAccessDepartment(auth.context!, recipient.department_id)) return forbiddenResponse();
-
     const { data, error } = await supabase.from('documents').select('*').eq('id', recipient.document_id).single();
     if (error) throw error;
+    const canReadGoodsReceipt = auth.context!.profile.role !== 'user'
+      || canViewGoodsReceiptWorkflow(auth.context!.profile.department_code, recipient.status);
+    if (isGoodsReceipt(data.subject)) {
+      if (!canReadGoodsReceipt) return forbiddenResponse();
+    } else if (!canAccessDepartment(auth.context!, recipient.department_id)) {
+      return forbiddenResponse();
+    }
 
     // Get department and profile names separately
     let recipient_dept_name = null;
     let recorded_by_name = null;
-    const { data: dept } = await supabase.from('departments').select('name').eq('id', recipient.department_id).single();
+    const [{ data: dept }, { data: tags }] = await Promise.all([
+      supabase.from('departments').select('name').eq('id', recipient.department_id).single(),
+      supabase.from('document_department_tags').select('departments(name)').eq('document_id', data.id),
+    ]);
     recipient_dept_name = dept?.name || null;
     if (data.recorded_by) {
       const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', data.recorded_by).single();
@@ -43,6 +52,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
         document_id: data.id,
         recipient_dept_id: recipient.department_id,
         recipient_dept_name,
+        related_department_names: (tags || []).map((tag: any) => tag.departments?.name).filter(Boolean),
         recorded_by_name,
       },
     });

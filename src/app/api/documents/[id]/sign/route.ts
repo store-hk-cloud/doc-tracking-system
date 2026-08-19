@@ -2,12 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
 import { updateRowInSheet, findRowLocation } from '@/lib/google-sheets';
 import { notifyDepartment } from '@/lib/upstash';
-import { canAccessDepartment, forbiddenResponse, requireRoles } from '@/lib/supabase/auth-helpers';
+import { forbiddenResponse, requireRoles } from '@/lib/supabase/auth-helpers';
+import { getGoodsReceiptWorkflowAction, isGoodsReceipt } from '@/lib/document-workflow';
 
-const GOODS_RECEIPT_SUBJECT = 'ใบรับสินค้า';
-
-// [id] here is a document_recipients.id — delivery is scoped to one
-// department's copy of a document, not the whole document.
+// [id] here is a document_recipients.id. ใบรับสินค้าใช้ recipient ของบัญชี
+// เป็นตัวเก็บสถานะกลาง แต่สิทธิ์แต่ละขั้นตัดสินจาก department code โดยตรง.
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const auth = await requireRoles(['super_admin', 'admin', 'user']);
@@ -33,7 +32,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ success: false, error: 'Document not found' }, { status: 404 });
     }
     const parentDocument = (existingRecipient as any).documents;
-    const isGoodsReceipt = parentDocument?.subject === GOODS_RECEIPT_SUBJECT;
+    const isGoodsReceiptDocument = isGoodsReceipt(parentDocument?.subject);
 
     // 'user' may deliver to their own department OR any document they registered
     // themselves (cross-department); admin/super_admin are unrestricted either way.
@@ -42,21 +41,21 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const isOwnDoc = recordedBy === auth.context!.user.id;
     const isApprovalAction = hasInspectorSig || hasPurchasingSig;
 
-    // ใบรับสินค้า: ผู้ตรวจสอบและจัดซื้อต้องเป็นคนในหน่วยงานปลายทางจริง
-    // ทุก role ใช้กติกาเดียวกัน รวม admin/super_admin เพื่อไม่ให้ข้าม workflow.
-    if (isGoodsReceipt && isApprovalAction && !canAccessDepartment(auth.context!, existingRecipient.department_id)) {
-      return forbiddenResponse();
-    }
-    if ((!isGoodsReceipt || !isApprovalAction) && auth.context!.profile.role === 'user' && !isOwnDept && !isOwnDoc) {
+    if ((!isGoodsReceiptDocument || !isApprovalAction) && auth.context!.profile.role === 'user' && !isOwnDept && !isOwnDoc) {
       return forbiddenResponse();
     }
 
-    if (isGoodsReceipt && isApprovalAction) {
+    if (isGoodsReceiptDocument && isApprovalAction) {
       if (isDelivering || hasInspectorSig === hasPurchasingSig) {
         return NextResponse.json({ success: false, error: 'Sign exactly one approval stage at a time' }, { status: 400 });
       }
 
       const stage = hasInspectorSig ? 'inspector' : 'purchasing';
+      // ผู้ตรวจสอบ: คลังสินค้า หรือ FAC-PP (อย่างใดอย่างหนึ่ง)
+      // จัดซื้อ: หน่วยงานจัดซื้อเท่านั้น — admin/super_admin ไม่มีสิทธิ์ข้าม.
+      if (getGoodsReceiptWorkflowAction(auth.context!.profile.department_code, existingRecipient.status) !== stage) {
+        return forbiddenResponse();
+      }
       const signature = String(hasInspectorSig ? body.inspector_signature : body.purchasing_signature).trim().slice(0, 255);
       if (!signature) {
         return NextResponse.json({ success: false, error: 'Signature is required' }, { status: 400 });
@@ -158,7 +157,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         ...(isDelivering ? {
           admin_signature: body.admin_signature,
           admin_signed_at: new Date().toISOString(),
-          status: isGoodsReceipt ? 'awaiting_inspector' : 'delivered',
+          status: isGoodsReceiptDocument ? 'awaiting_inspector' : 'delivered',
         } : {}),
         ...(hasInspectorSig ? { inspector_signature: body.inspector_signature || null } : {}),
         ...(hasPurchasingSig ? { purchasing_signature: body.purchasing_signature || null } : {}),

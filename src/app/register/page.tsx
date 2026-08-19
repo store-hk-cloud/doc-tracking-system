@@ -15,6 +15,10 @@ function isAccountingOnlyDocument(subject: string) {
   return ACCOUNTING_ONLY_DOCUMENT_TYPES.has(subject.trim());
 }
 
+function isGoodsReceiptDocument(subject: string) {
+  return subject.trim() === 'ใบรับสินค้า';
+}
+
 function emptyRow() {
   return {
     id: crypto.randomUUID(),
@@ -307,8 +311,10 @@ export default function RegisterPage() {
                       style={{ width: 'auto', padding: '0 12px', whiteSpace: 'nowrap' }}
                       onClick={() => setDeptPopupRowId(row.id)}
                     >
-                      🏢 {isAccountingOnlyDocument(row.subject)
-                        ? `เลือกแล้ว (${row.recipient_dept_ids.length}) · มีบัญชี`
+                      🏢 {isGoodsReceiptDocument(row.subject)
+                        ? `กำกับ (${row.recipient_dept_ids.length}) · ปลายทางบัญชี`
+                        : isAccountingOnlyDocument(row.subject)
+                          ? `เลือกแล้ว (${row.recipient_dept_ids.length}) · มีบัญชี`
                         : row.recipient_dept_ids.length > 0 ? `เลือกแล้ว (${row.recipient_dept_ids.length})` : 'เลือกหน่วยงาน'}
                     </button>
                   </td>
@@ -357,13 +363,15 @@ export default function RegisterPage() {
         <div className="scan-popup-overlay" onClick={() => setDeptPopupRowId(null)}>
           <div className="scan-popup-sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 500, margin: '0 auto' }}>
             <div className="scan-popup-handle" />
-            <h3 style={{ marginBottom: 12 }}>🏢 เลือกหน่วยงานผู้รับ (เลือกได้มากกว่า 1)</h3>
+            <h3 style={{ marginBottom: 12 }}>🏢 {isGoodsReceiptDocument(deptPopupRow.subject) ? 'เลือกหน่วยงานกำกับเอกสาร' : 'เลือกหน่วยงานผู้รับ (เลือกได้มากกว่า 1)'}</h3>
             {isAccountingOnlyDocument(deptPopupRow.subject) && (
               <div className="issue-bar" style={{ marginBottom: 12 }}>
-                เอกสารประเภทนี้ต้องส่งถึงบัญชีเสมอ และเลือกหน่วยงานอื่นเพิ่มได้
+                {isGoodsReceiptDocument(deptPopupRow.subject)
+                  ? 'ใบรับสินค้าส่งถึงบัญชีเป็นปลายทางเดียว โดยหน่วยงานที่เลือกเพิ่มใช้กำกับเอกสารเท่านั้น'
+                  : 'เอกสารประเภทนี้ต้องส่งถึงบัญชีเสมอ และเลือกหน่วยงานอื่นเพิ่มได้'}
               </div>
             )}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }} role="group" aria-label="หน่วยงานผู้รับ">
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }} role="group" aria-label={isGoodsReceiptDocument(deptPopupRow.subject) ? 'หน่วยงานกำกับเอกสาร' : 'หน่วยงานผู้รับ'}>
               {departments.map((d: any) => (
                 <button
                   key={d.id}

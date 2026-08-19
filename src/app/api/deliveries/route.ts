@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
 import { updateRowInSheet, findRowLocation } from '@/lib/google-sheets';
 import { canAccessDepartment, forbiddenResponse, requireRoles } from '@/lib/supabase/auth-helpers';
+import { ACCOUNTING_DEPARTMENT_CODE, isGoodsReceipt } from '@/lib/document-workflow';
 
 export async function GET(request: NextRequest) {
   try {
@@ -107,8 +108,11 @@ export async function POST(request: NextRequest) {
       .single();
     if (parentDocumentError || !parentDocument) throw parentDocumentError || new Error('Parent document not found');
 
-    const isGoodsReceipt = parentDocument.subject === 'ใบรับสินค้า';
-    const expectedStatus = isGoodsReceipt ? 'awaiting_recipient' : 'delivered';
+    const isGoodsReceiptDocument = isGoodsReceipt(parentDocument.subject);
+    if (isGoodsReceiptDocument && auth.context!.profile.department_code !== ACCOUNTING_DEPARTMENT_CODE) {
+      return forbiddenResponse();
+    }
+    const expectedStatus = isGoodsReceiptDocument ? 'awaiting_recipient' : 'delivered';
     const isVerified = body.is_verified === true;
     const newStatus = isVerified ? 'closed' : 'rejected';
 
