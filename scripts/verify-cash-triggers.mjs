@@ -339,15 +339,36 @@ async function main() {
       [selfReport.id, selfRun.deposit.variance_satang, selfRun.deposit.actual_amount_satang, superAdmin.id]);
     await client.query('ROLLBACK TO SAVEPOINT segregation');
 
-    console.log('\n── 10. ต้องไม่ล็อกเกินจำเป็น: เส้นทางที่ถูกต้องต้องผ่าน ──');
+    console.log('\n── 9b. เงินขาดเข้มเท่าเงินเกิน (015) ──');
     if (finUser) {
-      await mustPass('user ในแผนกการเงิน ปิดยอดขาดได้',
+      await mustFail('user ธรรมดาในแผนกบัญชี ปิดยอดขาด (ต้องถูกบล็อกตั้งแต่ 015)',
         `INSERT INTO cash_variance_reviews (report_id, decision, variance_satang_at_decision,
             actual_amount_satang_at_decision, reason, slip_checked, reviewed_by, reviewer_signature, reviewer_role)
          VALUES ($1, 'approved', $2, $3, 'ค่าธรรมเนียมธนาคาร ตรวจสอบแล้วถูกต้อง', true, $4, 'ทดสอบ', 'user')`,
         [shortReport.id, short.deposit.variance_satang, short.deposit.actual_amount_satang, finUser.id]);
     } else {
-      console.log('  ⏭  ข้าม (ไม่มี user ในแผนกการเงิน)');
+      console.log('  ⏭  ข้าม (ไม่มี user ธรรมดาในแผนกบัญชี)');
+    }
+    if (otherAdmin) {
+      await mustFail('admin นอกแผนกผู้อนุมัติ ปิดยอดขาด',
+        `INSERT INTO cash_variance_reviews (report_id, decision, variance_satang_at_decision,
+            actual_amount_satang_at_decision, reason, slip_checked, reviewed_by, reviewer_signature, reviewer_role)
+         VALUES ($1, 'approved', $2, $3, 'ทดสอบสิทธิ์ข้ามแผนก', true, $4, 'ทดสอบ', 'admin')`,
+        [shortReport.id, short.deposit.variance_satang, short.deposit.actual_amount_satang, otherAdmin.id]);
+    } else {
+      console.log('  ⏭  ข้าม (ไม่มี admin นอกแผนกผู้อนุมัติ)');
+    }
+
+    console.log('\n── 10. ต้องไม่ล็อกเกินจำเป็น: เส้นทางที่ถูกต้องต้องผ่าน ──');
+    if (finAdmin) {
+      // ตั้งแต่ 015 เงินขาดเข้มเท่าเงินเกิน: ต้องเป็นธุรการในแผนกผู้อนุมัติเช่นกัน
+      await mustPass('admin ในแผนกผู้อนุมัติ ปิดยอดขาดได้',
+        `INSERT INTO cash_variance_reviews (report_id, decision, variance_satang_at_decision,
+            actual_amount_satang_at_decision, reason, slip_checked, reviewed_by, reviewer_signature, reviewer_role)
+         VALUES ($1, 'approved', $2, $3, 'ค่าธรรมเนียมธนาคาร ตรวจสอบแล้วถูกต้อง', true, $4, 'ทดสอบ', 'admin')`,
+        [shortReport.id, short.deposit.variance_satang, short.deposit.actual_amount_satang, finAdmin.id]);
+    } else {
+      console.log('  ⏭  ข้าม (ไม่มี admin ในแผนกผู้อนุมัติ)');
     }
     if (finAdmin) {
       await mustPass('admin ในแผนกผู้อนุมัติ อนุมัติเงินเกินได้',

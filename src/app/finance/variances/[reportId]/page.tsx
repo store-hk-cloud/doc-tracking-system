@@ -72,7 +72,8 @@ export default function VarianceReviewPage() {
   const pending = row.status === 'pending_review';
   const slipMissing = !deposit?.slip_photo_id;
 
-  // สิทธิ์ตัดสิน: เงินเกินเข้มกว่าเงินขาด (server บังคับซ้ำอีก 3 ชั้น)
+  // สิทธิ์ตัดสิน: เงินขาดและเงินเกินใช้กติกาเดียวกัน — ต้องเป็นธุรการในแผนก
+  // ผู้อนุมัติ หรือผู้ดูแลระบบ (server บังคับซ้ำอีก 3 ชั้น)
   const mayDecide = isOver ? canApproveOverage(profile) : canCloseShortage(profile);
 
   // แยกหน้าที่: ผู้ที่เกี่ยวข้องกับเงินก้อนนี้ตัดสินเองไม่ได้

@@ -9,13 +9,14 @@ import { notifyDepartment } from '@/lib/upstash';
 /**
  * POST /api/messenger/variances/[id]/review — ฝ่ายการเงินตัดสินผลต่าง
  *
- * นี่คือประตูเดียวที่ปิดงานยอดไม่ตรงได้ และเป็นจุดที่กฎ "เงินเกินเข้มกว่าเงินขาด"
- * ถูกบังคับ 4 ชั้น:
- *   1. capability ที่ route นี้ (canApproveOverage vs canCloseShortage)
+ * นี่คือประตูเดียวที่ปิดงานยอดไม่ตรงได้ เงินขาดและเงินเกินใช้กติกาเดียวกัน
+ * (สำคัญเท่ากันทั้งคู่) และเป็นกติกาที่เข้มกว่าของเดิม — ถูกบังคับ 4 ชั้น:
+ *   1. capability ที่ route นี้ — ต้องเป็น admin ในแผนกผู้อนุมัติ หรือ super_admin
  *   2. conditional update `.eq('status','pending_review')` กันสองคนกดชนกัน
- *   3. CHECK bank_deposits_overage_lock — เงินเกินไปสถานะจบไม่ได้ถ้าไม่มีใบอนุมัติ
+ *   3. CHECK bank_deposits_variance_lock — ผลต่างทุกทิศทางไปสถานะจบไม่ได้
+ *      ถ้าไม่มีใบอนุมัติ (+ 014 ตรวจว่าใบอนุมัตินั้นเป็นของรายการนี้จริง)
  *   4. TRIGGER assert_variance_approver — อ่าน role/dept สด ๆ จาก DB
- *      + บล็อกการอนุมัติงานตัวเอง (segregation of duties)
+ *      + บล็อกการอนุมัติงานตัวเอง ครอบทุกจุดรับของทริป (segregation of duties)
  * สองชั้นล่างอยู่ใน DB จึงยังทำงานแม้ route นี้ถูกแก้หรือถูกข้าม
  */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -64,23 +65,26 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const deposit = report.bank_deposits;
     const isOverage = report.variance_kind === 'over';
 
-    // ── สิทธิ์: เงินเกินต้องเป็น super_admin หรือ admin ในแผนก FIN เท่านั้น ──
+    // ── สิทธิ์: ทั้งเงินขาดและเงินเกินต้องเป็น super_admin หรือ admin ในแผนกผู้อนุมัติ ──
+    // สองฟังก์ชันนี้คืนค่าเท่ากันตั้งใจ (ดู lib/permissions.ts) เรียกตามชนิดผลต่าง
+    // เพื่อให้ถ้าวันหนึ่งแยกกติกากันอีก จุดนี้ไม่ต้องแก้
     if (isOverage ? !(await canApproveOverage(ctx)) : !(await canCloseShortage(ctx))) {
       return forbiddenResponse();
     }
 
     // แยกหน้าที่ — เช็คที่นี่เพื่อให้ได้ข้อความไทยที่อ่านรู้เรื่อง
     // (trigger ใน DB บล็อกซ้ำอีกชั้นด้วยข้อความภาษาอังกฤษ)
-    const { data: pickup } = await supabase
+    // ต้องดึง **ทุกจุดรับ** ของทริป ไม่ใช่ maybeSingle() — ทริปหนึ่งมีได้หลายสาขา
+    // ถ้าดึงใบเดียว แคชเชียร์ของจุดที่ 2 จะผ่านการตรวจนี้ไปได้
+    const { data: pickups } = await supabase
       .from('cash_pickups')
       .select('received_by, cashier_profile_id')
-      .eq('job_id', deposit.job_id)
-      .maybeSingle();
+      .eq('job_id', deposit.job_id);
     const conflicted = [
       deposit.submitted_by,
       report.reported_by,
-      pickup?.received_by,
-      pickup?.cashier_profile_id,
+      ...(pickups || []).map((p: any) => p.received_by),
+      ...(pickups || []).map((p: any) => p.cashier_profile_id),
     ].filter(Boolean);
     if (conflicted.includes(ctx.user.id)) {
       return NextResponse.json(

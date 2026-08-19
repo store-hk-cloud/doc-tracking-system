@@ -46,12 +46,20 @@ export async function getCashCapabilities(ctx: Ctx): Promise<CashCapabilities> {
   const isSuper = role === 'super_admin';
   const inList = (list: string[]) => !!dept && list.includes(dept);
 
+  // เงินขาดและเงินเกินสำคัญเท่ากัน จึงใช้กติกาเดียวกันและเป็นกติกาที่เข้มกว่า:
+  // ต้องเป็น admin ในแผนกผู้อนุมัติ หรือ super_admin เท่านั้น
+  //
+  // คงสองคีย์แยกไว้โดยเจตนา (ไม่รวมเป็นคีย์เดียว) เพราะหน้าจอและ route อ้างอิง
+  // ชื่อเหล่านี้อยู่ และการแยกชื่อทำให้ย้อนกลับไปให้เงินขาดหย่อนกว่าได้ในภายหลัง
+  // โดยแก้ที่นี่จุดเดียว — แต่ถ้าแก้ ต้องแก้ trigger assert_variance_approver ด้วย
+  // ไม่งั้นปุ่มจะเปิดให้กดแล้วฐานข้อมูลปฏิเสธ
+  const canDecideVariance = isSuper || (role === 'admin' && inList(codes.cash_approver_dept_codes));
+
   return {
     isMessenger: inList(codes.messenger_dept_codes),
     canViewCash: isSuper || inList(codes.cash_viewer_dept_codes) || inList(codes.cash_shortage_dept_codes),
-    canCloseShortage: isSuper || inList(codes.cash_shortage_dept_codes),
-    // เข้มที่สุดในระบบ: ต้องเป็น admin ในแผนกผู้อนุมัติ หรือ super_admin เท่านั้น
-    canApproveOverage: isSuper || (role === 'admin' && inList(codes.cash_approver_dept_codes)),
+    canCloseShortage: canDecideVariance,
+    canApproveOverage: canDecideVariance,
   };
 }
 
