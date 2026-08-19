@@ -43,8 +43,43 @@ export async function POST(request: NextRequest) {
     const supabase = getServiceSupabase();
     const body = await request.json();
 
-    if (!body.email || !body.password || !body.full_name) {
-      return NextResponse.json({ success: false, error: 'email, password and full_name are required' }, { status: 400 });
+    if (!body.password || !body.full_name) {
+      return NextResponse.json({ success: false, error: 'password and full_name are required' }, { status: 400 });
+    }
+
+    // แมสเซนเจอร์ไม่มีอีเมลบริษัท จึงสร้างบัญชีด้วยชื่อผู้ใช้ได้
+    // Supabase Auth บังคับให้มีอีเมล เราจึงสังเคราะห์อีเมลภายในให้ (ส่งเมลไม่ได้
+    // และไม่ต้องส่ง เพราะบัญชีแบบนี้ไม่ใช้ยืนยันตัวตนทางอีเมล) ผู้ใช้จะล็อกอิน
+    // ด้วยชื่อผู้ใช้ผ่าน /api/auth/resolve-username
+    const username = body.username ? String(body.username).trim() : null;
+    if (username && !/^[a-zA-Z0-9._-]{3,64}$/.test(username)) {
+      return NextResponse.json(
+        { success: false, error: 'ชื่อผู้ใช้ใช้ได้เฉพาะ a-z 0-9 . _ - ความยาว 3-64 ตัวอักษร' },
+        { status: 400 }
+      );
+    }
+    if (!body.email && !username) {
+      return NextResponse.json(
+        { success: false, error: 'ต้องระบุอีเมล หรือชื่อผู้ใช้ อย่างน้อยหนึ่งอย่าง' },
+        { status: 400 }
+      );
+    }
+    const email = body.email
+      ? String(body.email).trim()
+      : `${username!.toLowerCase()}@msg.hillkoff.local`;
+
+    if (username) {
+      const { data: taken } = await supabase
+        .from('profiles')
+        .select('id')
+        .ilike('username', username)
+        .maybeSingle();
+      if (taken) {
+        return NextResponse.json(
+          { success: false, error: 'ชื่อผู้ใช้นี้ถูกใช้แล้ว' },
+          { status: 409 }
+        );
+      }
     }
 
     // Admins can only ever create plain 'user' accounts — never admin/super_admin.
@@ -56,7 +91,7 @@ export async function POST(request: NextRequest) {
 
     // Create auth user
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-      email: body.email,
+      email,
       password: body.password,
       email_confirm: true,
     });
@@ -67,7 +102,8 @@ export async function POST(request: NextRequest) {
       .from('profiles')
       .insert({
         id: authData.user.id,
-        email: body.email,
+        email,
+        username,
         full_name: body.full_name,
         role,
         department_id: body.department_id || null,

@@ -10,7 +10,7 @@ export default function AdminUsersPage() {
   const [departments, setDepartments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ email: '', password: '', full_name: '', role: 'user', department_id: '' });
+  const [form, setForm] = useState({ email: '', username: '', password: '', full_name: '', role: 'user', department_id: '' });
   const [message, setMessage] = useState('');
   const [editingUser, setEditingUser] = useState<any>(null);
   const [editForm, setEditForm] = useState({ full_name: '', department_id: '', role: 'user', is_active: true });
@@ -45,7 +45,7 @@ export default function AdminUsersPage() {
     const data = await res.json();
     if (data.success) {
       setMessage(`✅ สร้างผู้ใช้ ${form.full_name} สำเร็จ`);
-      setForm({ email: '', password: '', full_name: '', role: 'user', department_id: '' });
+      setForm({ email: '', username: '', password: '', full_name: '', role: 'user', department_id: '' });
       setShowForm(false);
       loadUsers();
     } else {
@@ -124,8 +124,30 @@ export default function AdminUsersPage() {
                 <input type="text" value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} required />
               </div>
               <div className="form-group">
-                <label>อีเมล *</label>
-                <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
+                <label>อีเมล</label>
+                <input
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  placeholder="เว้นว่างได้ถ้าใช้ชื่อผู้ใช้"
+                />
+              </div>
+            </div>
+            {/* แมสเซนเจอร์ไม่มีอีเมลบริษัท จึงล็อกอินด้วยชื่อผู้ใช้แทนได้
+                ระบบจะสร้างอีเมลภายในให้เองเพราะ Supabase Auth ต้องมีอีเมลเสมอ */}
+            <div className="form-group">
+              <label>ชื่อผู้ใช้ (สำหรับล็อกอินแทนอีเมล)</label>
+              <input
+                type="text"
+                value={form.username}
+                onChange={(e) => setForm({ ...form, username: e.target.value })}
+                placeholder="a-z 0-9 . _ - เช่น somchai"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+              />
+              <div style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: 4 }}>
+                ต้องกรอกอย่างน้อยหนึ่งอย่างระหว่างอีเมลกับชื่อผู้ใช้
               </div>
             </div>
             <div className="form-row">
@@ -187,7 +209,7 @@ export default function AdminUsersPage() {
                   return (
                     <tr key={u.id}>
                       <td style={{ fontWeight: 700 }}>{u.full_name}</td>
-                      <td>{u.email}</td>
+                      <td>{u.username ? <span className="code-cell">{u.username}</span> : u.email}</td>
                       <td>
                         <span className={`status-badge${u.role === 'super_admin' ? ' success' : ''}`}>
                           {roleLabel[u.role] || u.role}

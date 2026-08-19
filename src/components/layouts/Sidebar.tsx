@@ -3,25 +3,15 @@
 import { useAuth } from '@/components/auth/AuthProvider';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { isNavItemActive, visibleNavItems } from '@/lib/nav-items';
 
 export function Sidebar() {
   const { profile } = useAuth();
   const pathname = usePathname();
   const role = profile?.role;
 
-  const isActive = (path: string) => pathname.startsWith(path) ? 'active' : '';
-
-  const items = [
-    { path: '/dashboard', label: '📊 Dashboard', roles: ['super_admin', 'admin', 'user'] },
-    { path: '/register', label: '📝 ลงทะเบียน', roles: ['super_admin', 'admin', 'user'] },
-    { path: '/delivery', label: '📦 ส่งมอบ', roles: ['super_admin', 'admin', 'user'] },
-    { path: '/recipient', label: '✍️ รับเอกสาร', roles: ['super_admin', 'admin', 'user'] },
-    { path: '/tracking', label: '🔍 ติดตาม', roles: ['super_admin', 'admin', 'user'] },
-    { path: '/reports', label: '📈 รายงาน', roles: ['super_admin', 'admin', 'user'] },
-    { path: '/policies', label: '📚 นโยบายและคู่มือ', roles: ['super_admin', 'admin', 'user'] },
-    { path: '/admin/users', label: '👥 จัดการผู้ใช้', roles: ['super_admin', 'admin'] },
-    { path: '/admin/departments', label: '🏢 จัดการหน่วยงาน', roles: ['super_admin'] },
-  ];
+  // เมนูมาจาก src/lib/nav-items.ts ที่เดียวกับ AppLayout (mobile)
+  const items = visibleNavItems(profile);
 
   return (
     <aside
@@ -49,17 +39,15 @@ export function Sidebar() {
       </div>
 
       <nav className="sidebar-menu" style={{ flex: 1, padding: '8px 12px', overflowY: 'auto' }}>
-        {items
-          .filter((item) => item.roles.includes(role || 'user'))
-          .map((item) => (
-            <Link
-              key={item.path}
-              href={item.path}
-              className={`sidebar-item ${isActive(item.path)}`}
-            >
-              {item.label}
-            </Link>
-          ))}
+        {items.map((item) => (
+          <Link
+            key={item.path}
+            href={item.path}
+            className={`sidebar-item ${isNavItemActive(item, pathname) ? 'active' : ''}`}
+          >
+            {item.label}
+          </Link>
+        ))}
       </nav>
 
       <div style={{ padding: '8px 12px', borderTop: '1px solid var(--line)' }}>
@@ -85,7 +73,12 @@ export function Sidebar() {
         )}
         <div className="account-pill" style={{ width: '100%' }}>
           <span style={{ fontWeight: 700 }}>{profile?.full_name || 'ผู้ใช้'}</span>
-          <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>({profile?.role === 'super_admin' ? 'ผู้ดูแลระบบ' : profile?.role === 'admin' ? 'ธุรการ' : 'ผู้ใช้'})</span>
+          {/* แสดง department code ต่อท้ายด้วย เพื่อให้ผู้ใช้ภาคสนามตรวจเองได้ว่า
+              ล็อกอินถูกบัญชี — สิทธิ์ของโมดูลเงินสดขึ้นกับแผนก ไม่ใช่แค่ role */}
+          <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
+            ({profile?.role === 'super_admin' ? 'ผู้ดูแลระบบ' : profile?.role === 'admin' ? 'ธุรการ' : 'ผู้ใช้'}
+            {profile?.department_code ? ` · ${profile.department_code}` : ''})
+          </span>
         </div>
       </div>
     </aside>

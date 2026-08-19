@@ -24,6 +24,9 @@
   --danger: #c0342b;
   --danger-bg: rgba(255,59,48,0.1);
   --danger-line: rgba(255,59,48,0.3);
+  /* ตัวหนังสือบนพื้น --danger: light ใช้ขาว (5.58:1), dark ใช้สีพื้นหน้าเข้ม (~4.9:1)
+     เพราะขาวบน --danger ของ dark ได้แค่ 3.34:1 */
+  --notify-badge-fg: #ffffff;
   --success: #1b7a3d;
   --success-bg: rgba(52,199,89,0.1);
   --success-line: rgba(52,199,89,0.3);
@@ -60,6 +63,7 @@
   --danger: #ff453a;
   --danger-bg: rgba(255,69,58,0.14);
   --danger-line: rgba(255,69,58,0.32);
+  --notify-badge-fg: #04120f;
   --success: #30d158;
   --success-bg: rgba(48,209,88,0.14);
   --success-line: rgba(48,209,88,0.32);
@@ -1554,4 +1558,227 @@ tbody tr:hover {
   .metric-row {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
+}
+
+/* ============================================================
+   Module การรับ–ส่งเอกสารเงินสด (Messenger Cash Handover)
+
+   กฎคอนทราสต์ที่บังคับใช้ในบล็อกนี้ (คำนวณจากค่าจริงของ token ทั้งสองธีม):
+   - --danger บน --danger-bg = 4.28:1 ใน dark theme  → ตกเกณฑ์ 4.5:1
+   - --warning บน --warning-bg = 4.23:1 ใน light theme → ตกเกณฑ์ 4.5:1
+   ดังนั้น badge/กล่องใหม่ทั้งหมดจึงใช้ --surface เป็นพื้น + เส้นขอบสี และให้
+   ตัวหนังสือขนาดปกติเป็น var(--text) เสมอ สงวนสี danger/warning ไว้ให้
+   เส้นขอบ ไอคอน และตัวเลขใหญ่ (≥1.4rem/700 = เกิน 18.66px bold จึงเข้าเกณฑ์
+   large text 3:1 ซึ่งผ่านสบายทั้งสองธีม)
+   ============================================================ */
+
+/* ── badge เพิ่มเติม ── */
+.status-badge.holding {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--warning);
+}
+.status-badge.locked,
+.status-badge.pending-review {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--danger);
+}
+.status-badge.awaiting {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px dashed var(--line-strong);
+}
+
+/* ── กล่องผลเทียบยอด: สามหน้าตาที่ต่างกันชัดเจน ── */
+.variance-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 20px 16px;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  text-align: center;
+}
+
+.variance-box .variance-icon {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.variance-box .variance-headline {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.variance-box .variance-note {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.variance-box .variance-rows {
+  width: 100%;
+  max-width: 320px;
+  margin-top: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.variance-box .variance-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.95rem;
+  color: var(--text);
+  padding: 3px 0;
+}
+
+.variance-box .variance-row span:last-child {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.variance-box.match {
+  border-color: var(--success);
+}
+
+.variance-box.short {
+  border-color: var(--warning);
+}
+
+/* เงินเกิน = เคสที่ต้องมองข้ามไม่ได้: เส้นขอบ 2px และตัวเลขใหญ่ที่สุด
+   ห้ามใช้ --danger-line (rgba .3) เป็นเส้นขอบเดี่ยว — บน light theme ได้แค่
+   ~1.5:1 กับ --surface ซึ่งมองไม่เห็นเลยกลางแดด */
+.variance-box.over {
+  border: 2px solid var(--danger);
+}
+
+.variance-box.over .variance-headline {
+  font-size: 1.75rem;
+}
+
+/* ── แถบปุ่มหลักในระยะนิ้วโป้ง ──
+   นั่งเหนือ .mobile-bottom-nav (สูงราว 72-84px รวม safe area) เสมอ */
+.job-action-bar {
+  position: sticky;
+  bottom: calc(84px + env(safe-area-inset-bottom));
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 10px 0;
+  background: linear-gradient(to top, var(--page) 65%, transparent);
+}
+
+.job-action-bar .secondary-button,
+.job-action-bar .ghost-button {
+  width: 100%;
+  min-height: 56px;
+  font-size: 1.02rem;
+}
+
+@media (min-width: 1024px) {
+  .job-action-bar {
+    position: static;
+    bottom: auto;
+    background: none;
+    flex-direction: row;
+    justify-content: flex-end;
+  }
+  .job-action-bar .secondary-button,
+  .job-action-bar .ghost-button {
+    width: auto;
+    min-width: 200px;
+  }
+}
+
+/* ── การ์ดงานในคิว ── */
+.job-card {
+  display: block;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  margin-bottom: 10px;
+  text-decoration: none;
+  color: var(--text);
+}
+
+.job-card:hover {
+  border-color: var(--line-strong);
+}
+
+/* งานที่ถูกล็อกเพราะยอดเกิน ต้องเด่นในคิวจนมองข้ามไม่ได้ */
+.job-card.locked {
+  border-left: 4px solid var(--danger);
+}
+
+.job-card.warn {
+  border-left: 4px solid var(--warning);
+}
+
+.job-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.job-card-amount {
+  font-size: 1.15rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.job-card-meta {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+/* ── timeline ของ audit ── */
+.audit-list {
+  border-top: 1px solid var(--line);
+}
+
+.audit-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.88rem;
+}
+
+.audit-row .audit-when {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.audit-row .audit-who {
+  color: var(--text);
+  font-weight: 700;
+}
+
+/* ── focus ring กลาง ──
+   ui-kit เอา outline ออกจาก input/select แล้วใส่ box-shadow แทน (ถูกต้อง)
+   แต่ปุ่มทุกชนิดยังไม่มี :focus-visible เลย ต้องมีตัวแทนที่มองเห็นได้
+   (WCAG 2.4.7 และกฎข้อ 4 ของ design system) */
+.secondary-button:focus-visible,
+.ghost-button:focus-visible,
+.table-action-button:focus-visible,
+.mobile-nav-item:focus-visible,
+.sidebar-item:focus-visible,
+.segmented-control button:focus-visible,
+.scan-popup-close:focus-visible,
+.job-card:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }

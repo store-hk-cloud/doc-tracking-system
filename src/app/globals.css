@@ -121,7 +121,11 @@ body {
   bottom: 0;
   z-index: 120;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  /* จำนวนช่องยืดตามจำนวนเมนูที่ผู้ใช้คนนั้นเห็นจริง (4 เมนู + "เพิ่มเติม")
+     ค่าเดิม repeat(5, ...) ตายตัว ทำให้ผู้ใช้ที่มีเมนูน้อยกว่า 5 เหลือช่องว่างค้าง */
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   gap: 4px;
   padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--line);

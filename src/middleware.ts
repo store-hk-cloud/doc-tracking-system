@@ -1,7 +1,17 @@
 import { createServerClient, type SetAllCookies } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
+// เส้นทางที่ไม่ผ่านการตรวจ session ของ middleware
+// - /api/cron/*  : Vercel Cron ยิงมาโดยไม่มี cookie ผู้ใช้ จึงตรวจสิทธิ์เองด้วย
+//                  CRON_SECRET ที่ตัว route (ดู api/cron/overdue-documents)
+// - /api/auth/resolve-username : ต้องเรียกก่อนล็อกอิน จึงยังไม่มี session
+const AUTH_EXEMPT_PREFIXES = ['/api/cron/', '/api/auth/'];
+
 export async function middleware(request: NextRequest) {
+  if (AUTH_EXEMPT_PREFIXES.some((p) => request.nextUrl.pathname.startsWith(p))) {
+    return NextResponse.next({ request });
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(

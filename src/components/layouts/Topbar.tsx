@@ -44,7 +44,10 @@ export function Topbar() {
           {notifications.length > 0 && (
             <span
               style={{
-                position: 'absolute', top: -4, right: -4, background: 'var(--danger)', color: 'white',
+                position: 'absolute', top: -4, right: -4, background: 'var(--danger)',
+                // ขาวบน --danger ได้แค่ 3.34:1 ใน dark theme ซึ่งตกเกณฑ์ 4.5:1
+                // ที่ขนาด 0.7rem — ใช้ --notify-badge-fg ที่พลิกตามธีมแทน
+                color: 'var(--notify-badge-fg)',
                 borderRadius: 999, fontSize: '0.7rem', minWidth: 16, height: 16, lineHeight: '16px',
                 textAlign: 'center', fontWeight: 800, padding: '0 3px',
               }}
