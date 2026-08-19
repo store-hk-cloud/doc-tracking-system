@@ -14,11 +14,32 @@
  * เพราะ trigger ห้าม DELETE ทุกตาราง)
  */
 import pg from 'pg';
+import { readFileSync } from 'fs';
 
 const { Client } = pg;
-const rawConnectionString = process.env.DATABASE_URL;
+
+// อ่านจาก .env.local เป็นค่าเริ่มต้น เพื่อให้รันได้ด้วยคำสั่งเดียวโดยไม่ต้อง
+// ตั้ง env เอง (ยัง override ด้วย DATABASE_URL ได้ถ้าจะชี้ไปฐานอื่น)
+function connectionFromEnvFile() {
+  try {
+    const env = Object.fromEntries(
+      readFileSync('.env.local', 'utf8')
+        .split(/\r?\n/)
+        .filter((l) => l.includes('=') && !l.startsWith('#'))
+        .map((l) => {
+          const i = l.indexOf('=');
+          return [l.slice(0, i).trim(), l.slice(i + 1).trim().replace(/^"|"$/g, '')];
+        })
+    );
+    return env.POSTGRES_URL_NON_POOLING || env.POSTGRES_URL || null;
+  } catch {
+    return null;
+  }
+}
+
+const rawConnectionString = process.env.DATABASE_URL || connectionFromEnvFile();
 if (!rawConnectionString) {
-  console.error('❌ ต้องตั้ง DATABASE_URL ก่อน (Supabase -> Settings -> Database -> Connection string)');
+  console.error('❌ ไม่พบ connection string — ตั้ง DATABASE_URL หรือรันจากรากโปรเจกต์ที่มี .env.local');
   process.exit(1);
 }
 
@@ -111,7 +132,7 @@ async function main() {
     const { rows: [bank] } = await client.query(`SELECT id FROM approved_banks LIMIT 1`);
 
     // helper: สร้างงาน 1 ใบพร้อม pickup + deposit ตามยอดที่กำหนด
-    async function makeRun(payinSatang, actualSatang, tag, actorId = messenger.id) {
+    async function makeRun(envelopeSatang, actualSatang, tag, actorId = messenger.id) {
       const { rows: [job] } = await client.query(
         `INSERT INTO messenger_jobs (job_kind, status, branch_id, assigned_to, created_by)
          VALUES ('cash_handover', 'open', $1, $2, $2) RETURNING *`,
@@ -119,15 +140,15 @@ async function main() {
       );
       const { rows: [photo] } = await client.query(
         `INSERT INTO messenger_job_photos (job_id, photo_kind, view_link, content_sha256, uploaded_by, uploader_signature)
-         VALUES ($1, 'payin_slip', 'https://example.test/payin', $2, $3, 'ทดสอบ') RETURNING *`,
-        [job.id, `payin${tag}`.padEnd(64, '0'), actorId]
+         VALUES ($1, 'cash_envelope', 'https://example.test/envelope', $2, $3, 'ทดสอบ') RETURNING *`,
+        [job.id, `envelope${tag}`.padEnd(64, '0'), actorId]
       );
       await client.query(`UPDATE messenger_jobs SET status='picked_up', picked_up_at=now() WHERE id=$1`, [job.id]);
       const { rows: [pickup] } = await client.query(
-        `INSERT INTO cash_pickups (job_id, branch_id, cashier_name, envelope_count, payin_amount_satang,
-                                   payin_photo_id, received_by, receiver_signature)
+        `INSERT INTO cash_pickups (job_id, branch_id, cashier_name, envelope_count, envelope_amount_satang,
+                                   envelope_photo_id, received_by, receiver_signature)
          VALUES ($1, $2, 'แคชเชียร์ทดสอบ', 2, $3, $4, $5, 'ทดสอบ') RETURNING *`,
-        [job.id, branch.id, payinSatang, photo.id, actorId]
+        [job.id, branch.id, envelopeSatang, photo.id, actorId]
       );
       const { rows: [slip] } = await client.query(
         `INSERT INTO messenger_job_photos (job_id, photo_kind, view_link, content_sha256, uploaded_by, uploader_signature)
@@ -139,7 +160,7 @@ async function main() {
         `INSERT INTO bank_deposits (job_id, bank_id, bank_branch_name, expected_total_satang, actual_amount_satang,
                                     reference_no, slip_photo_id, slip_status, submitted_by, submitted_signature)
          VALUES ($1, $2, 'สาขาทดสอบ', $3, $4, $5, $6, 'attached', $7, 'ทดสอบ') RETURNING *`,
-        [job.id, bank.id, payinSatang, actualSatang, `REF-${tag}-${Date.now()}`, slip.id, actorId]
+        [job.id, bank.id, envelopeSatang, actualSatang, `REF-${tag}-${Date.now()}`, slip.id, actorId]
       );
       return { job, pickup, deposit, photo, slip };
     }
@@ -263,12 +284,12 @@ async function main() {
       `UPDATE messenger_job_photos SET view_link = 'https://evil.test' WHERE id = $1`, [over.slip.id]);
 
     console.log('\n── 9. ยอดตามใบ Pay-in เป็น write-once ──');
-    await mustFail('แก้ payin_amount_satang',
-      `UPDATE cash_pickups SET payin_amount_satang = 4620000 WHERE id = $1`, [over.pickup.id]);
+    await mustFail('แก้ envelope_amount_satang',
+      `UPDATE cash_pickups SET envelope_amount_satang = 4620000 WHERE id = $1`, [over.pickup.id]);
     await mustFail('แก้ envelope_count',
       `UPDATE cash_pickups SET envelope_count = 99 WHERE id = $1`, [over.pickup.id]);
     await mustFail('เปลี่ยนรูปใบ Pay-in',
-      `UPDATE cash_pickups SET payin_photo_id = $1 WHERE id = $2`, [short.photo.id, over.pickup.id]);
+      `UPDATE cash_pickups SET envelope_photo_id = $1 WHERE id = $2`, [short.photo.id, over.pickup.id]);
 
     console.log('\n── ชั้นป้องกันเพิ่มเติม ──');
     await mustFail('บันทึก deposit ด้วย expected ที่ไม่ตรงกับผลรวม pay-in',

@@ -248,7 +248,11 @@ body {
   margin-bottom: 16px;
 }
 
-.form-group label {
+/* หัวข้อของกลุ่มที่ไม่มีช่องกรอกให้ผูก — ใช้ span แทน label เพราะ label
+   ที่ไม่มี control คู่กันเป็นข้อผิดพลาดด้าน accessibility (screen reader
+   จะประกาศว่าเป็นป้ายของช่องกรอกที่ไม่มีอยู่) */
+.form-group label,
+.form-group .form-label-static {
   color: var(--muted);
   font-size: 0.84rem;
   font-weight: 800;

@@ -16,6 +16,14 @@ export default function RecipientPage() {
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
   const [existingDelivery, setExistingDelivery] = useState<any>(null);
+  // ลายเซ็นผู้รับ: เติมชื่อบัญชีให้เป็นค่าเริ่มต้น แต่แก้เป็นชื่อผู้รับตัวจริงได้
+  const [signature, setSignature] = useState('');
+  const [signatureTouched, setSignatureTouched] = useState(false);
+
+  // เติมค่าเริ่มต้นเมื่อโปรไฟล์โหลดเสร็จ แต่ไม่ทับค่าที่ผู้ใช้พิมพ์แล้ว
+  useEffect(() => {
+    if (!signatureTouched && profile?.full_name) setSignature(profile.full_name);
+  }, [profile?.full_name, signatureTouched]);
 
   useEffect(() => {
     const loadDoc = async () => {
@@ -40,8 +48,8 @@ export default function RecipientPage() {
   }, [docId]);
 
   const handleSubmit = async () => {
-    if (!profile?.full_name) {
-      setError('ไม่พบชื่อผู้ใช้ในโปรไฟล์ กรุณาติดต่อผู้ดูแลระบบ');
+    if (!signature.trim()) {
+      setError('กรุณาระบุชื่อผู้รับเอกสาร');
       return;
     }
     setSubmitting(true);
@@ -53,6 +61,7 @@ export default function RecipientPage() {
       body: JSON.stringify({
         document_recipient_id: docId,
         is_verified: verified,
+        recipient_signature: signature.trim(),
         verification_note: verified ? null : verifyNote,
       }),
     });
@@ -176,16 +185,28 @@ export default function RecipientPage() {
           </div>
         )}
 
+        {/* ลายเซ็นพิมพ์ได้ เพราะคนที่มารับของจริงอาจไม่ใช่เจ้าของบัญชีที่ล็อกอิน
+            (ฝากเพื่อนแผนกมารับ) บังคับใช้ชื่อบัญชีจะทำให้หลักฐานระบุคนผิด
+            ระบบยังเก็บบัญชีที่กดยืนยันไว้เสมอ จึงตามหาคนที่กดได้ทุกกรณี */}
         <div className="form-group" style={{ marginTop: 16 }}>
-          <label>✍️ ลายเซ็นผู้รับ</label>
+          <label htmlFor="recipient-signature">✍️ ลายเซ็นผู้รับ *</label>
           <input
+            id="recipient-signature"
             type="text"
-            value={profile?.full_name || ''}
-            readOnly
+            value={signature}
+            onChange={(e) => {
+              setSignature(e.target.value);
+              setSignatureTouched(true);
+            }}
+            placeholder="พิมพ์ชื่อผู้รับเอกสาร"
+            maxLength={255}
             style={{ fontFamily: 'Caveat, cursive', fontSize: '1.4rem', minHeight: 48 }}
           />
           <div style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: 4 }}>
-            ระบบใช้ชื่อจากบัญชีที่ล็อกอินอยู่เป็นลายเซ็นเสมอ ไม่สามารถแก้ไขได้
+            เติมชื่อจากบัญชีที่ล็อกอินไว้ให้แล้ว แก้เป็นชื่อผู้รับตัวจริงได้
+            {profile?.full_name && signature.trim() && signature.trim() !== profile.full_name && (
+              <> · บันทึกว่าบัญชี {profile.full_name} เป็นผู้กดยืนยัน</>
+            )}
           </div>
         </div>
 

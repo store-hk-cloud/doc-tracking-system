@@ -15,8 +15,10 @@ export async function loadRunBundle(jobId: string) {
     .single();
   if (!job) return null;
 
-  const [{ data: pickup }, { data: deposit }, { data: photos }] = await Promise.all([
-    supabase.from('cash_pickups').select('*').eq('job_id', jobId).maybeSingle(),
+  // ตั้งแต่ 012 ทริปหนึ่งมีได้หลายจุดรับ ห้ามใช้ maybeSingle() ที่นี่
+  // ไม่งั้นพอมีจุดรับใบที่สอง คิวรีจะ error ทั้งก้อนและหน้าจอว่างเปล่า
+  const [{ data: pickups }, { data: deposit }, { data: photos }] = await Promise.all([
+    supabase.from('cash_pickups').select('*').eq('job_id', jobId).order('picked_up_at'),
     supabase
       .from('bank_deposits')
       .select('*')
@@ -46,7 +48,14 @@ export async function loadRunBundle(jobId: string) {
     }
   }
 
-  return { job, pickup: pickup || null, deposit: deposit || null, report, reviews, photos: photos || [] };
+  return {
+    job,
+    pickups: (pickups || []) as any[],
+    deposit: deposit || null,
+    report,
+    reviews,
+    photos: photos || [],
+  };
 }
 
 /** ผูกชื่อสาขา/ธนาคาร/ผู้รับผิดชอบ และลิงก์รูป เข้ากับ bundle เพื่อส่งให้ client */
@@ -55,19 +64,31 @@ export async function enrichRunBundle(bundle: NonNullable<Awaited<ReturnType<typ
   // supabase-js ในโปรเจกต์นี้ไม่มี generated types แถวที่อ่านมาจึงเป็น never
   // cast ตรงนี้ที่เดียวแทนการ cast กระจายทุกบรรทัด
   const job = bundle.job as any;
-  const pickup = bundle.pickup as any;
+  const pickups = bundle.pickups as any[];
   const deposit = bundle.deposit as any;
   const photos = bundle.photos as any[];
 
   const profileIds = [
     ...new Set(
-      [job.assigned_to, job.created_by, job.closed_by, pickup?.received_by, deposit?.submitted_by]
-        .filter(Boolean) as string[]
+      [
+        job.assigned_to,
+        job.created_by,
+        job.closed_by,
+        ...pickups.map((p) => p.received_by),
+        deposit?.submitted_by,
+      ].filter(Boolean) as string[]
     ),
   ];
+  // สาขาของทริปมาจากจุดรับแต่ละใบ ไม่ใช่จาก job.branch_id อีกแล้ว (012)
+  const branchIds = [
+    ...new Set([job.branch_id, ...pickups.map((p) => p.branch_id)].filter(Boolean) as string[]),
+  ];
 
-  const [{ data: branch }, { data: bank }, { data: profiles }] = await Promise.all([
-    supabase.from('branches').select('id, name, code').eq('id', job.branch_id).maybeSingle(),
+  const [{ data: branches }, { data: bank }, { data: profiles }] = await Promise.all([
+    supabase
+      .from('branches')
+      .select('id, name, code')
+      .in('id', branchIds.length ? branchIds : ['00000000-0000-0000-0000-000000000000']),
     deposit
       ? supabase.from('approved_banks').select('id, name').eq('id', deposit.bank_id).maybeSingle()
       : Promise.resolve({ data: null }),
@@ -76,20 +97,31 @@ export async function enrichRunBundle(bundle: NonNullable<Awaited<ReturnType<typ
 
   const nameMap = new Map((profiles || []).map((p: any) => [p.id, p.full_name]));
   const photoMap = new Map((photos || []).map((p: any) => [p.id, p.view_link]));
+  const branchMap = new Map((branches || []).map((b: any) => [b.id, b.name]));
+
+  const enrichedPickups = pickups.map((p) => ({
+    ...p,
+    branch_name: branchMap.get(p.branch_id) ?? null,
+    envelope_photo_link: photoMap.get(p.envelope_photo_id) ?? null,
+    receiver_name: nameMap.get(p.received_by) ?? null,
+  }));
+  // ยอดที่ควรฝากของทริป = ผลรวมยอดหน้าซองทุกใบ (ค่าเดียวกับที่ trigger
+  // assert_expected_matches_pickups ตรวจตอนบันทึกการฝาก)
+  const expectedTotalSatang = enrichedPickups.reduce(
+    (s, p) => s + Number(p.envelope_amount_satang),
+    0
+  );
 
   return {
     job: {
       ...job,
-      branch_name: branch?.name ?? null,
+      branch_name: branchMap.get(job.branch_id) ?? null,
       assigned_to_name: nameMap.get(job.assigned_to) ?? null,
+      pickup_count: enrichedPickups.length,
+      expected_total_satang: expectedTotalSatang,
     },
-    pickup: pickup
-      ? {
-          ...pickup,
-          branch_name: branch?.name ?? null,
-          payin_photo_link: photoMap.get(pickup.payin_photo_id) ?? null,
-        }
-      : null,
+    pickups: enrichedPickups,
+    expected_total_satang: expectedTotalSatang,
     deposit: deposit
       ? {
           ...deposit,

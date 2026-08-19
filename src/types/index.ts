@@ -250,8 +250,8 @@ export interface CashPickup {
   cashier_profile_id: string | null;
   cashier_name: string;
   envelope_count: number;
-  payin_amount_satang: number;
-  payin_photo_id: string;
+  envelope_amount_satang: number;
+  envelope_photo_id: string;
   payin_photo_link?: string;
   picked_up_at: string;
   lat: number | null;

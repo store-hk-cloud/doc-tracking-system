@@ -1,0 +1,854 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light dark" />
+<meta name="description" content="คู่มือส่งมอบงานระบบรับเงินสดสาขาและนำฝากธนาคาร สำหรับฝ่ายบัญชี" />
+<title>คู่มือส่งมอบงาน — ระบบรับเงินสด/นำฝากธนาคาร (MSG × บัญชี)</title>
+
+<style>
+  :root {
+    color-scheme: light;
+    --page: #eaf4f3;
+    --page-soft: #dcede9;
+    --surface: #ffffff;
+    --surface-soft: #f3f8f7;
+    --text: #1c1c1e;
+    --muted: #5c6a68;
+    --line: #dde3e2;
+    --line-strong: #c7d0ce;
+    --primary: #058581;
+    --primary-strong: #046662;
+    --primary-soft: rgba(5, 133, 129, 0.09);
+    --accent: #00bac6;
+    --warning: #b45f06;
+    --warning-soft: rgba(255, 149, 0, 0.1);
+    --danger: #c0342b;
+    --danger-soft: rgba(255, 59, 48, 0.09);
+    --success: #1b7a3d;
+    --success-soft: rgba(52, 199, 89, 0.1);
+    --radius: 6px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --page: #04120f;
+      --page-soft: #0c211e;
+      --surface: #14201f;
+      --surface-soft: #0f1918;
+      --text: #f5f5f7;
+      --muted: #9aa5a3;
+      --line: rgba(180, 200, 197, 0.18);
+      --line-strong: rgba(180, 200, 197, 0.3);
+      --primary: #1aa39d;
+      --primary-strong: #51ddd7;
+      --primary-soft: rgba(26, 163, 157, 0.14);
+      --accent: #51ddd7;
+      --warning: #ff9f0a;
+      --warning-soft: rgba(255, 159, 10, 0.12);
+      --danger: #ff6b61;
+      --danger-soft: rgba(255, 107, 97, 0.12);
+      --success: #45d67a;
+      --success-soft: rgba(69, 214, 122, 0.12);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #04120f;
+    --page-soft: #0c211e;
+    --surface: #14201f;
+    --surface-soft: #0f1918;
+    --text: #f5f5f7;
+    --muted: #9aa5a3;
+    --line: rgba(180, 200, 197, 0.18);
+    --line-strong: rgba(180, 200, 197, 0.3);
+    --primary: #1aa39d;
+    --primary-strong: #51ddd7;
+    --primary-soft: rgba(26, 163, 157, 0.14);
+    --accent: #51ddd7;
+    --warning: #ff9f0a;
+    --warning-soft: rgba(255, 159, 10, 0.12);
+    --danger: #ff6b61;
+    --danger-soft: rgba(255, 107, 97, 0.12);
+    --success: #45d67a;
+    --success-soft: rgba(69, 214, 122, 0.12);
+  }
+
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --page: #eaf4f3;
+    --page-soft: #dcede9;
+    --surface: #ffffff;
+    --surface-soft: #f3f8f7;
+    --text: #1c1c1e;
+    --muted: #5c6a68;
+    --line: #dde3e2;
+    --line-strong: #c7d0ce;
+    --primary: #058581;
+    --primary-strong: #046662;
+    --primary-soft: rgba(5, 133, 129, 0.09);
+    --accent: #00bac6;
+    --warning: #b45f06;
+    --warning-soft: rgba(255, 149, 0, 0.1);
+    --danger: #c0342b;
+    --danger-soft: rgba(255, 59, 48, 0.09);
+    --success: #1b7a3d;
+    --success-soft: rgba(52, 199, 89, 0.1);
+  }
+
+  body {
+    background: var(--page);
+    color: var(--text);
+    font-family: "Kanit", "Leelawadee UI", "Noto Sans Thai", "Sarabun",
+      -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-size: 15px;
+  }
+
+  .wrap {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 40px 20px 80px;
+    display: flex;
+    flex-direction: column;
+    gap: 34px;
+  }
+
+  /* ── หัวเอกสาร ── */
+  .doc-head {
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    background: var(--surface);
+    padding: 24px 26px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .eyebrow {
+    font-size: 0.72rem;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    /* primary บนพื้นขาวได้ 4.49:1 ตกเกณฑ์ 4.5:1 พอดี ใช้ primary-strong แทน */
+    color: var(--primary-strong);
+    font-weight: 600;
+  }
+  h1 {
+    font-size: 1.72rem;
+    font-weight: 700;
+    line-height: 1.25;
+    text-wrap: balance;
+    margin: 0;
+  }
+  .lede {
+    color: var(--muted);
+    max-width: 66ch;
+    margin: 0;
+  }
+  .meta-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-top: 4px;
+  }
+  .meta-strip > div {
+    flex: 1 1 150px;
+    padding: 10px 14px;
+    border-right: 1px solid var(--line);
+    background: var(--surface-soft);
+  }
+  .meta-strip > div:last-child { border-right: 0; }
+  .meta-strip dt {
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 2px;
+  }
+  .meta-strip dd {
+    margin: 0;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── ส่วน ── */
+  section {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  h2 {
+    font-size: 1.2rem;
+    font-weight: 700;
+    margin: 0;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--primary);
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  h2 .num {
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+    /* บนพื้น --page ที่เข้มกว่าขาว primary เหลือ 4.00:1 จึงต้องใช้เฉดเข้ม */
+    color: var(--primary-strong);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+  h3 {
+    font-size: 0.98rem;
+    font-weight: 700;
+    margin: 0;
+  }
+  p { margin: 0; max-width: 74ch; }
+  .note { color: var(--muted); font-size: 0.9rem; }
+
+  .card {
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    background: var(--surface);
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* ── ตาราง ── */
+  .table-scroll { overflow-x: auto; border: 1px solid var(--line-strong); border-radius: var(--radius); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+    background: var(--surface);
+    min-width: 520px;
+  }
+  th, td {
+    text-align: left;
+    padding: 9px 13px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  th {
+    background: var(--surface-soft);
+    font-weight: 700;
+    font-size: 0.76rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  code {
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-size: 0.86em;
+    background: var(--primary-soft);
+    padding: 1px 5px;
+    border-radius: 3px;
+    white-space: nowrap;
+  }
+
+  /* ── ขั้นตอน ── */
+  .steps { display: flex; flex-direction: column; gap: 10px; counter-reset: s; }
+  .step {
+    display: grid;
+    grid-template-columns: 30px 1fr;
+    gap: 14px;
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--primary);
+    border-radius: var(--radius);
+    background: var(--surface);
+    padding: 14px 16px;
+  }
+  .step::before {
+    counter-increment: s;
+    content: counter(s);
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    color: var(--primary);
+    font-size: 1.05rem;
+    line-height: 1.4;
+  }
+  .step-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .step-body .where {
+    font-size: 0.74rem;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+  ul.fields {
+    margin: 0;
+    padding-left: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 0.89rem;
+  }
+
+  /* ── ป้ายสถานะ ── */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.76rem;
+    font-weight: 600;
+    padding: 2px 9px;
+    border-radius: 999px;
+    border: 1px solid var(--line-strong);
+    background: var(--surface-soft);
+    white-space: nowrap;
+  }
+  .pill.ok { border-color: var(--success); background: var(--success-soft); }
+  .pill.warn { border-color: var(--warning); background: var(--warning-soft); }
+  .pill.stop { border-color: var(--danger); background: var(--danger-soft); }
+
+  /* ── กล่องเน้น ── */
+  .callout {
+    border: 1px solid var(--line-strong);
+    border-left: 3px solid var(--warning);
+    border-radius: var(--radius);
+    background: var(--surface);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .callout.critical { border-left-color: var(--danger); }
+  .callout .title { font-weight: 700; }
+
+  /* ── สองคอลัมน์ ── */
+  .cols {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 14px;
+  }
+  ul.plain {
+    margin: 0;
+    padding-left: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 0.9rem;
+  }
+  ul.plain li strong { font-weight: 600; }
+
+  /* ── checklist ── */
+  ul.check { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  ul.check li {
+    display: grid;
+    grid-template-columns: 24px 1fr;
+    gap: 10px;
+    padding: 11px 0;
+    border-bottom: 1px solid var(--line);
+    align-items: start;
+  }
+  ul.check li:last-child { border-bottom: 0; }
+  ul.check .mark { font-weight: 700; line-height: 1.5; }
+  ul.check .done { color: var(--success); }
+  ul.check .todo { color: var(--warning); }
+
+  /* ── ผังการทำงาน (ไม่พึ่งไลบรารีภายนอก ไฟล์นี้เปิดออฟไลน์ได้) ── */
+  .flow {
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    background: var(--surface-soft);
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .flow-node {
+    background: var(--surface);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    text-align: center;
+    width: 100%;
+    max-width: 380px;
+  }
+  .flow-node .who {
+    font-size: 0.68rem;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .flow-node .detail { font-size: 0.82rem; color: var(--muted); }
+  .flow-node.msg { border-left: 3px solid var(--primary); }
+  .flow-node.acc { border-left: 3px solid var(--accent); }
+  .flow-node.auto {
+    border-style: dashed;
+    border-left: 3px dashed var(--muted);
+    background: var(--page-soft);
+  }
+  .flow-node.terminal { border-left: 3px solid var(--success); }
+  .flow-arrow {
+    /* ลูกศรเป็นสิ่งเดียวที่บอกทิศทางของผัง จึงต้องผ่าน 3:1 ตามเกณฑ์กราฟิก
+       สี --line-strong ได้แค่ 1.47:1 บนธีมสว่าง มองแทบไม่เห็น */
+    color: var(--muted);
+    font-size: 1.1rem;
+    line-height: 1;
+  }
+  .flow-fork {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    width: 100%;
+    /* ลูกศรเป็นสิ่งเดียวที่บอกทิศทางของผัง จึงต้องผ่าน 3:1 ตามเกณฑ์กราฟิก
+       สี --line-strong ได้แค่ 1.47:1 บนธีมสว่าง มองแทบไม่เห็น */
+    color: var(--muted);
+    font-size: 1.1rem;
+    line-height: 1;
+    text-align: center;
+  }
+  .flow-branches {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    width: 100%;
+    align-items: start;
+  }
+  .branch {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    border-top: 2px solid var(--line-strong);
+    padding-top: 12px;
+  }
+  .branch.ok { border-top-color: var(--success); }
+  .branch.warn { border-top-color: var(--warning); }
+  .branch.stop { border-top-color: var(--danger); }
+  .branch-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    padding: 2px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--line-strong);
+    background: var(--surface);
+  }
+  .branch.ok .branch-label { border-color: var(--success); background: var(--success-soft); }
+  .branch.warn .branch-label { border-color: var(--warning); background: var(--warning-soft); }
+  .branch.stop .branch-label { border-color: var(--danger); background: var(--danger-soft); }
+  @media (max-width: 700px) {
+    .flow-fork { display: none; }
+    .flow-branches { grid-template-columns: 1fr; gap: 18px; }
+  }
+
+  a { color: var(--primary-strong); text-decoration: underline; text-underline-offset: 2px; }
+  a:focus-visible, li:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 3px;
+  }
+
+  footer {
+    border-top: 1px solid var(--line-strong);
+    padding-top: 16px;
+    color: var(--muted);
+    font-size: 0.84rem;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  @media (max-width: 560px) {
+    h1 { font-size: 1.4rem; }
+    .wrap { padding: 24px 14px 60px; gap: 28px; }
+    .doc-head { padding: 18px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="doc-head">
+    <div class="eyebrow">คู่มือส่งมอบงาน · ฝ่ายบัญชี</div>
+    <h1>ระบบรับเงินสดสาขา &amp; นำฝากธนาคาร</h1>
+    <p class="lede">
+      แมสเซนเจอร์รับเงินสดจากแคชเชียร์สาขา นำไปฝากธนาคาร ระบบเทียบยอดให้อัตโนมัติ
+      ตรงกันปิดงานเอง ไม่ตรงต้องทำรายงานผลต่างและรอฝ่ายบัญชีตัดสิน
+      เอกสารนี้สรุปสิ่งที่บัญชีต้องตั้งค่าก่อนเริ่มใช้ วิธีใช้ของทั้งสองฝ่าย
+      และขอบเขตที่ระบบครอบคลุมได้จริง
+    </p>
+    <dl class="meta-strip">
+      <div><dt>สถานะระบบ</dt><dd>ใช้งานได้บน production</dd></div>
+      <div><dt>ข้อมูลในระบบ</dt><dd>0 งาน — เริ่มจากศูนย์</dd></div>
+      <div><dt>สาขาที่ตั้งไว้</dt><dd>10 แห่ง</dd></div>
+      <div><dt>ธนาคารที่อนุมัติ</dt><dd>5 แห่ง</dd></div>
+      <div><dt>บัญชี MSG</dt><dd>ยังไม่มี</dd></div>
+    </dl>
+  </header>
+
+  <!-- ═══ 1 ═══ -->
+  <section>
+    <h2><span class="num">01</span> สิ่งที่ต้องตั้งก่อนเริ่มใช้</h2>
+    <p>เรียงตามลำดับที่ต้องทำ ข้อที่ยังไม่เสร็จคือสิ่งที่ขัดขวางการเริ่มใช้จริง</p>
+    <div class="card">
+      <ul class="check">
+        <li>
+          <span class="mark done">✓</span>
+          <div>
+            <strong>ผู้อนุมัติเงินเกิน</strong> — ตั้งแล้ว: บัญชี <code>Accounts Payable</code>
+            เป็น <em>ธุรการ</em> ในแผนก <code>0-ADM03 ACC/บัญชี</code>
+            <div class="note">เงื่อนไขคือต้องเป็นธุรการ <strong>และ</strong> อยู่ 0-ADM03 ขาดอย่างใดอย่างหนึ่งก็อนุมัติไม่ได้</div>
+          </div>
+        </li>
+        <li>
+          <span class="mark todo">□</span>
+          <div>
+            <strong>สร้างบัญชีแมสเซนเจอร์</strong> ที่หน้า จัดการผู้ใช้ → ไม่ต้องใส่อีเมล
+            ใส่ <em>ชื่อผู้ใช้</em> + รหัสผ่าน, บทบาท <em>ผู้ใช้</em>, หน่วยงาน <em>แมสเซนเจอร์</em>
+            <div class="note">ตอนนี้ยังไม่มีใครอยู่แผนก MSG เลย จึงยังไม่มีใครเปิดงานรับเงินได้</div>
+          </div>
+        </li>
+        <li>
+          <span class="mark todo">□</span>
+          <div>
+            <strong>ยืนยันรายชื่อสาขาที่รับเงินจริง</strong> — ระบบดึงมาจากทุกหน่วยงานรหัส
+            <code>0-BSN*</code> อัตโนมัติ ได้ 10 รายการ ซึ่งมีบางรายการที่น่าจะไม่ใช่จุดรับเงิน
+            เช่น <code>MKT&amp;Graphic</code>, <code>จัดซื้อ</code>, <code>ENG/คลังช่าง</code>
+            <div class="note">ต้องบอกว่าจะปิดรายการไหน — ปิดได้ ไม่ต้องลบ ประวัติเก่าจะยังอ่านได้</div>
+          </div>
+        </li>
+        <li>
+          <span class="mark todo">□</span>
+          <div>
+            <strong>ยืนยันรายชื่อธนาคาร</strong> — ตั้งไว้ 5 แห่ง: กสิกรไทย, ไทยพาณิชย์, กรุงเทพ,
+            กรุงไทย, กรุงศรีอยุธยา — ถ้าบริษัทใช้ธนาคารอื่นต้องเพิ่ม
+          </div>
+        </li>
+        <li>
+          <span class="mark todo">□</span>
+          <div>
+            <strong>ตัดสินใจเรื่องแคชเชียร์</strong> — ปัจจุบันแมสเซนเจอร์ <em>พิมพ์ชื่อแคชเชียร์เอง</em>
+            เป็นข้อความ ถ้าต้องการให้เลือกจากรายชื่อจริงและมีหลักฐานว่าใครส่งมอบ
+            ต้องสร้างบัญชีให้แคชเชียร์แต่ละสาขา
+          </div>
+        </li>
+      </ul>
+    </div>
+
+    <div class="callout critical">
+      <div class="title">ข้อจำกัดสำคัญของงาน “เพิ่มข้อมูล”</div>
+      <p>
+        <strong>ยังไม่มีหน้าจอสำหรับเพิ่ม/แก้/ปิด รายชื่อสาขาและธนาคาร</strong>
+        ทั้งสองตารางถูกใส่ค่าเริ่มต้นไว้ตอนติดตั้งระบบเท่านั้น การแก้ไขต้องทำผ่านฐานข้อมูลโดยตรง
+        ฝ่ายบัญชีจึงยัง <em>ไม่สามารถ</em> ดูแลข้อมูลสองชุดนี้ด้วยตัวเองได้
+      </p>
+      <p class="note">
+        ถ้างานส่งมอบครั้งนี้รวมถึงการให้บัญชีเป็นคนดูแลข้อมูลหลัก ต้องสร้างหน้า
+        “จัดการสาขา / ธนาคารที่อนุมัติ” เพิ่ม — แจ้งได้ว่าจะให้ทำ
+      </p>
+    </div>
+  </section>
+
+  <!-- ═══ 2 ═══ -->
+  <section>
+    <h2><span class="num">02</span> ผังการทำงาน</h2>
+    <div class="flow">
+      <div class="flow-node msg">
+        <span class="who">แมสเซนเจอร์</span>
+        <strong>เปิดงาน — เลือกสาขา</strong>
+      </div>
+      <div class="flow-arrow" aria-hidden="true">↓</div>
+      <div class="flow-node msg">
+        <span class="who">แมสเซนเจอร์ · ที่สาขา</span>
+        <strong>รับเงินจากแคชเชียร์</strong>
+        <span class="detail">คีย์ยอดตามใบ Pay-in · ถ่ายรูปซองและใบ Pay-in</span>
+      </div>
+      <div class="flow-arrow" aria-hidden="true">↓</div>
+      <div class="flow-node msg">
+        <span class="who">แมสเซนเจอร์ · ที่ธนาคาร</span>
+        <strong>บันทึกการนำฝาก</strong>
+        <span class="detail">คีย์ยอดฝากจริง · ถ่ายใบนำฝาก</span>
+      </div>
+      <div class="flow-arrow" aria-hidden="true">↓</div>
+      <div class="flow-node auto">
+        <span class="who">ระบบทำเอง</span>
+        <strong>เทียบยอดที่รับ กับ ยอดที่ฝาก</strong>
+      </div>
+      <div class="flow-fork" aria-hidden="true">
+        <span>↓</span><span>↓</span><span>↓</span>
+      </div>
+      <div class="flow-branches">
+        <div class="branch ok">
+          <span class="branch-label">ตรงกันพอดี</span>
+          <div class="flow-node terminal">
+            <strong>ปิดงานทันที</strong>
+            <span class="detail">ไม่มีใครต้องอนุมัติ</span>
+          </div>
+        </div>
+        <div class="branch warn">
+          <span class="branch-label">เงินขาด</span>
+          <div class="flow-node">
+            <span class="who">แมสเซนเจอร์</span>
+            <strong>ทำรายงานผลต่าง</strong>
+            <span class="detail">ระบุสาเหตุ + คำอธิบาย</span>
+          </div>
+          <div class="flow-arrow" aria-hidden="true">↓</div>
+          <div class="flow-node acc">
+            <span class="who">บัญชี</span>
+            <strong>ตรวจและปิดยอด</strong>
+            <span class="detail">0-ADM03 หรือ 0-ADM03-1</span>
+          </div>
+        </div>
+        <div class="branch stop">
+          <span class="branch-label">เงินเกิน — ล็อก</span>
+          <div class="flow-node">
+            <span class="who">แมสเซนเจอร์</span>
+            <strong>ทำรายงานผลต่าง</strong>
+            <span class="detail">งานถูกล็อก ปิดเองไม่ได้</span>
+          </div>
+          <div class="flow-arrow" aria-hidden="true">↓</div>
+          <div class="flow-node acc">
+            <span class="who">บัญชี</span>
+            <strong>ต้องธุรการใน 0-ADM03 เท่านั้น</strong>
+            <span class="detail">จึงจะอนุมัติได้</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="note">
+      เงินขาดและเงินเกินเดินเส้นทางเดียวกัน แต่กติกาการปิดงานต่างกัน
+      เงินเกินถือว่าเซนสิทีฟกว่าเพราะเป็นสัญญาณของเงินปนกัน ฝากผิดบัญชี หรือความผิดปกติอื่น
+      จึงถูกล็อกไว้และปิดเองไม่ได้
+    </p>
+  </section>
+
+  <!-- ═══ 3 ═══ -->
+  <section>
+    <h2><span class="num">03</span> ฝั่งแมสเซนเจอร์ ใช้งานอย่างไร</h2>
+    <p>
+      ล็อกอินด้วย <strong>ชื่อผู้ใช้ + รหัสผ่าน</strong> (กดแท็บ “ชื่อผู้ใช้” ที่หน้าแรก ไม่ต้องมีอีเมลบริษัท)
+      แล้วเข้าเมนู <strong>งานฝากเงินของฉัน</strong> ออกแบบให้ใช้บนมือถือกลางแดด ปุ่มใหญ่ ปุ่มหลักหนึ่งปุ่มต่อหน้าจอ
+    </p>
+    <div class="steps">
+      <div class="step">
+        <div class="step-body">
+          <span class="where">เปิดงานใหม่</span>
+          <h3>เลือกสาขาที่จะไปรับเงิน</h3>
+          <ul class="fields">
+            <li>สาขา <em>(บังคับ)</em></li>
+            <li>หมายเหตุ (ถ้ามี)</li>
+          </ul>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-body">
+          <span class="where">จุดรับเงิน · ต้องทำที่หน้าเคาน์เตอร์</span>
+          <h3>รับเงินจากแคชเชียร์</h3>
+          <ul class="fields">
+            <li>ชื่อแคชเชียร์ผู้ส่งมอบ <em>(พิมพ์เองได้)</em></li>
+            <li>จำนวนซองที่รับ</li>
+            <li>ยอดเงินตามใบ Pay-in — <strong>ต้องคีย์ซ้ำสองครั้งให้ตรงกัน</strong></li>
+            <li>รูปซองเงิน / ใบ Pay-in <em>(บังคับ)</em></li>
+            <li>พิกัด GPS — ระบบเก็บให้เองถ้าอนุญาต</li>
+          </ul>
+          <p class="note">ยอดและรูปในขั้นนี้ <strong>แก้ย้อนหลังไม่ได้</strong> คีย์ผิดต้องให้ผู้ดูแลระบบยกเลิกงานแล้วเปิดใหม่</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-body">
+          <span class="where">ที่ธนาคาร</span>
+          <h3>บันทึกการนำฝาก</h3>
+          <ul class="fields">
+            <li>ธนาคาร — เลือกได้เฉพาะที่บริษัทอนุมัติ</li>
+            <li>สาขา / สถานที่ที่ฝาก</li>
+            <li>เลขที่ใบนำฝาก — ใช้เลขซ้ำกับรายการอื่นไม่ได้</li>
+            <li>ยอดเงินฝากจริงตามใบนำฝาก — <strong>คีย์ซ้ำสองครั้ง</strong></li>
+            <li>รูปใบนำฝาก <em>(บังคับ)</em></li>
+          </ul>
+          <p class="note">
+            หน้านี้ <strong>ซ่อนยอดที่ต้องฝากไว้</strong> เพื่อให้คีย์ตามใบนำฝากจริงก่อน
+            มีปุ่มเปิดดูได้ แต่การกดจะถูกบันทึกไว้
+          </p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-body">
+          <span class="where">หลังกดบันทึก · ระบบทำเอง</span>
+          <h3>ผลการเทียบยอด</h3>
+          <p style="font-size:0.9rem">
+            <span class="pill ok">ตรงกันพอดี</span> ปิดงานทันที ไม่ต้องรอใคร<br />
+            <span class="pill warn">เงินขาด</span> / <span class="pill stop">เงินเกิน — ล็อก</span>
+            ต้องกรอกรายงานผลต่างต่อในหน้าเดียวกัน
+          </p>
+          <ul class="fields">
+            <li>สาเหตุ — เลือกจาก: ค่าธรรมเนียมธนาคาร · นับเงินคลาดเคลื่อนตอนรับ · ธนาคารปฏิเสธแบงก์ชำรุด · ซองเงินปนกัน · ฝากผิดบัญชี · อื่นๆ</li>
+            <li>คำอธิบายเพิ่มเติม — บังคับอย่างน้อย 10 ตัวอักษร</li>
+            <li>รูปเอกสารประกอบ (ถ้ามี)</li>
+          </ul>
+          <p class="note">กดย้อนกลับไปแก้ยอดให้ตรงไม่ได้ — ระบบปิดทางนั้นไว้ตั้งใจ</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 4 ═══ -->
+  <section>
+    <h2><span class="num">04</span> ฝั่งบัญชี ใช้งานอย่างไร</h2>
+    <div class="cols">
+      <div class="card">
+        <h3>💵 เงินสด/ฝากธนาคาร</h3>
+        <p class="note">สรุปยอดผ่านประจำวัน เลือกวันที่ได้</p>
+        <ul class="plain">
+          <li>ยอดรับวันนี้ / ยอดฝากวันนี้</li>
+          <li><strong>เงินสดคงค้างในมือ</strong> — รับแล้วแต่ยังไม่ฝาก ตัวเลขที่ควรดูทุกเย็น</li>
+          <li>ยอดขาดรวม / ยอดเกินรวม</li>
+          <li>จำนวนรายการรอตรวจ</li>
+          <li>จำนวนรายการที่ยังไม่มีรูปสลิป</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>🚨 ตรวจยอดขาด/เกิน</h3>
+        <p class="note">คิวงานที่รอตัดสิน กดเข้าไปดูรายใบ</p>
+        <ul class="plain">
+          <li>ยอดที่ต้องฝาก เทียบ ยอดที่ฝากจริง</li>
+          <li>สาขา · แคชเชียร์ · จำนวนซอง · ธนาคาร · เลขที่ใบนำฝาก</li>
+          <li>รูปหลักฐานทั้งหมดของงานนั้น</li>
+          <li>ช่องตัดสิน: <strong>เหตุผลอย่างน้อย 10 ตัวอักษร</strong> + ติ๊กยืนยันว่าเปิดสลิปดูแล้ว</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="table-scroll">
+      <table>
+        <caption class="note" style="text-align:left;padding:10px 13px;caption-side:top">ใครทำอะไรได้</caption>
+        <thead>
+          <tr>
+            <th>ความสามารถ</th>
+            <th>ต้องอยู่แผนก</th>
+            <th>ต้องมีบทบาท</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>เปิดงาน · รับเงิน · นำฝาก · ทำรายงานผลต่าง</td>
+            <td><code>MSG</code></td>
+            <td>ผู้ใช้ ขึ้นไป</td>
+          </tr>
+          <tr>
+            <td>ดูรายงานเงินสดและคิวตรวจยอด</td>
+            <td><code>0-ADM03</code> · <code>0-ADM03-1</code> · <code>0-SDM01</code></td>
+            <td>ผู้ใช้ ขึ้นไป</td>
+          </tr>
+          <tr>
+            <td>ปิดเคส <strong>เงินขาด</strong></td>
+            <td><code>0-ADM03</code> · <code>0-ADM03-1</code></td>
+            <td>ผู้ใช้ ขึ้นไป</td>
+          </tr>
+          <tr>
+            <td>อนุมัติ <strong>เงินเกิน</strong></td>
+            <td><code>0-ADM03</code> เท่านั้น</td>
+            <td><strong>ธุรการ</strong> ขึ้นไป</td>
+          </tr>
+          <tr>
+            <td>ยกเลิกงานที่คีย์ผิด</td>
+            <td>—</td>
+            <td>ผู้ดูแลระบบ</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout">
+      <div class="title">กฎแยกหน้าที่ที่ระบบบังคับเอง</div>
+      <p>
+        ผู้ตัดสินผลต่าง <strong>ห้ามเป็น</strong> แมสเซนเจอร์ที่ทำงานใบนั้น แคชเชียร์ที่ส่งมอบ
+        หรือผู้เขียนรายงานใบนั้น ระบบปฏิเสธที่ระดับฐานข้อมูล ไม่ใช่แค่ซ่อนปุ่ม
+      </p>
+      <p class="note">
+        ผลที่ตามมาในทางปฏิบัติ: ควรมีผู้อนุมัติเงินเกินอย่างน้อย 2 คน
+        ถ้ามีคนเดียวแล้ววันนั้นลา เคสเงินเกินจะค้างโดยไม่มีใครปิดได้
+      </p>
+    </div>
+  </section>
+
+  <!-- ═══ 5 ═══ -->
+  <section>
+    <h2><span class="num">05</span> ระบบครอบคลุมได้แค่ไหน</h2>
+    <div class="cols">
+      <div class="card">
+        <h3 style="color:var(--success)">ทำได้แล้ว</h3>
+        <ul class="plain">
+          <li><strong>ยอดเงินแก้ย้อนหลังไม่ได้</strong> — ยอดรับ ยอดฝาก เลขที่ใบนำฝาก และรูปสลิป เขียนได้ครั้งเดียว</li>
+          <li><strong>ผลต่างคำนวณโดยฐานข้อมูล</strong> ไม่ใช่โดยหน้าเว็บ จึงไม่มีใครบันทึกผลต่างที่ขัดกับยอดจริงได้</li>
+          <li><strong>เงินเกินปิดงานเองไม่ได้</strong> ต้องมีใบอนุมัติจริงเท่านั้น</li>
+          <li><strong>รูปสลิปใช้ซ้ำสองงานไม่ได้</strong> ระบบตรวจจากตัวไฟล์</li>
+          <li><strong>ลบงานไม่ได้</strong> ยกเลิกได้และต้องระบุเหตุผล</li>
+          <li><strong>ประวัติทุกการกระทำแก้ไม่ได้</strong> รวมถึงการที่ผู้ดูแลตั้งรหัสผ่านใหม่ให้คนอื่น</li>
+          <li>ลายเซ็นทุกใบเขียนจากชื่อผู้ใช้ที่ล็อกอินจริง ปลอมจากฝั่งหน้าเว็บไม่ได้</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="color:var(--warning)">ยังไม่ครอบคลุม</h3>
+        <ul class="plain">
+          <li><strong>ไม่มีหน้าจัดการสาขา/ธนาคาร</strong> ต้องแก้ผ่านฐานข้อมูล</li>
+          <li><strong>สาขาไม่ได้ยืนยันยอด</strong> — ระบบจับได้ว่า “ยอดที่คีย์ ≠ ยอดที่ฝาก” แต่จับไม่ได้ว่า “รับเงินมาไม่ครบตั้งแต่ต้น” เพราะแมสเซนเจอร์เป็นคนคีย์ยอด Pay-in เอง</li>
+          <li>ไม่มีการกระทบยอดกับ statement ธนาคาร</li>
+          <li>รับหลายสาขาแล้วฝากรวมครั้งเดียวยังทำไม่ได้ — 1 จุดรับต่อ 1 การฝาก</li>
+          <li>ไม่มีหน้าประวัติงานย้อนหลังของแมสเซนเจอร์ และไม่มีหน้ารายการฝากทั้งหมด</li>
+          <li>ไม่มีปุ่ม export เป็นไฟล์ Excel/CSV</li>
+          <li>ไม่มีการส่งอีเมลแจ้งผลต่าง — แจ้งเตือนในระบบเท่านั้น</li>
+          <li>ถ้าสัญญาณหลุดตอนกดบันทึก ค่าที่กรอกถูกเก็บในเครื่องให้กดซ้ำได้ แต่ไม่มีการส่งซ้ำอัตโนมัติ</li>
+          <li>งานวิ่งนอกบริษัท เดินเอกสารภายใน และเบิกค่าเดินทาง เตรียมโครงสร้างไว้แล้วแต่ยังไม่มีหน้าจอ</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="callout critical">
+      <div class="title">ช่องที่ปิดไม่ได้ด้วยระบบเพียงลำพัง — ต้องรู้ก่อนใช้</div>
+      <p>
+        แมสเซนเจอร์เป็นคนคีย์ยอดตามใบ Pay-in เอง ถ้าคีย์ต่ำกว่าที่รับมาจริงแล้วฝากตามที่คีย์
+        ผลต่างจะเป็นศูนย์และระบบจะปิดงานให้เอง
+      </p>
+      <p>
+        ทางแก้ที่แนะนำคือ <strong>ให้แคชเชียร์หรือหัวหน้าสาขากดยืนยันยอดในระบบ</strong>
+        ภายในเวลาที่กำหนด เพื่อให้มีสองฝ่ายยืนยันยอดต้นทาง โครงสร้างฐานข้อมูลเตรียมไว้แล้ว
+        เหลือแต่หน้าจอ ต้นทุนคือแคชเชียร์แต่ละสาขาต้องมีบัญชีในระบบ
+      </p>
+    </div>
+  </section>
+
+  <!-- ═══ 6 ═══ -->
+  <section>
+    <h2><span class="num">06</span> ค่าที่ปรับได้ภายหลังโดยไม่ต้องแก้โปรแกรม</h2>
+    <p>ค่าเหล่านี้เก็บในฐานข้อมูล ทั้งฝ่ายตรวจสิทธิ์และหน้าเว็บอ่านค่าชุดเดียวกัน แก้แล้วมีผลทันที</p>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>ค่า</th><th>ความหมาย</th><th>ตั้งไว้ตอนนี้</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>cash_approver_dept_codes</code></td><td>แผนกที่อนุมัติเงินเกินได้</td><td class="num">0-ADM03</td></tr>
+          <tr><td><code>cash_shortage_dept_codes</code></td><td>แผนกที่ปิดเคสเงินขาดได้</td><td class="num">0-ADM03, 0-ADM03-1</td></tr>
+          <tr><td><code>cash_viewer_dept_codes</code></td><td>แผนกที่ดูรายงานเงินสดได้</td><td class="num">0-ADM03, 0-ADM03-1, 0-SDM01</td></tr>
+          <tr><td><code>messenger_dept_codes</code></td><td>แผนกที่ถือว่าเป็นแมสเซนเจอร์</td><td class="num">MSG</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">
+      การเปลี่ยนค่าเหล่านี้ยังต้องทำผ่านฐานข้อมูลเช่นกัน — แจ้งมาได้ว่าต้องการเปลี่ยนเป็นอะไร
+    </p>
+  </section>
+
+  <footer>
+    <div>ระบบจดหมาย พัสดุ เอกสารภายใน · โมดูลเงินสดสาขา</div>
+    <div>ข้อมูลในเอกสารนี้ตรวจจากระบบจริงเมื่อ 19 สิงหาคม 2569</div>
+  </footer>
+
+</div>
+</body>
+</html>

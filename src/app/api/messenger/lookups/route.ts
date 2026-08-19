@@ -10,15 +10,27 @@ export async function GET() {
     if (auth.response) return auth.response;
 
     const supabase = getServiceSupabase();
-    const [{ data: branches }, { data: banks }, { data: cashiers }] = await Promise.all([
-      supabase.from('branches').select('id, name, code').eq('is_active', true).order('code'),
-      supabase.from('approved_banks').select('id, name, code').eq('is_active', true).order('name'),
-      supabase.from('profiles').select('id, full_name').eq('is_active', true).order('full_name'),
-    ]);
+    const [{ data: branches }, { data: banks }, { data: bankBranches }, { data: cashiers }] =
+      await Promise.all([
+        supabase.from('branches').select('id, name, code').eq('is_active', true).order('code'),
+        supabase.from('approved_banks').select('id, name, code').eq('is_active', true).order('name'),
+        // สาขาธนาคารที่ใช้นำฝาก — คนละอย่างกับ branches ซึ่งเป็นสาขาบริษัท
+        supabase
+          .from('bank_branches')
+          .select('id, bank_id, name, branch_code')
+          .eq('is_active', true)
+          .order('name'),
+        supabase.from('profiles').select('id, full_name').eq('is_active', true).order('full_name'),
+      ]);
 
     return NextResponse.json({
       success: true,
-      data: { branches: branches || [], banks: banks || [], cashiers: cashiers || [] },
+      data: {
+        branches: branches || [],
+        banks: banks || [],
+        bank_branches: bankBranches || [],
+        cashiers: cashiers || [],
+      },
     });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

@@ -75,6 +75,15 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/reports', label: '📈 รายงาน', shortLabel: 'รายงาน', icon: 'Stats', roles: ALL_ROLES },
   { path: '/policies', label: '📚 นโยบายและคู่มือ', shortLabel: 'คู่มือ', icon: 'Book', roles: ALL_ROLES },
   { path: '/admin/users', label: '👥 จัดการผู้ใช้', shortLabel: 'ผู้ใช้', icon: 'Users', roles: ['super_admin', 'admin'] },
+  {
+    path: '/admin/cash-master',
+    label: '🗂 สาขา/ธนาคาร',
+    shortLabel: 'สาขา',
+    icon: 'Org',
+    // ธุรการฝ่ายบัญชีดูแลข้อมูลชุดนี้เอง จึงกรองด้วย canViewCash ไม่ใช่ role เดียว
+    roles: ['super_admin', 'admin'],
+    capability: 'canViewCash',
+  },
   { path: '/admin/departments', label: '🏢 จัดการหน่วยงาน', shortLabel: 'หน่วยงาน', icon: 'Org', roles: ['super_admin'] },
 ];
 

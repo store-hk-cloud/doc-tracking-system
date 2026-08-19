@@ -11,7 +11,8 @@ type Row = {
   status: MessengerJobStatus;
   branch_name: string | null;
   created_at: string;
-  payin_amount_satang: number | null;
+  envelope_amount_satang: number | null;
+  pickup_count: number;
   envelope_count: number | null;
   actual_amount_satang: number | null;
   variance_satang: number | null;
@@ -24,9 +25,10 @@ const OPEN_STATUSES: MessengerJobStatus[] = ['open', 'picked_up', 'deposited', '
 function nextStep(row: Row): { href: string; label: string } | null {
   switch (row.status) {
     case 'open':
-      return { href: `/messenger/${row.id}/pickup`, label: '📥 รับเงินจากแคชเชียร์' };
+      return { href: `/messenger/${row.id}/pickup`, label: '📥 รับซองเงินจุดแรก' };
     case 'picked_up':
-      return { href: `/messenger/${row.id}/deposit`, label: '🏦 บันทึกการนำฝาก' };
+      // ไปหน้าทริป ไม่ใช่หน้าฝากตรง ๆ เพราะยังเก็บสาขาถัดไปได้
+      return { href: `/messenger/${row.id}`, label: `🏍 ทริปนี้ (${row.pickup_count} จุด)` };
     case 'deposited':
       return { href: `/messenger/${row.id}/result`, label: '📄 ดูผลเทียบยอด' };
     case 'pending_review':
@@ -110,8 +112,8 @@ export default function MessengerQueuePage() {
                 </div>
 
                 <div className="job-card-amount">
-                  {row.payin_amount_satang !== null
-                    ? `${formatSatangToBaht(row.payin_amount_satang)} บาท`
+                  {row.envelope_amount_satang !== null
+                    ? `${formatSatangToBaht(row.envelope_amount_satang)} บาท`
                     : 'ยังไม่ได้รับเงิน'}
                 </div>
 

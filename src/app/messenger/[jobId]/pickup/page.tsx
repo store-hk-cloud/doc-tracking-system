@@ -20,10 +20,13 @@ type Lookup = {
 };
 
 /**
- * SCREEN 1 — จุดรับเงินจากแคชเชียร์
+ * จุดรับซองเงินจากแคชเชียร์สาขา — บันทึกได้หลายจุดต่อหนึ่งทริป
  *
- * ยอดที่กรอกที่นี่คือฐานของการเทียบยอดทั้งหมด และแก้ย้อนหลังไม่ได้ (write-once
- * ที่ระดับ trigger) จึงบังคับ double-entry: พิมพ์ยอดสองครั้งให้ตรงกันก่อนส่ง
+ * ยอดที่กรอกคือ **ยอดที่เขียนบนหน้าซอง** ไม่ใช่ยอดจากใบ Pay-in เพราะใบ Pay-in
+ * อยู่ในซองและแกะดูไม่ได้จนถึงเคาน์เตอร์ธนาคาร รูปที่ถ่ายจึงเป็นรูปซอง
+ *
+ * ยอดนี้คือฐานของการเทียบยอดทั้งหมด และแก้ย้อนหลังไม่ได้ (write-once ที่ระดับ
+ * trigger) จึงบังคับ double-entry: พิมพ์ยอดสองครั้งให้ตรงกันก่อนส่ง
  */
 export default function CashPickupPage() {
   const { jobId } = useParams<{ jobId: string }>();
@@ -36,6 +39,7 @@ export default function CashPickupPage() {
   const [saving, setSaving] = useState(false);
   const [step, setStep] = useState('');
 
+  const [branchId, setBranchId] = useState('');
   const [cashierProfileId, setCashierProfileId] = useState('');
   const [cashierName, setCashierName] = useState('');
   const [envelopeCount, setEnvelopeCount] = useState('1');
@@ -47,6 +51,7 @@ export default function CashPickupPage() {
   const [showFullPreview, setShowFullPreview] = useState(false);
   const [geo, setGeo] = useState<GeoStamp>(null);
   const previewRef = useRef('');
+  const [pickups, setPickups] = useState<any[]>([]);
 
   const draftKey = `pickup:${jobId}`;
 
@@ -60,8 +65,9 @@ export default function CashPickupPage() {
           setError(runRes.error || 'ไม่พบงานนี้');
         } else {
           setJob(runRes.data.job);
-          // บันทึกการรับเงินไปแล้ว — ไปหน้าถัดไป ไม่ให้บันทึกซ้ำ
-          if (runRes.data.pickup) router.replace(`/messenger/${jobId}/deposit`);
+          setPickups(runRes.data.pickups || []);
+          // ฝากเงินไปแล้ว = ยอดที่ควรฝากถูก snapshot ไว้ เพิ่มจุดรับอีกไม่ได้
+          if (runRes.data.deposit) router.replace(`/messenger/${jobId}/result`);
         }
         if (lookupRes.success) setLookup(lookupRes.data);
         setLoading(false);
@@ -103,7 +109,9 @@ export default function CashPickupPage() {
 
   const amountOk = amountsMatch(amount, amountConfirm);
   const canSubmit =
-    !!photoFile && !!cashierName.trim() && amountOk && Number(envelopeCount) >= 1 && !saving;
+    !!branchId && !!photoFile && !!cashierName.trim() && amountOk && Number(envelopeCount) >= 1 && !saving;
+  // สาขาที่เก็บไปแล้วในทริปนี้ ห้ามเลือกซ้ำ (DB มี unique (job_id, branch_id) กันอีกชั้น)
+  const takenBranchIds = new Set(pickups.map((p) => p.branch_id));
 
   const handleSubmit = async () => {
     if (!canSubmit || !photoFile) return;
@@ -114,19 +122,20 @@ export default function CashPickupPage() {
     saveDraft(draftKey, { cashierName, envelopeCount, amount });
 
     try {
-      setStep('กำลังอัปโหลดรูปใบ Pay-in...');
-      const photo = await uploadJobPhoto(jobId, photoFile, 'payin_slip', geo, 'ใบ Pay-in / ซองเงิน');
+      setStep('กำลังอัปโหลดรูปซองเงิน...');
+      const photo = await uploadJobPhoto(jobId, photoFile, 'cash_envelope', geo, 'ซองเงินตอนรับมอบ');
 
       setStep('กำลังบันทึกการรับมอบ...');
       const res = await fetch(`/api/messenger/runs/${jobId}/pickup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          branch_id: branchId,
           cashier_profile_id: cashierProfileId || null,
           cashier_name: cashierName.trim(),
           envelope_count: Number(envelopeCount),
-          payin_amount: amount,
-          payin_photo_id: photo.id,
+          envelope_amount: amount,
+          envelope_photo_id: photo.id,
           lat: geo?.lat ?? null,
           lng: geo?.lng ?? null,
           gps_accuracy_m: geo?.accuracy ?? null,
@@ -140,7 +149,8 @@ export default function CashPickupPage() {
         return;
       }
       clearDraft(draftKey);
-      router.replace(`/messenger/${jobId}/deposit`);
+      // กลับไปหน้าทริป เพื่อเลือกว่าจะเก็บสาขาถัดไป หรือไปฝากธนาคาร
+      router.replace(`/messenger/${jobId}`);
     } catch (e: any) {
       setError(e?.message || 'บันทึกไม่สำเร็จ');
       setSaving(false);
@@ -153,12 +163,26 @@ export default function CashPickupPage() {
   return (
     <div>
       <div className="app-title" style={{ marginBottom: 20 }}>
-        <div className="title-badge">📥 จุดรับเงิน</div>
-        <h2>รับเงินจากแคชเชียร์{job?.branch_name ? ` · ${job.branch_name}` : ''}</h2>
+        <div className="title-badge">📥 จุดรับซองเงิน</div>
+        <h2>รับซองเงินจากแคชเชียร์{pickups.length > 0 ? ` · จุดที่ ${pickups.length + 1}` : ''}</h2>
         <div className="title-accent" />
       </div>
 
       <div className="scan-panel">
+        {/* สาขาเลือกที่จุดรับ ไม่ใช่ตอนเปิดทริป เพราะทริปหนึ่งเก็บได้หลายสาขา */}
+        <div className="form-group">
+          <label htmlFor="branch-select">สาขาที่รับซองเงิน *</label>
+          <select id="branch-select" value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+            <option value="">-- เลือกสาขา --</option>
+            {(lookup?.branches || []).map((b) => (
+              <option key={b.id} value={b.id} disabled={takenBranchIds.has(b.id)}>
+                {b.name}
+                {takenBranchIds.has(b.id) ? ' (เก็บแล้วในทริปนี้)' : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <div className="form-group">
           <label htmlFor="cashier-select">ชื่อแคชเชียร์ผู้ส่งมอบ *</label>
           <select
@@ -204,7 +228,7 @@ export default function CashPickupPage() {
         {/* type="text" + inputMode ไม่ใช่ type="number" เพราะ number เลื่อนค่าเพี้ยน
             ตอนสไครลล์ด้วยนิ้วโป้ง และรูปแบบทศนิยมต่างกันตาม locale */}
         <div className="form-group">
-          <label htmlFor="amount">ยอดเงินตามใบ Pay-in (บาท) *</label>
+          <label htmlFor="amount">ยอดเงินตามหน้าซอง (บาท) *</label>
           <input
             id="amount"
             type="text"
@@ -240,16 +264,19 @@ export default function CashPickupPage() {
         </div>
 
         <div className="form-group">
-          <label>รูปซองเงิน / ใบ Pay-in *</label>
+          <label>รูปซองเงิน *</label>
+          <div style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: 8 }}>
+            ถ่ายให้เห็นยอดที่เขียนบนหน้าซอง — ใบ Pay-in อยู่ในซอง ไม่ต้องแกะ
+          </div>
           <label
-            htmlFor="payin-photo"
+            htmlFor="envelope-photo"
             className="ghost-button"
             style={{ display: 'inline-flex', minHeight: 64, fontSize: '1.05rem', cursor: 'pointer', width: '100%', justifyContent: 'center' }}
           >
-            📷 {photoFile ? 'ถ่ายใหม่' : 'ถ่ายรูปใบ Pay-in'}
+            📷 {photoFile ? 'ถ่ายใหม่' : 'ถ่ายรูปซองเงิน'}
           </label>
           <input
-            id="payin-photo"
+            id="envelope-photo"
             type="file"
             accept="image/*"
             capture="environment"
@@ -260,7 +287,7 @@ export default function CashPickupPage() {
             <div style={{ marginTop: 10 }}>
               <img
                 src={photoPreview}
-                alt="ตัวอย่างรูปใบ Pay-in"
+                alt="ตัวอย่างรูปซองเงิน"
                 style={{ width: '100%', maxWidth: 320, borderRadius: 'var(--radius-sm)', border: '1px solid var(--line)' }}
               />
               <button
@@ -301,8 +328,8 @@ export default function CashPickupPage() {
               ? `✅ ยืนยันรับมอบ ${formatBahtDisplay(amount)} บาท`
               : '✅ ยืนยันรับมอบ'}
         </button>
-        <Link href="/messenger" className="ghost-button" style={{ justifyContent: 'center' }}>
-          กลับไปคิวงาน
+        <Link href={`/messenger/${jobId}`} className="ghost-button" style={{ justifyContent: 'center' }}>
+          กลับไปหน้าทริป
         </Link>
       </div>
 
@@ -310,7 +337,7 @@ export default function CashPickupPage() {
         <div className="scan-popup-overlay" onClick={() => setShowFullPreview(false)}>
           <div className="scan-popup-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="scan-popup-handle" />
-            <img src={photoPreview} alt="รูปใบ Pay-in เต็มจอ" style={{ width: '100%', borderRadius: 'var(--radius-sm)' }} />
+            <img src={photoPreview} alt="รูปซองเงินเต็มจอ" style={{ width: '100%', borderRadius: 'var(--radius-sm)' }} />
             <button type="button" className="scan-popup-close" onClick={() => setShowFullPreview(false)}>
               ปิด
             </button>

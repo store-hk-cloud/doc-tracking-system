@@ -6,11 +6,15 @@ import Link from 'next/link';
 
 type Branch = { id: string; name: string; code: string };
 
-// START ของ flow: เลือกสาขาที่จะไปรับเงิน
+/**
+ * เปิดทริปใหม่
+ *
+ * ไม่เลือกสาขาที่นี่แล้ว เพราะทริปหนึ่งเก็บซองได้หลายสาขา สาขาถูกเลือกตอน
+ * บันทึกแต่ละจุดรับ หน้านี้แสดงรายชื่อสาขาที่เก็บได้ไว้ให้ดูเป็นข้อมูลเท่านั้น
+ */
 export default function NewCashRunPage() {
   const router = useRouter();
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [branchId, setBranchId] = useState('');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -26,17 +30,13 @@ export default function NewCashRunPage() {
   }, []);
 
   const handleStart = async () => {
-    if (!branchId) {
-      setError('กรุณาเลือกสาขา');
-      return;
-    }
     setSaving(true);
     setError('');
     try {
       const res = await fetch('/api/messenger/runs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ branch_id: branchId, note: note || null }),
+        body: JSON.stringify({ note: note || null }),
       });
       const data = await res.json();
       if (!data.success) {
@@ -55,21 +55,28 @@ export default function NewCashRunPage() {
     <div>
       <div className="app-title" style={{ marginBottom: 20 }}>
         <div className="title-badge">🏍 เริ่มงาน</div>
-        <h2>เลือกสาขาที่จะไปรับเงิน</h2>
+        <h2>เปิดทริปเก็บเงิน</h2>
         <div className="title-accent" />
       </div>
 
       <div className="scan-panel">
         <div className="form-group">
-          <label htmlFor="branch">สาขา *</label>
-          <select id="branch" value={branchId} onChange={(e) => setBranchId(e.target.value)}>
-            <option value="">-- เลือกสาขา --</option>
-            {branches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name} ({b.code})
-              </option>
-            ))}
-          </select>
+          <span className="form-label-static">จุดรับซองเงิน</span>
+          <div
+            style={{
+              border: '1px solid var(--line)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '10px 12px',
+              background: 'var(--surface-soft)',
+              fontSize: '0.9rem',
+              color: 'var(--muted)',
+            }}
+          >
+            เลือกสาขาตอนรับซองแต่ละจุด — ทริปนี้เก็บได้หลายสาขาแล้วฝากรวมครั้งเดียว
+            <div style={{ color: 'var(--text)', marginTop: 6 }}>
+              สาขาที่เปิดรับอยู่ {branches.length} แห่ง
+            </div>
+          </div>
         </div>
 
         <div className="form-group">
@@ -89,7 +96,7 @@ export default function NewCashRunPage() {
           type="button"
           className="secondary-button"
           onClick={handleStart}
-          disabled={saving || !branchId}
+          disabled={saving}
         >
           {saving ? 'กำลังเริ่มงาน...' : '➡️ ไปหน้ารับเงินจากแคชเชียร์'}
         </button>

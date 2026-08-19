@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
     ] = await Promise.all([
       supabase
         .from('cash_pickups')
-        .select('payin_amount_satang, job_id')
+        .select('envelope_amount_satang, job_id')
         .gte('picked_up_at', dayStart)
         .lte('picked_up_at', dayEnd),
       supabase
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
       // เงินคงค้างในมือ: ไม่จำกัดวัน เพราะเงินที่ค้างมาจากเมื่อวานยังเป็นเงินที่ค้าง
       supabase
         .from('cash_pickups')
-        .select('payin_amount_satang, messenger_jobs!inner(status)')
+        .select('envelope_amount_satang, messenger_jobs!inner(status)')
         .is('deposit_id', null),
       supabase.from('cash_variance_reports').select('id').eq('status', 'pending_review'),
       supabase
@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
       supabase.from('cash_pickups').select('id').is('branch_confirmed_at', null),
     ]);
 
-    const received = (pickupsToday || []).reduce((s: number, r: any) => s + (r.payin_amount_satang || 0), 0);
+    const received = (pickupsToday || []).reduce((s: number, r: any) => s + (r.envelope_amount_satang || 0), 0);
     const deposited = (depositsToday || []).reduce((s: number, r: any) => s + (r.actual_amount_satang || 0), 0);
 
     let short = 0;
@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
         const status = Array.isArray(r.messenger_jobs) ? r.messenger_jobs[0]?.status : r.messenger_jobs?.status;
         return status === 'picked_up';
       })
-      .reduce((s: number, r: any) => s + (r.payin_amount_satang || 0), 0);
+      .reduce((s: number, r: any) => s + (r.envelope_amount_satang || 0), 0);
 
     return NextResponse.json({
       success: true,

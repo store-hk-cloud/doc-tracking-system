@@ -76,9 +76,17 @@ export default function VarianceReviewPage() {
   const mayDecide = isOver ? canApproveOverage(profile) : canCloseShortage(profile);
 
   // แยกหน้าที่: ผู้ที่เกี่ยวข้องกับเงินก้อนนี้ตัดสินเองไม่ได้
+  // ทริปหนึ่งมีได้หลายจุดรับ ต้องรวมผู้รับและแคชเชียร์ของทุกจุด ไม่ใช่จุดแรกจุดเดียว
+  // (trigger assert_variance_approver ตรวจซ้ำที่ DB — นี่แค่ทำให้ปุ่มไม่หลอกตา)
+  const runPickups: any[] = run?.pickups || [];
   const conflicted =
     !!profile &&
-    [deposit?.submitted_by, row.reported_by, run?.pickup?.received_by, run?.pickup?.cashier_profile_id]
+    [
+      deposit?.submitted_by,
+      row.reported_by,
+      ...runPickups.map((p) => p.received_by),
+      ...runPickups.map((p) => p.cashier_profile_id),
+    ]
       .filter(Boolean)
       .includes(profile.id);
 
@@ -145,18 +153,19 @@ export default function VarianceReviewPage() {
             <span>ผู้ฝาก</span>
             <span>{deposit?.submitted_signature || '—'}</span>
           </div>
-          {run?.pickup && (
-            <>
-              <div className="variance-row">
-                <span>แคชเชียร์ผู้ส่งมอบ</span>
-                <span>{run.pickup.cashier_name}</span>
-              </div>
-              <div className="variance-row">
-                <span>จำนวนซองที่รับ</span>
-                <span>{run.pickup.envelope_count}</span>
-              </div>
-            </>
-          )}
+          {/* แจกแจงทุกจุดรับของทริป การเงินต้องเห็นว่าเงินก้อนนี้มาจากสาขาใดบ้าง
+              ไม่ใช่แค่ยอดรวม เพราะถ้ายอดไม่ตรงต้องรู้ว่าจะไปถามที่ไหน */}
+          {runPickups.map((p, i) => (
+            <div className="variance-row" key={p.id}>
+              <span>
+                จุดรับที่ {i + 1} · {p.branch_name || 'ไม่ทราบสาขา'}
+              </span>
+              <span>
+                {formatSatangToBaht(p.envelope_amount_satang)} บาท · {p.envelope_count} ซอง ·
+                แคชเชียร์ {p.cashier_name}
+              </span>
+            </div>
+          ))}
           <div className="variance-row">
             <span>สถานะรายงาน</span>
             <span>{VARIANCE_REPORT_STATUS_LABELS[row.status as keyof typeof VARIANCE_REPORT_STATUS_LABELS]}</span>
@@ -193,11 +202,13 @@ export default function VarianceReviewPage() {
               >
                 {p.photo_kind === 'deposit_slip'
                   ? '🧾 ใบนำฝาก'
-                  : p.photo_kind === 'payin_slip'
-                    ? '📄 ใบ Pay-in'
-                    : p.photo_kind === 'variance_doc'
-                      ? '📎 เอกสารประกอบ'
-                      : '🖼 รูปอื่น'}
+                  : p.photo_kind === 'cash_envelope'
+                    ? '💰 ซองเงิน'
+                    : p.photo_kind === 'payin_slip'
+                      ? '📄 ใบ Pay-in'
+                      : p.photo_kind === 'variance_doc'
+                        ? '📎 เอกสารประกอบ'
+                        : '🖼 รูปอื่น'}
               </a>
             ))}
           </div>

@@ -45,7 +45,8 @@ export default function DepositResultPage() {
       if (!json.success) {
         setError(json.error || 'ไม่พบงานนี้');
       } else if (!json.data.deposit) {
-        router.replace(`/messenger/${jobId}/pickup`);
+        // ยังไม่ฝาก — กลับไปหน้าทริป ให้เลือกว่าจะเก็บต่อหรือไปฝาก
+        router.replace(`/messenger/${jobId}`);
       } else {
         setData(json.data);
       }

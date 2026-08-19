@@ -67,12 +67,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const sha256 = createHash('sha256').update(buffer).digest('hex');
 
     // เช็คซ้ำก่อนอัป Drive เพื่อไม่ทิ้งไฟล์ค้างไว้ตอน insert แล้วชน unique index
-    if (photoKind === 'payin_slip' || photoKind === 'deposit_slip') {
+    // รูปหลักฐานทั้งสามชนิดกันใช้ซ้ำ (unique index uq_msg_photos_evidence_hash)
+    // รูปซองก็ต้องกัน ไม่ใช่แค่สลิป — ถ่ายซองใบเดิมส่งสองทริปไม่ได้
+    if (photoKind === 'cash_envelope' || photoKind === 'payin_slip' || photoKind === 'deposit_slip') {
       const { data: dup } = await supabase
         .from('messenger_job_photos')
         .select('id, job_id')
         .eq('content_sha256', sha256)
-        .in('photo_kind', ['payin_slip', 'deposit_slip'])
+        .in('photo_kind', ['cash_envelope', 'payin_slip', 'deposit_slip'])
         .maybeSingle();
       if (dup) {
         return NextResponse.json(
@@ -81,7 +83,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             error:
               dup.job_id === jobId
                 ? 'รูปนี้ถูกอัปโหลดไปแล้วในงานนี้'
-                : 'รูปสลิปใบนี้ถูกใช้กับงานอื่นแล้ว กรุณาถ่ายสลิปของงานนี้',
+                : 'รูปนี้ถูกใช้กับทริปอื่นแล้ว กรุณาถ่ายรูปของทริปนี้',
           },
           { status: 409 }
         );

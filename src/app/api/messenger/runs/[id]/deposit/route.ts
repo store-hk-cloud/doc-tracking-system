@@ -31,17 +31,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!job) return NextResponse.json({ success: false, error: 'ไม่พบงานนี้' }, { status: 404 });
     if (job.assigned_to !== ctx.user.id) return forbiddenResponse();
 
-    const { data: pickup } = await supabase
+    // ทริปหนึ่งเก็บซองได้หลายสาขาแล้วฝากรวมครั้งเดียว จึงรวมทุกจุดรับของงานนี้
+    // ยอดที่ควรฝาก = ผลรวมยอดหน้าซองทุกใบ (trigger assert_expected_matches_pickups
+    // คำนวณผลรวมเดียวกันใน DB แล้วเทียบ ส่งค่าปลอมมาไม่ได้)
+    const { data: pickups } = await supabase
       .from('cash_pickups')
       .select('*')
       .eq('job_id', jobId)
-      .maybeSingle();
-    if (!pickup) {
+      .order('picked_up_at');
+    if (!pickups || pickups.length === 0) {
       return NextResponse.json(
-        { success: false, error: 'ต้องบันทึกการรับเงินจากแคชเชียร์ก่อน' },
+        { success: false, error: 'ต้องบันทึกการรับซองเงินอย่างน้อยหนึ่งจุดก่อน' },
         { status: 409 }
       );
     }
+    const expectedTotalSatang = pickups.reduce(
+      (sum: number, p: any) => sum + Number(p.envelope_amount_satang),
+      0
+    );
 
     // ── ตรวจ input ──
     let actualSatang: number;
@@ -52,16 +59,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ success: false, error: message }, { status: 400 });
     }
 
-    const referenceNo = String(body.reference_no || '').trim();
+    // เลขที่ใบนำฝาก: หลักฐานการฝากบางแบบไม่มีเลขรันมาให้ (ใบ Pay-in ไม่มี)
+    // ถ้าไม่กรอก ระบบออกเลขให้เอง และบันทึกไว้ว่าเลขนี้ "ระบบออก" ไม่ใช่ของธนาคาร
+    // การแยกนี้สำคัญ เพราะเลขที่ระบบออกเอาไปกระทบยอดกับ statement ธนาคารไม่ได้
+    let referenceNo = String(body.reference_no || '').trim();
+    let referenceNoSource: 'bank' | 'auto' = 'bank';
     if (!referenceNo) {
-      return NextResponse.json({ success: false, error: 'กรุณากรอกเลขที่ใบนำฝาก' }, { status: 400 });
+      const { data: autoRef, error: refError } = await supabase.rpc('next_deposit_auto_ref');
+      if (refError || !autoRef) {
+        return NextResponse.json(
+          { success: false, error: 'ออกเลขอ้างอิงอัตโนมัติไม่สำเร็จ กรุณากรอกเลขที่ใบนำฝากเอง' },
+          { status: 500 }
+        );
+      }
+      referenceNo = String(autoRef);
+      referenceNoSource = 'auto';
     }
-    const bankBranchName = String(body.bank_branch_name || '').trim();
-    if (!body.bank_id || !bankBranchName) {
-      return NextResponse.json(
-        { success: false, error: 'กรุณาเลือกธนาคารและระบุสาขา/สถานที่ที่ฝาก' },
-        { status: 400 }
-      );
+    if (!body.bank_id) {
+      return NextResponse.json({ success: false, error: 'กรุณาเลือกธนาคาร' }, { status: 400 });
     }
     const { data: bank } = await supabase
       .from('approved_banks')
@@ -73,6 +88,72 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         { success: false, error: 'ธนาคารนี้ไม่อยู่ในรายชื่อที่บริษัทอนุมัติ' },
         { status: 400 }
       );
+    }
+
+    // สาขาธนาคาร: เลือกจากรายชื่อกลางเป็นเส้นทางปกติ แต่พิมพ์เองได้ถ้าสาขานั้น
+    // ยังไม่มีในรายชื่อ — ห้ามบล็อกการบันทึก เพราะเงินออกไปแล้วจริง
+    // (trigger assert_bank_branch_matches_bank ตรวจซ้ำว่าสาขาเป็นของธนาคารนี้)
+    let bankBranchId: string | null = null;
+    let bankBranchName = String(body.bank_branch_name || '').trim();
+    if (body.bank_branch_id) {
+      const { data: bankBranch } = await supabase
+        .from('bank_branches')
+        .select('id, bank_id, name, is_active')
+        .eq('id', body.bank_branch_id)
+        .maybeSingle();
+      if (!bankBranch || !bankBranch.is_active || bankBranch.bank_id !== bank.id) {
+        return NextResponse.json(
+          { success: false, error: 'สาขาธนาคารที่เลือกไม่ถูกต้องหรือไม่ใช่สาขาของธนาคารนี้' },
+          { status: 400 }
+        );
+      }
+      bankBranchId = bankBranch.id;
+      // เก็บสำเนาชื่อไว้ด้วย เพื่อให้หลักฐานอ่านได้แม้รายชื่อกลางถูกแก้ภายหลัง
+      bankBranchName = bankBranch.name;
+    }
+    if (!bankBranchName) {
+      return NextResponse.json(
+        { success: false, error: 'กรุณาเลือกสาขาธนาคาร หรือพิมพ์ชื่อสาขาที่ไปฝาก' },
+        { status: 400 }
+      );
+    }
+
+    // พิมพ์ชื่อสาขาใหม่ = เพิ่มเข้ารายชื่อกลางให้เลย แล้วผูกรายการนี้กับสาขานั้น
+    //
+    // แมสเซนเจอร์เป็นผู้ดูแลรายชื่อสาขาธนาคาร (เป็นคนเดียวที่รู้ว่าไปฝากที่ไหนจริง)
+    // การให้ "พิมพ์แล้วเข้ารายชื่อเอง" ดีกว่าให้ไปเพิ่มในหน้าตั้งค่าก่อนแล้วค่อย
+    // กลับมาบันทึก เพราะตอนอยู่หน้าเคาน์เตอร์ทุกขั้นที่เพิ่มคือโอกาสที่เงินจะ
+    // ฝากไปแล้วแต่ยังไม่เข้าระบบ
+    //
+    // unique index (bank_id, lower(btrim(name))) กันชื่อซ้ำอยู่แล้ว ถ้าชนแปลว่า
+    // มีสาขานี้อยู่ก่อน ให้ผูกกับของเดิมแทนการสร้างใหม่
+    let bankBranchCreated = false;
+    if (!bankBranchId) {
+      const { data: existing } = await supabase
+        .from('bank_branches')
+        .select('id, name')
+        .eq('bank_id', bank.id)
+        .ilike('name', bankBranchName)
+        .maybeSingle();
+      if (existing) {
+        bankBranchId = existing.id;
+        bankBranchName = existing.name;
+      } else {
+        const { data: created, error: createError } = await supabase
+          .from('bank_branches')
+          .insert({ bank_id: bank.id, name: bankBranchName, is_active: true })
+          .select('id, name')
+          .single();
+        if (created) {
+          bankBranchId = created.id;
+          bankBranchName = created.name;
+          bankBranchCreated = true;
+        } else {
+          // เพิ่มรายชื่อไม่สำเร็จก็ไม่หยุด — บันทึกเงินสำคัญกว่าความสะอาดของรายชื่อ
+          // รายการนี้จะมี bank_branch_id เป็น NULL ให้ตามเก็บภายหลังได้
+          console.error('[Messenger Deposit] เพิ่มสาขาธนาคารเข้ารายชื่อไม่สำเร็จ:', createError);
+        }
+      }
     }
 
     // รูปใบนำฝาก (ถ้ามีตอนนี้) ต้องเป็นของงานนี้และชนิด deposit_slip
@@ -119,10 +200,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         job_id: jobId,
         status: 'recorded',
         bank_id: bank.id,
+        bank_branch_id: bankBranchId,
         bank_branch_name: bankBranchName,
-        expected_total_satang: pickup.payin_amount_satang,
+        expected_total_satang: expectedTotalSatang,
         actual_amount_satang: actualSatang,
         reference_no: referenceNo,
+        reference_no_source: referenceNoSource,
         slip_photo_id: slipPhotoId,
         slip_status: slipPhotoId ? 'attached' : 'pending',
         deposited_at: depositedAt,
@@ -152,7 +235,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       );
     }
 
-    await supabase.from('cash_pickups').update({ deposit_id: deposit.id }).eq('id', pickup.id);
+    // ผูกทุกจุดรับของทริปเข้ากับการฝากครั้งนี้ เพื่อให้ตามรอยได้ว่าซองจากสาขาไหน
+    // ไปอยู่ในใบฝากใบใด (deposit_id เป็น write-once ที่ระดับ trigger)
+    await supabase
+      .from('cash_pickups')
+      .update({ deposit_id: deposit.id })
+      .eq('job_id', jobId)
+      .is('deposit_id', null);
 
     // ── Decision: ยอดตรงหรือไม่ (อ่านจาก generated column) ──
     const variance = deposit.variance_satang as number;
@@ -170,7 +259,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       payload: {
         bank_id: bank.id,
         bank_branch_name: bankBranchName,
-        expected_total_satang: pickup.payin_amount_satang,
+        bank_branch_from_list: !!bankBranchId && !bankBranchCreated,
+        bank_branch_created: bankBranchCreated,
+        expected_total_satang: expectedTotalSatang,
+        pickup_count: pickups.length,
+        reference_no_source: referenceNoSource,
         slip_status: deposit.slip_status,
         variance_kind: kind,
       },

@@ -89,7 +89,17 @@ export async function POST(request: NextRequest) {
       .select('full_name')
       .eq('id', auth.context!.user.id)
       .single();
-    const recipientName = recipientProfile?.full_name || auth.context!.user.email || '';
+    const accountName = recipientProfile?.full_name || auth.context!.user.email || '';
+
+    // ลายเซ็นผู้รับพิมพ์ได้ เพราะคนที่มารับของจริงหน้าเคาน์เตอร์อาจไม่ใช่เจ้าของ
+    // บัญชีที่ล็อกอิน (ฝากเพื่อนแผนกมารับ) การบังคับใช้ชื่อเจ้าของบัญชีทำให้
+    // หลักฐานระบุคนผิด ซึ่งแย่กว่าการให้พิมพ์ชื่อจริงของผู้รับ
+    //
+    // สิ่งที่ยังพิสูจน์ได้เสมอ: delivery_logs.recipient_id เก็บบัญชีที่กดยืนยัน
+    // ซึ่งมาจาก session ปลอมไม่ได้ ดังนั้นถ้าลายเซ็นกับบัญชีไม่ตรงกัน ยังตามหา
+    // คนที่กดได้ทุกกรณี
+    const typedSignature = String(body.recipient_signature || '').trim();
+    const recipientName = typedSignature ? typedSignature.slice(0, 255) : accountName;
     const isVerified = body.is_verified === true;
     const newStatus = isVerified ? 'closed' : 'rejected';
 
@@ -108,8 +118,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'This document has already been processed' }, { status: 409 });
     }
 
-    // Insert delivery log. recipient_signature is always the server-verified
-    // profile name — never trust a client-supplied name for who signed.
+    // Insert delivery log. recipient_signature รับจากช่องที่ผู้ใช้พิมพ์ได้
+    // (คนมารับจริงอาจไม่ใช่เจ้าของบัญชี) แต่ recipient_id มาจาก session เสมอ
+    // จึงยังพิสูจน์ได้ว่าบัญชีใดเป็นผู้กดยืนยัน
     const { data: delivery, error: deliveryError } = await supabase
       .from('delivery_logs')
       .insert({
@@ -149,8 +160,8 @@ export async function POST(request: NextRequest) {
           newStatus,                        // G: สถานะ (closed/rejected)
           recipient.admin_signature || '',  // H: ลายเซ็น Admin
           recipient.admin_signed_at || '',  // I: เวลา Admin ลงนาม
-          recipientName,                     // J: recipient name from server-side profile
-          recipientName,                     // K: ลายเซ็นผู้รับ (server-verified, not client input)
+          accountName,                       // J: บัญชีที่กดยืนยัน (จาก session ปลอมไม่ได้)
+          recipientName,                     // K: ลายเซ็นผู้รับ (พิมพ์ได้ ถ้าไม่พิมพ์ใช้ชื่อบัญชี)
           delivery.recipient_signed_at,     // L: เวลาผู้รับลงนาม
           isVerified ? 'ถูกต้อง' : 'ไม่ถูกต้อง', // M: ผลการตรวจสอบ
           body.verification_note || '',     // N: หมายเหตุ (ผู้รับ)

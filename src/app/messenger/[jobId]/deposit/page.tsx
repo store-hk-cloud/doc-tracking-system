@@ -35,7 +35,9 @@ export default function BankDepositPage() {
   const router = useRouter();
 
   const [job, setJob] = useState<any>(null);
-  const [pickup, setPickup] = useState<any>(null);
+  // ทริปหนึ่งมีได้หลายจุดรับ ยอดที่ควรฝากคือผลรวมของทุกจุด
+  const [pickups, setPickups] = useState<any[]>([]);
+  const [expectedTotal, setExpectedTotal] = useState(0);
   const [banks, setBanks] = useState<Bank[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -44,7 +46,9 @@ export default function BankDepositPage() {
   const [showExpected, setShowExpected] = useState(false);
 
   const [bankId, setBankId] = useState('');
+  const [bankBranchId, setBankBranchId] = useState('');
   const [bankBranch, setBankBranch] = useState('');
+  const [bankBranches, setBankBranches] = useState<any[]>([]);
   const [amount, setAmount] = useState('');
   const [amountConfirm, setAmountConfirm] = useState('');
   const [referenceNo, setReferenceNo] = useState('');
@@ -66,9 +70,10 @@ export default function BankDepositPage() {
           setError(runRes.error || 'ไม่พบงานนี้');
         } else {
           setJob(runRes.data.job);
-          setPickup(runRes.data.pickup);
-          if (!runRes.data.pickup) {
-            // ยังไม่ได้รับเงิน — ต้องทำ Screen 1 ก่อน
+          setPickups(runRes.data.pickups || []);
+          setExpectedTotal(runRes.data.expected_total_satang || 0);
+          if (!runRes.data.pickups || runRes.data.pickups.length === 0) {
+            // ยังไม่ได้เก็บซองเลย — ต้องรับซองก่อน
             router.replace(`/messenger/${jobId}/pickup`);
           } else if (runRes.data.deposit) {
             // บันทึกฝากไปแล้ว — เข้าหน้านี้ตรง ๆ ไม่ได้ ต้องไปหน้าผล
@@ -76,7 +81,10 @@ export default function BankDepositPage() {
             router.replace(`/messenger/${jobId}/result`);
           }
         }
-        if (lookupRes.success) setBanks(lookupRes.data.banks);
+        if (lookupRes.success) {
+          setBanks(lookupRes.data.banks);
+          setBankBranches(lookupRes.data.bank_branches || []);
+        }
         setLoading(false);
       })
       .catch(() => {
@@ -111,7 +119,11 @@ export default function BankDepositPage() {
   };
 
   const amountOk = amountsMatch(amount, amountConfirm);
-  const canSubmit = !!photoFile && !!bankId && !!bankBranch.trim() && !!referenceNo.trim() && amountOk && !saving;
+  // เลขที่ใบนำฝากไม่บังคับแล้ว — ใบ Pay-in ไม่มีเลขรัน ระบบออกเลขให้เองได้
+  // สาขาธนาคารเลือกจากรายชื่อ หรือพิมพ์ชื่อใหม่ (ระบบจะเพิ่มเข้ารายชื่อให้เอง)
+  const branchOptions = bankBranches.filter((b) => b.bank_id === bankId);
+  const canSubmit =
+    !!photoFile && !!bankId && (!!bankBranchId || !!bankBranch.trim()) && amountOk && !saving;
 
   const handleSubmit = async () => {
     if (!canSubmit || !photoFile) return;
@@ -138,6 +150,7 @@ export default function BankDepositPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           bank_id: bankId,
+          bank_branch_id: bankBranchId || null,
           bank_branch_name: bankBranch.trim(),
           actual_amount: amount,
           reference_no: referenceNo.trim(),
@@ -177,7 +190,16 @@ export default function BankDepositPage() {
       <div className="scan-panel">
         <div className="form-group">
           <label htmlFor="bank">ธนาคาร * (เฉพาะที่บริษัทอนุมัติ)</label>
-          <select id="bank" value={bankId} onChange={(e) => setBankId(e.target.value)}>
+          <select
+            id="bank"
+            value={bankId}
+            onChange={(e) => {
+              setBankId(e.target.value);
+              // เปลี่ยนธนาคารแล้วสาขาเดิมใช้ไม่ได้ (DB ปฏิเสธสาขาข้ามธนาคาร)
+              setBankBranchId('');
+              setBankBranch('');
+            }}
+          >
             <option value="">-- เลือกธนาคาร --</option>
             {banks.map((b) => (
               <option key={b.id} value={b.id}>
@@ -187,15 +209,47 @@ export default function BankDepositPage() {
           </select>
         </div>
 
+        {/* สาขาธนาคาร: เลือกจากรายชื่อที่ฝ่ายบัญชีดูแลเป็นทางหลัก แต่พิมพ์เองได้
+            ถ้าไปฝากสาขาที่ยังไม่มีในรายชื่อ — ห้ามบล็อก เพราะเงินออกไปแล้ว */}
         <div className="form-group">
-          <label htmlFor="bank-branch">สาขา / สถานที่ที่ฝาก *</label>
-          <input
-            id="bank-branch"
-            type="text"
-            value={bankBranch}
-            onChange={(e) => setBankBranch(e.target.value)}
-            placeholder="เช่น สาขาเซ็นทรัลเชียงใหม่"
-          />
+          <label htmlFor="bank-branch-select">สาขาธนาคารที่ไปฝาก *</label>
+          <select
+            id="bank-branch-select"
+            value={bankBranchId}
+            onChange={(e) => {
+              setBankBranchId(e.target.value);
+              if (e.target.value) setBankBranch('');
+            }}
+            disabled={!bankId}
+          >
+            <option value="">
+              {!bankId
+                ? '-- เลือกธนาคารก่อน --'
+                : branchOptions.length === 0
+                  ? '-- ยังไม่มีรายชื่อสาขา พิมพ์ด้านล่าง --'
+                  : '-- เลือกสาขา หรือพิมพ์ด้านล่าง --'}
+            </option>
+            {branchOptions.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+                {b.branch_code ? ` (${b.branch_code})` : ''}
+              </option>
+            ))}
+          </select>
+          {!bankBranchId && (
+            <>
+              <input
+                type="text"
+                value={bankBranch}
+                onChange={(e) => setBankBranch(e.target.value)}
+                placeholder="หรือพิมพ์ชื่อสาขาที่ไปฝาก"
+                style={{ marginTop: 8 }}
+              />
+              <div style={{ fontSize: '0.82rem', color: 'var(--muted)', marginTop: 4 }}>
+                สาขาที่พิมพ์เองจะถูกทำเครื่องหมายให้ฝ่ายบัญชีตรวจและเพิ่มเข้ารายชื่อ
+              </div>
+            </>
+          )}
         </div>
 
         <div className="form-group">
@@ -229,14 +283,21 @@ export default function BankDepositPage() {
         </div>
 
         <div className="form-group">
-          <label htmlFor="ref">เลขที่ใบนำฝาก (Reference No.) *</label>
+          <label htmlFor="ref">เลขที่ใบนำฝาก (ถ้ามี)</label>
           <input
             id="ref"
             type="text"
             value={referenceNo}
             onChange={(e) => setReferenceNo(e.target.value)}
-            placeholder="ตามที่ระบุบนใบนำฝาก"
+            placeholder="เว้นว่างได้ถ้าหลักฐานไม่มีเลขรัน"
           />
+          {/* ใบ Pay-in ไม่มีเลขรันมาให้ ถ้าเว้นว่างระบบจะออกเลขให้เอง
+              และบันทึกไว้ว่าเป็นเลขที่ระบบออก ไม่ใช่ของธนาคาร */}
+          <div style={{ fontSize: '0.82rem', color: 'var(--muted)', marginTop: 4 }}>
+            {referenceNo.trim()
+              ? 'บันทึกเป็นเลขจากหลักฐานของธนาคาร'
+              : 'เว้นว่างไว้ ระบบจะออกเลขให้เองในรูปแบบ AUTO-YYMMDD-00001'}
+          </div>
         </div>
 
         <div className="form-group">
@@ -276,12 +337,12 @@ export default function BankDepositPage() {
         </div>
 
         {/* ยอดที่ควรฝากซ่อนไว้ ให้คีย์ตามสลิปจริงก่อน */}
-        {pickup && (
+        {pickups.length > 0 && (
           <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
             {showExpected ? (
               <div style={{ fontSize: '0.95rem', color: 'var(--text)' }}>
-                ยอดที่ต้องฝากตามใบ Pay-in:{' '}
-                <strong>{formatSatangToBaht(pickup.payin_amount_satang)} บาท</strong>
+                ยอดที่ต้องฝาก (รวม {pickups.length} จุดรับ):{' '}
+                <strong>{formatSatangToBaht(expectedTotal)} บาท</strong>
                 <div style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: 2 }}>
                   การเปิดดูยอดนี้ถูกบันทึกไว้
                 </div>

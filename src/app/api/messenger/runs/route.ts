@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from('messenger_jobs')
-      .select('*, cash_pickups(payin_amount_satang, envelope_count), bank_deposits(actual_amount_satang, variance_satang, status, slip_status)')
+      .select('*, cash_pickups(branch_id, envelope_amount_satang, envelope_count), bank_deposits(actual_amount_satang, variance_satang, status, slip_status)')
       .eq('job_kind', 'cash_handover')
       .order('created_at', { ascending: false })
       .limit(limit);
@@ -32,7 +32,16 @@ export async function GET(request: NextRequest) {
       query = query.or(`assigned_to.eq.${ctx.user.id},created_by.eq.${ctx.user.id}`);
     }
     if (statuses.length > 0) query = query.in('status', statuses);
-    if (branchId) query = query.eq('branch_id', branchId);
+    // สาขาอยู่ที่ระดับจุดรับแล้ว ไม่ใช่ระดับงาน (ทริปเดียวเก็บได้หลายสาขา)
+    // จึงต้องหา job ที่มีจุดรับของสาขานั้นก่อน แล้วกรองด้วย id
+    if (branchId) {
+      const { data: hits } = await supabase
+        .from('cash_pickups')
+        .select('job_id')
+        .eq('branch_id', branchId);
+      const jobIds = [...new Set((hits || []).map((h: any) => h.job_id))];
+      query = query.in('id', jobIds.length ? jobIds : ['00000000-0000-0000-0000-000000000000']);
+    }
     if (dateFrom) query = query.gte('created_at', dateFrom);
     if (dateTo) query = query.lte('created_at', `${dateTo}T23:59:59.999Z`);
 
@@ -40,7 +49,13 @@ export async function GET(request: NextRequest) {
     if (error) throw error;
 
     const rows = data || [];
-    const branchIds = [...new Set(rows.map((r: any) => r.branch_id).filter(Boolean))];
+    const pickupRowsOf = (r: any) =>
+      (Array.isArray(r.cash_pickups) ? r.cash_pickups : r.cash_pickups ? [r.cash_pickups] : []) as any[];
+    const branchIds = [
+      ...new Set(
+        rows.flatMap((r: any) => [r.branch_id, ...pickupRowsOf(r).map((p) => p.branch_id)]).filter(Boolean)
+      ),
+    ];
     const profileIds = [...new Set(rows.map((r: any) => r.assigned_to).filter(Boolean))];
 
     const [{ data: branches }, { data: profiles }] = await Promise.all([
@@ -52,17 +67,33 @@ export async function GET(request: NextRequest) {
 
     const enriched = rows.map((r: any) => {
       // supabase คืน embed เป็น array เมื่อความสัมพันธ์เป็น one-to-many
-      const pickup = Array.isArray(r.cash_pickups) ? r.cash_pickups[0] : r.cash_pickups;
+      const pickups = pickupRowsOf(r);
       const deposits = Array.isArray(r.bank_deposits) ? r.bank_deposits : r.bank_deposits ? [r.bank_deposits] : [];
       const deposit = deposits.find((d: any) => d?.status !== 'voided') || null;
+      const branchNames = [
+        ...new Set(pickups.map((p) => branchMap.get(p.branch_id)).filter(Boolean) as string[]),
+      ];
       return {
         ...r,
         cash_pickups: undefined,
         bank_deposits: undefined,
-        branch_name: branchMap.get(r.branch_id) || null,
+        // ทริปหนึ่งครอบหลายสาขา จึงคืนเป็นรายการ ส่วน branch_name เป็นข้อความสรุป
+        // ให้หน้าจอเดิมที่คาดหวังฟิลด์เดียวยังแสดงได้ ไม่พังเงียบ ๆ
+        branch_names: branchNames,
+        branch_name:
+          branchNames.length === 0
+            ? branchMap.get(r.branch_id) || null
+            : branchNames.length === 1
+              ? branchNames[0]
+              : `${branchNames[0]} +${branchNames.length - 1} สาขา`,
+        pickup_count: pickups.length,
         assigned_to_name: nameMap.get(r.assigned_to) || null,
-        payin_amount_satang: pickup?.payin_amount_satang ?? null,
-        envelope_count: pickup?.envelope_count ?? null,
+        envelope_amount_satang: pickups.length
+          ? pickups.reduce((s, p) => s + Number(p.envelope_amount_satang), 0)
+          : null,
+        envelope_count: pickups.length
+          ? pickups.reduce((s, p) => s + Number(p.envelope_count), 0)
+          : null,
         actual_amount_satang: deposit?.actual_amount_satang ?? null,
         variance_satang: deposit?.variance_satang ?? null,
         deposit_status: deposit?.status ?? null,
@@ -76,7 +107,12 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/messenger/runs — START (เลือกสาขา)
+/**
+ * POST /api/messenger/runs — เปิดทริปใหม่
+ *
+ * ไม่ต้องเลือกสาขาตอนเปิดทริปอีกแล้ว เพราะทริปหนึ่งเก็บซองได้หลายสาขา
+ * สาขาถูกเลือกตอนบันทึกแต่ละจุดรับ (ดู runs/[id]/pickup)
+ */
 export async function POST(request: NextRequest) {
   try {
     const auth = await requireCapability({});
@@ -86,10 +122,6 @@ export async function POST(request: NextRequest) {
 
     const supabase = getServiceSupabase();
     const body = await request.json();
-
-    if (!body.branch_id) {
-      return NextResponse.json({ success: false, error: 'กรุณาเลือกสาขา' }, { status: 400 });
-    }
 
     // แมสเซนเจอร์สร้างงานได้เฉพาะของตัวเอง ฝ่ายการเงินสั่งงานให้คนอื่นได้
     let assignedTo = ctx.user.id;
@@ -101,15 +133,6 @@ export async function POST(request: NextRequest) {
         { success: false, error: 'กรุณาระบุแมสเซนเจอร์ผู้รับงาน' },
         { status: 400 }
       );
-    }
-
-    const { data: branch } = await supabase
-      .from('branches')
-      .select('id, is_active')
-      .eq('id', body.branch_id)
-      .single();
-    if (!branch || !branch.is_active) {
-      return NextResponse.json({ success: false, error: 'สาขาไม่ถูกต้องหรือปิดใช้งานแล้ว' }, { status: 400 });
     }
 
     // งานฝากเงินที่ยังไม่จบของคนเดิม ต้องปิดก่อนเปิดใบใหม่ — กันการเปิดงานใหม่
@@ -135,7 +158,8 @@ export async function POST(request: NextRequest) {
       .insert({
         job_kind: 'cash_handover',
         status: 'open',
-        branch_id: body.branch_id,
+        // branch_id เป็น NULL สำหรับงานเก็บเงิน — สาขาอยู่ที่ระดับจุดรับ (012)
+        branch_id: null,
         note: body.note || null,
         assigned_to: assignedTo,
         created_by: ctx.user.id,
@@ -150,7 +174,7 @@ export async function POST(request: NextRequest) {
       entity_id: job.id,
       action: 'create_run',
       to_status: 'open',
-      payload: { branch_id: body.branch_id, assigned_to: assignedTo },
+      payload: { assigned_to: assignedTo, note: body.note || null },
     }, request);
 
     return NextResponse.json({ success: true, data: job });
