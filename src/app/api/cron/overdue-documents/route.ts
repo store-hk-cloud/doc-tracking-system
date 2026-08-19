@@ -13,7 +13,12 @@ import { isRealEmail, sendEmail } from '@/lib/email';
  * เพราะเป็นคนที่รู้ว่าเอกสารฉบับนั้นสำคัญแค่ไหนและตามเรื่องต่อได้
  *
  * กันส่งซ้ำด้วยตาราง document_overdue_alerts ที่ unique (recipient, threshold)
- * cron จะรันทุกชั่วโมงแต่แต่ละฉบับได้เมลระดับ 24 ชม. แค่ครั้งเดียว
+ * แต่ละฉบับจึงได้เมลระดับ 24 ชม. แค่ครั้งเดียวไม่ว่า cron จะรันกี่รอบ
+ *
+ * ตารางเวลา: วันละครั้ง 08:00 น. เวลาไทย (01:00 UTC) เพราะแผน Vercel Hobby
+ * จำกัด cron ไว้วันละครั้ง ผลคือเอกสารที่เพิ่งเกิน 24 ชม. หลังรอบเช้าจะได้เมล
+ * เช้าวันถัดไป (ช้าได้สูงสุดราว 23 ชม.) ถ้าต้องการเตือนไวกว่านี้ต้องขึ้นแผน Pro
+ * แล้วเปลี่ยน schedule ใน vercel.json เป็นรายชั่วโมง
  *
  * ความปลอดภัย: Vercel Cron ส่ง header Authorization: Bearer $CRON_SECRET
  * ถ้าตั้ง CRON_SECRET ไว้ route นี้จะรับเฉพาะคำขอที่มี secret ตรงกัน
@@ -44,14 +49,23 @@ export async function GET(request: NextRequest) {
     const cutoff = new Date(Date.now() - hours * 3_600_000).toISOString();
 
     // เอกสารที่ส่งมอบแล้วแต่ยังไม่มีใครกดรับ และเลยกำหนดแล้ว
+    // เรียงจากค้างนานสุดก่อน เพื่อให้ถ้าชน LIMIT ฉบับที่ค้างนานที่สุดได้เตือนก่อน
+    const LIMIT = 1000;
     const { data: overdue, error } = await supabase
       .from('document_recipients')
       .select('id, department_id, admin_signed_at, status, documents!inner(*)')
       .eq('status', 'delivered')
       .not('admin_signed_at', 'is', null)
       .lte('admin_signed_at', cutoff)
-      .limit(200);
+      .order('admin_signed_at', { ascending: true })
+      .limit(LIMIT);
     if (error) throw error;
+    // ถ้าชนเพดานแปลว่ายังมีตกค้างที่ยังไม่ได้ตรวจในรอบนี้ ต้องเห็นใน log
+    // ไม่ใช่เงียบหายไปเหมือนไม่มีอะไรค้าง
+    const truncated = (overdue || []).length >= LIMIT;
+    if (truncated) {
+      console.warn(`[Cron overdue-documents] ชนเพดาน ${LIMIT} แถว ยังมีเอกสารค้างที่ยังไม่ได้ตรวจในรอบนี้`);
+    }
 
     const rows = (overdue || []) as any[];
     if (rows.length === 0) {
@@ -184,6 +198,7 @@ export async function GET(request: NextRequest) {
         skipped,
         // ไม่ได้ตั้งค่าอีเมล = ยังไม่ได้บันทึกกันซ้ำ รอบหน้าจะลองใหม่ทั้งหมด
         email_configured: !notConfigured,
+        truncated,
         results,
       },
     });
