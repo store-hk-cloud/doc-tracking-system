@@ -6,6 +6,7 @@ import { requireRoles } from '@/lib/supabase/auth-helpers';
 // เอกสารสองประเภทนี้เลือกหน่วยงานปลายทางเพิ่มได้ แต่ต้องมีฝ่ายบัญชีเป็น
 // ปลายทางหลักเสมอ ไม่ว่าผู้ใช้จะเลือกจากหน้าจอหรือเรียก API โดยตรงก็ตาม
 const ACCOUNTING_ONLY_DOCUMENT_TYPES = new Set(['ใบเบิก', 'ใบรับสินค้า']);
+const ACCOUNTING_DEPARTMENT_CODE = '0-ADM03';
 
 // A "document" returned to the client is a document_recipients row flattened
 // with its parent document's shared fields (see migration 006). A document
@@ -147,16 +148,16 @@ export async function POST(request: NextRequest) {
       const { data: accountingDepartment, error: accountingError } = await supabase
         .from('departments')
         .select('id')
-        .eq('code', 'ACC')
+        .eq('code', ACCOUNTING_DEPARTMENT_CODE)
         .maybeSingle();
       if (accountingError) throw accountingError;
       if (!accountingDepartment) {
         return NextResponse.json(
-          { success: false, error: 'ไม่พบหน่วยงานบัญชี (ACC) สำหรับเอกสารประเภทนี้' },
+          { success: false, error: 'ไม่พบหน่วยงานบัญชีสำหรับเอกสารประเภทนี้' },
           { status: 422 }
         );
       }
-      // วาง ACC ไว้ลำดับแรกเพื่อคงความหมายของ recipient_dept_id แบบเดิมว่าเป็น
+      // วางฝ่ายบัญชีไว้ลำดับแรกเพื่อคงความหมายของ recipient_dept_id แบบเดิมว่าเป็น
       // ปลายทางหลัก ขณะที่ document_recipients เก็บปลายทางเพิ่มเติมได้ครบถ้วน
       deptIds = [
         accountingDepartment.id,
