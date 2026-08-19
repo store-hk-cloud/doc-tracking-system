@@ -14,6 +14,10 @@ export default function AdminUsersPage() {
   const [message, setMessage] = useState('');
   const [editingUser, setEditingUser] = useState<any>(null);
   const [editForm, setEditForm] = useState({ full_name: '', department_id: '', role: 'user', is_active: true });
+  // ตั้งรหัสผ่านใหม่แยกจากฟอร์มแก้ไข เพราะกดแล้วมีผลทันทีและย้อนกลับไม่ได้
+  const [newPassword, setNewPassword] = useState('');
+  const [resetting, setResetting] = useState(false);
+  const [resetMessage, setResetMessage] = useState('');
 
   const loadUsers = async () => {
     try {
@@ -62,6 +66,38 @@ export default function AdminUsersPage() {
       is_active: u.is_active,
     });
     setMessage('');
+    setNewPassword('');
+    setResetMessage('');
+  };
+
+  const handleResetPassword = async () => {
+    if (!editingUser) return;
+    if (newPassword.length < 8) {
+      setResetMessage('❌ รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษร');
+      return;
+    }
+    const label = editingUser.username || editingUser.email;
+    if (!window.confirm(`ตั้งรหัสผ่านใหม่ให้ "${editingUser.full_name}" (${label})?\n\nรหัสผ่านเดิมจะใช้ไม่ได้ทันที และการกดครั้งนี้จะถูกบันทึกไว้ถาวร`)) return;
+
+    setResetting(true);
+    setResetMessage('');
+    try {
+      const res = await window.fetch(`/api/profiles/${editingUser.id}/password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: newPassword }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setResetMessage(`✅ ตั้งรหัสผ่านใหม่ให้ ${editingUser.full_name} แล้ว — แจ้งเจ้าตัวโดยตรง`);
+        setNewPassword('');
+      } else {
+        setResetMessage(`❌ ${data.error}`);
+      }
+    } catch {
+      setResetMessage('❌ เชื่อมต่อไม่สำเร็จ');
+    }
+    setResetting(false);
   };
 
   const handleUpdate = async (e: React.FormEvent) => {
@@ -304,6 +340,62 @@ export default function AdminUsersPage() {
                 </button>
               </div>
             </form>
+
+            {/* อยู่นอก <form> ด้านบนโดยตั้งใจ: HTML ซ้อน form ไม่ได้ และการตั้งรหัสผ่าน
+                ต้องไม่ถูกส่งไปพร้อมการกด "บันทึก" ของฟอร์มแก้ไขข้อมูล */}
+            {isSuperAdmin && (
+              <div
+                style={{
+                  marginTop: 18,
+                  paddingTop: 14,
+                  borderTop: '1px solid var(--line-strong)',
+                }}
+              >
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>🔑 ตั้งรหัสผ่านใหม่</div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--muted)', marginBottom: 10 }}>
+                  {editingUser.username
+                    ? 'บัญชีนี้ล็อกอินด้วยชื่อผู้ใช้ ไม่มีอีเมลจริงให้ส่งลิงก์รีเซ็ต จึงต้องตั้งให้จากที่นี่'
+                    : 'ตั้งรหัสผ่านใหม่แทนผู้ใช้ แล้วแจ้งเจ้าตัวโดยตรง'}
+                </div>
+
+                {resetMessage && (
+                  <div
+                    className={`toast ${resetMessage.includes('✅') ? 'success' : 'error'}`}
+                    style={{ position: 'static', marginBottom: 10 }}
+                  >
+                    {resetMessage}
+                  </div>
+                )}
+
+                <div className="form-group">
+                  <label htmlFor="new-password">รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)</label>
+                  <input
+                    id="new-password"
+                    type="text"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="พิมพ์รหัสผ่านใหม่"
+                    autoComplete="off"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                  />
+                  {/* type="text" โดยตั้งใจ: ผู้ดูแลเป็นคนตั้งให้คนอื่นแล้วต้องอ่านออกเพื่อบอกต่อ
+                      ถ้าซ่อนเป็นจุดจะพิมพ์ผิดแล้วไม่รู้ตัว จนเจ้าตัวล็อกอินไม่ได้ */}
+                </div>
+
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={handleResetPassword}
+                  disabled={resetting || newPassword.length < 8}
+                  style={{ width: '100%', minHeight: 48 }}
+                >
+                  {resetting ? 'กำลังตั้งรหัสผ่าน...' : '🔑 ตั้งรหัสผ่านใหม่ทันที'}
+                </button>
+              </div>
+            )}
+
             <button className="scan-popup-close" onClick={() => setEditingUser(null)}>ปิด</button>
           </div>
         </div>

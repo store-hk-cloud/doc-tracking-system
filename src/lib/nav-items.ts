@@ -19,12 +19,18 @@ export type NavItem = {
   shortLabel: string;
   icon: string;
   roles: UserRole[];
-  /** undefined = ทุกแผนก / มีค่า = เฉพาะแผนกเหล่านี้ (super_admin ผ่านได้เสมอ) */
-  deptCodes?: string[];
+  /**
+   * ต้องมีสิทธิ์ตัวนี้ใน profile.capabilities ถึงจะเห็นเมนู
+   *
+   * ห้ามกลับไปใช้รายการรหัสแผนกตรง ๆ ที่นี่: รหัสแผนกผู้ดู/ผู้อนุมัติเงินสด
+   * เก็บอยู่ใน app_settings และแก้ได้โดยไม่ deploy ถ้า nav ถือสำเนาของตัวเอง
+   * มันจะเพี้ยนจาก server เงียบ ๆ (เคยเกิดมาแล้ว: nav ค้างอยู่ที่รหัสสมมติ
+   * FIN/ACC หลังย้ายไปใช้รหัสจริง 0-ADM03 ทำให้ผู้อนุมัติตัวจริงไม่เห็นเมนู
+   * ทั้งที่ API ยอมให้เข้า) capabilities มาจาก server ที่อ่าน app_settings ชุดเดียวกัน
+   */
+  capability?: 'isMessenger' | 'canViewCash';
   /** 1-4 = ได้ช่องจริงบนแถบล่าง ไม่ใส่ = ไปอยู่ในเมนู "เพิ่มเติม" */
   mobilePriority?: number;
-  /** true = ต้องมีสิทธิ์อนุมัติเงินเกิน (super_admin หรือ admin ใน FIN) */
-  requiresOverageApprover?: boolean;
 };
 
 const ALL_ROLES: UserRole[] = ['super_admin', 'admin', 'user'];
@@ -39,7 +45,7 @@ export const NAV_ITEMS: NavItem[] = [
     shortLabel: 'งานเงิน',
     icon: 'Cash',
     roles: ALL_ROLES,
-    deptCodes: ['MSG'],
+    capability: 'isMessenger',
     mobilePriority: 2,
   },
   {
@@ -48,7 +54,7 @@ export const NAV_ITEMS: NavItem[] = [
     shortLabel: 'เงินสด',
     icon: 'Bank',
     roles: ALL_ROLES,
-    deptCodes: ['FIN', 'ACC'],
+    capability: 'canViewCash',
     mobilePriority: 2,
   },
   {
@@ -57,7 +63,7 @@ export const NAV_ITEMS: NavItem[] = [
     shortLabel: 'ตรวจยอด',
     icon: 'Alert',
     roles: ALL_ROLES,
-    deptCodes: ['FIN', 'ACC'],
+    capability: 'canViewCash',
     mobilePriority: 3,
   },
 
@@ -74,17 +80,16 @@ export const NAV_ITEMS: NavItem[] = [
 
 /**
  * กรองเมนูตามสิทธิ์
- * super_admin ข้าม deptCodes ได้ (ต้องดูได้ทุกอย่าง) แต่ admin ทั่วไปข้ามไม่ได้ —
- * admin ของ HR ไม่ควรเห็นเมนูเงินสด
+ *
+ * เมนูเงินสดกรองด้วย capabilities ที่ server คำนวณมาจาก app_settings
+ * (super_admin ได้ค่า true มาจาก server อยู่แล้ว จึงไม่ต้องยกเว้นซ้ำที่นี่)
+ * ส่วน role ยังกรองที่ client ได้ เพราะเป็นค่าคงที่ในโค้ด ไม่ใช่ค่าตั้งที่แก้ได้
  */
 export function visibleNavItems(profile: Profile | null | undefined): NavItem[] {
   const role: UserRole = profile?.role || 'user';
-  const code = profile?.department_code;
   return NAV_ITEMS.filter((item) => {
     if (!item.roles.includes(role)) return false;
-    if (item.deptCodes && role !== 'super_admin') {
-      if (!code || !item.deptCodes.includes(code)) return false;
-    }
+    if (item.capability && profile?.capabilities?.[item.capability] !== true) return false;
     return true;
   });
 }
