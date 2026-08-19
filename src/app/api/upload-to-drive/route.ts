@@ -4,7 +4,7 @@ import { requireRoles } from '@/lib/supabase/auth-helpers';
 
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireRoles(['super_admin', 'admin']);
+    const auth = await requireRoles(['super_admin', 'admin', 'user']);
     if (auth.response) return auth.response;
 
     const formData = await request.formData();

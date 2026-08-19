@@ -3,6 +3,10 @@ import { getServiceSupabase } from '@/lib/supabase/admin';
 import { appendRow } from '@/lib/google-sheets';
 import { requireRoles } from '@/lib/supabase/auth-helpers';
 
+// เอกสารสองประเภทนี้ต้องส่งให้ฝ่ายบัญชีเท่านั้น ไม่ว่าผู้ใช้จะเลือกปลายทางใด
+// จากหน้าจอหรือเรียก API โดยตรงก็ตาม
+const ACCOUNTING_ONLY_DOCUMENT_TYPES = new Set(['ใบเบิก', 'ใบรับสินค้า']);
+
 // A "document" returned to the client is a document_recipients row flattened
 // with its parent document's shared fields (see migration 006). A document
 // linked to N departments therefore appears as N separate rows here, one per
@@ -128,12 +132,31 @@ export async function POST(request: NextRequest) {
     const supabase = getServiceSupabase();
     const body = await request.json();
 
-    const deptIds: string[] = Array.isArray(body.recipient_dept_ids)
+    const subject = String(body.subject || '').trim();
+    const requestedDeptIds: string[] = Array.isArray(body.recipient_dept_ids)
       ? [...new Set(body.recipient_dept_ids.filter(Boolean))]
       : [];
+    const mustSendToAccounting = ACCOUNTING_ONLY_DOCUMENT_TYPES.has(subject);
+    let deptIds = requestedDeptIds;
 
-    if (!body.sender || !body.subject || deptIds.length === 0) {
+    if (!body.sender || !subject || (!mustSendToAccounting && deptIds.length === 0)) {
       return NextResponse.json({ success: false, error: 'sender, subject and recipient_dept_ids (at least 1) are required' }, { status: 400 });
+    }
+
+    if (mustSendToAccounting) {
+      const { data: accountingDepartment, error: accountingError } = await supabase
+        .from('departments')
+        .select('id')
+        .eq('code', 'ACC')
+        .maybeSingle();
+      if (accountingError) throw accountingError;
+      if (!accountingDepartment) {
+        return NextResponse.json(
+          { success: false, error: 'ไม่พบหน่วยงานบัญชี (ACC) สำหรับเอกสารประเภทนี้' },
+          { status: 422 }
+        );
+      }
+      deptIds = [accountingDepartment.id];
     }
 
     const { data: doc, error: docError } = await supabase
@@ -143,7 +166,7 @@ export async function POST(request: NextRequest) {
         doc_number: body.doc_number || null,
         tax_invoice_no: body.tax_invoice_no || null,
         sender: body.sender,
-        subject: body.subject,
+        subject,
         note: body.note || null,
         is_damaged: body.is_damaged || false,
         damage_image_url: body.damage_image_url || null,

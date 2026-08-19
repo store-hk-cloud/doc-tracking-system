@@ -18,6 +18,9 @@ export default function RecipientListPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkSigning, setBulkSigning] = useState(false);
   const [bulkMessage, setBulkMessage] = useState('');
+  const [showBulkSignModal, setShowBulkSignModal] = useState(false);
+  const [bulkSignature, setBulkSignature] = useState('');
+  const [bulkSignError, setBulkSignError] = useState('');
 
   // Closed tab
   const [closedDocs, setClosedDocs] = useState<any[]>([]);
@@ -81,10 +84,21 @@ export default function RecipientListPage() {
     );
   };
 
-  const handleBulkSign = async () => {
+  const openBulkSignModal = () => {
     if (selectedIds.size === 0) return;
-    if (!window.confirm(`ยืนยันลงชื่อรับเอกสาร ${selectedIds.size} รายการ?`)) return;
+    setBulkSignature(profile?.full_name || '');
+    setBulkSignError('');
+    setShowBulkSignModal(true);
+  };
+
+  const handleBulkSign = async () => {
+    const recipientSignature = bulkSignature.trim();
+    if (!recipientSignature) {
+      setBulkSignError('กรุณาระบุชื่อผู้รับเอกสาร');
+      return;
+    }
     setBulkSigning(true);
+    setBulkSignError('');
     setBulkMessage('');
     const ids = Array.from(selectedIds);
     const results = await Promise.all(
@@ -93,7 +107,12 @@ export default function RecipientListPage() {
           .fetch('/api/deliveries', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ document_recipient_id: id, is_verified: true, verification_note: null }),
+            body: JSON.stringify({
+              document_recipient_id: id,
+              is_verified: true,
+              recipient_signature: recipientSignature,
+              verification_note: null,
+            }),
           })
           .then((r) => r.json())
           .catch(() => ({ success: false }))
@@ -108,6 +127,7 @@ export default function RecipientListPage() {
     );
     setSelectedIds(new Set());
     setBulkSigning(false);
+    setShowBulkSignModal(false);
     await loadPending();
     setClosedLoaded(false);
   };
@@ -157,7 +177,7 @@ export default function RecipientListPage() {
               }}
             >
               <span style={{ fontWeight: 700 }}>เลือกแล้ว {selectedIds.size} รายการ</span>
-              <button className="secondary-button" style={{ width: 'auto', padding: '0 16px' }} onClick={handleBulkSign} disabled={bulkSigning}>
+              <button className="secondary-button" style={{ width: 'auto', padding: '0 16px' }} onClick={openBulkSignModal} disabled={bulkSigning}>
                 {bulkSigning ? 'กำลังดำเนินการ...' : '✅ ลงชื่อรับทั้งหมด'}
               </button>
             </div>
@@ -303,6 +323,54 @@ export default function RecipientListPage() {
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {showBulkSignModal && (
+        <div className="scan-popup-overlay" role="presentation" onClick={() => !bulkSigning && setShowBulkSignModal(false)}>
+          <form
+            className="scan-popup-sheet"
+            aria-modal="true"
+            aria-labelledby="bulk-recipient-signature-title"
+            role="dialog"
+            style={{ maxWidth: 500, margin: '0 auto' }}
+            onClick={(event) => event.stopPropagation()}
+            onSubmit={(event) => {
+              event.preventDefault();
+              handleBulkSign();
+            }}
+          >
+            <div className="scan-popup-handle" />
+            <h3 id="bulk-recipient-signature-title" style={{ marginBottom: 12 }}>
+              ✍️ ลงชื่อรับเอกสาร {selectedIds.size} รายการ
+            </h3>
+            <div className="form-group">
+              <label htmlFor="bulk-recipient-signature">ชื่อผู้รับเอกสาร *</label>
+              <input
+                id="bulk-recipient-signature"
+                type="text"
+                value={bulkSignature}
+                onChange={(event) => setBulkSignature(event.target.value)}
+                placeholder="พิมพ์ชื่อผู้รับเอกสาร"
+                maxLength={255}
+                autoFocus
+                style={{ fontFamily: 'Caveat, cursive', fontSize: '1.4rem', minHeight: 48 }}
+              />
+              <div style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: 4 }}>
+                ชื่อนี้จะใช้เป็นลายเซ็นผู้รับของทุกรายการที่เลือก
+              </div>
+            </div>
+            {bulkSignError && <div className="toast error" style={{ position: 'static', marginBottom: 8 }}>{bulkSignError}</div>}
+            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+              <button type="button" className="ghost-button" onClick={() => setShowBulkSignModal(false)} disabled={bulkSigning}>
+                ยกเลิก
+              </button>
+              <button type="submit" className="secondary-button" disabled={bulkSigning}>
+                {bulkSigning ? 'กำลังดำเนินการ...' : '✅ ยืนยันรับเอกสาร'}
+              </button>
+            </div>
+            <button type="button" className="scan-popup-close" onClick={() => setShowBulkSignModal(false)} disabled={bulkSigning}>ปิด</button>
+          </form>
         </div>
       )}
     </div>

@@ -68,8 +68,8 @@ export const NAV_ITEMS: NavItem[] = [
   },
 
   // โมดูลเอกสารเดิม
-  { path: '/register', label: '📝 ลงทะเบียน', shortLabel: 'ลงทะ.', icon: 'Add', roles: ['super_admin', 'admin'], mobilePriority: 3 },
-  { path: '/delivery', label: '📦 ส่งมอบ', shortLabel: 'ส่งมอบ', icon: 'Send', roles: ['super_admin', 'admin'], mobilePriority: 4 },
+  { path: '/register', label: '📝 ลงทะเบียน', shortLabel: 'ลงทะ.', icon: 'Add', roles: ALL_ROLES, mobilePriority: 3 },
+  { path: '/delivery', label: '📦 ส่งมอบ', shortLabel: 'ส่งมอบ', icon: 'Send', roles: ALL_ROLES, mobilePriority: 4 },
   { path: '/recipient', label: '✍️ รับเอกสาร', shortLabel: 'รับ', icon: 'Sign', roles: ALL_ROLES, mobilePriority: 4 },
   { path: '/tracking', label: '🔍 ติดตาม', shortLabel: 'ติดตาม', icon: 'Find', roles: ALL_ROLES },
   { path: '/reports', label: '📈 รายงาน', shortLabel: 'รายงาน', icon: 'Stats', roles: ALL_ROLES },

@@ -8,6 +8,11 @@ const DOCUMENT_TYPES = [
   'จดหมาย', 'ใบกำกับภาษี', 'ใบวางบิล', 'พัสดุ', 'ใบเสร็จ', 'บิลต่างๆ',
   'ใบเบิก', 'ใบรับสินค้าสำเร็จรูป', 'ใบรับสินค้า', 'ใบโอนสินค้า', 'เอกสารอื่นๆ',
 ];
+const ACCOUNTING_ONLY_DOCUMENT_TYPES = new Set(['ใบเบิก', 'ใบรับสินค้า']);
+
+function isAccountingOnlyDocument(subject: string) {
+  return ACCOUNTING_ONLY_DOCUMENT_TYPES.has(subject.trim());
+}
 
 function emptyRow() {
   return {
@@ -49,6 +54,18 @@ export default function RegisterPage() {
     });
   }, []);
 
+  // ถ้าผู้ใช้เลือกประเภทเอกสารก่อนข้อมูลหน่วยงานโหลดเสร็จ ให้กำหนด ACC
+  // ทันทีที่มีข้อมูล โดย API จะบังคับซ้ำอีกชั้นเพื่อความปลอดภัย
+  useEffect(() => {
+    const accountingDepartment = departments.find((department: any) => department.code === 'ACC');
+    if (!accountingDepartment) return;
+    setRows((current) => current.map((row) => (
+      isAccountingOnlyDocument(row.subject)
+        ? { ...row, recipient_dept_ids: [accountingDepartment.id] }
+        : row
+    )));
+  }, [departments]);
+
   useEffect(() => {
     return () => {
       rows.forEach((r) => { if (r.photoPreview) URL.revokeObjectURL(r.photoPreview); });
@@ -58,6 +75,16 @@ export default function RegisterPage() {
 
   const updateRow = (id: string, patch: Partial<Row>) => {
     setRows((current) => current.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  };
+
+  const updateSubject = (id: string, subject: string) => {
+    const accountingDepartment = departments.find((department: any) => department.code === 'ACC');
+    updateRow(id, {
+      subject,
+      ...(isAccountingOnlyDocument(subject) && accountingDepartment
+        ? { recipient_dept_ids: [accountingDepartment.id] }
+        : {}),
+    });
   };
 
   const addRow = () => setRows((current) => [...current, emptyRow()]);
@@ -73,7 +100,9 @@ export default function RegisterPage() {
   const toggleDept = (rowId: string, deptId: string) => {
     setRows((current) => current.map((r) => (
       r.id === rowId
-        ? { ...r, recipient_dept_ids: r.recipient_dept_ids.includes(deptId) ? r.recipient_dept_ids.filter((id) => id !== deptId) : [...r.recipient_dept_ids, deptId] }
+        ? isAccountingOnlyDocument(r.subject)
+          ? r
+          : { ...r, recipient_dept_ids: r.recipient_dept_ids.includes(deptId) ? r.recipient_dept_ids.filter((id) => id !== deptId) : [...r.recipient_dept_ids, deptId] }
         : r
     )));
   };
@@ -136,6 +165,7 @@ export default function RegisterPage() {
         tax_invoice_no: row.tax_invoice_no,
         sender: row.sender,
         subject: row.subject,
+        // API เป็นผู้บังคับปลายทาง ACC อีกชั้นหนึ่ง แม้มีการแก้ request โดยตรง
         recipient_dept_ids: row.recipient_dept_ids,
         inspector_signature: row.inspector_signature,
         purchasing_signature: row.purchasing_signature,
@@ -158,7 +188,7 @@ export default function RegisterPage() {
     const validRows: Row[] = [];
     const invalidIds = new Set<string>();
     setRows((current) => current.map((r) => {
-      if (!r.sender || !r.subject || r.recipient_dept_ids.length === 0) {
+      if (!r.sender || !r.subject || (!isAccountingOnlyDocument(r.subject) && r.recipient_dept_ids.length === 0)) {
         invalidIds.add(r.id);
         return { ...r, error: 'กรุณากรอกผู้ส่ง, เรื่อง และเลือกหน่วยงานอย่างน้อย 1 หน่วยงาน' };
       }
@@ -255,11 +285,19 @@ export default function RegisterPage() {
                     <input type="text" value={row.sender} onChange={(e) => updateRow(row.id, { sender: e.target.value })} placeholder="ชื่อผู้ส่ง / บริษัท" style={{ minWidth: 140 }} />
                   </td>
                   <td>
-                    <input type="text" list="document-types" value={row.subject} onChange={(e) => updateRow(row.id, { subject: e.target.value })} placeholder="หัวข้อเอกสาร" style={{ minWidth: 140 }} />
+                    <input type="text" list="document-types" value={row.subject} onChange={(e) => updateSubject(row.id, e.target.value)} placeholder="หัวข้อเอกสาร" style={{ minWidth: 140 }} />
                   </td>
                   <td>
-                    <button type="button" className="ghost-button" style={{ width: 'auto', padding: '0 12px', whiteSpace: 'nowrap' }} onClick={() => setDeptPopupRowId(row.id)}>
-                      🏢 {row.recipient_dept_ids.length > 0 ? `เลือกแล้ว (${row.recipient_dept_ids.length})` : 'เลือกหน่วยงาน'}
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      style={{ width: 'auto', padding: '0 12px', whiteSpace: 'nowrap' }}
+                      onClick={() => setDeptPopupRowId(row.id)}
+                      disabled={isAccountingOnlyDocument(row.subject)}
+                    >
+                      🏢 {isAccountingOnlyDocument(row.subject)
+                        ? 'บัญชี (ACC)'
+                        : row.recipient_dept_ids.length > 0 ? `เลือกแล้ว (${row.recipient_dept_ids.length})` : 'เลือกหน่วยงาน'}
                     </button>
                   </td>
                   <td>
