@@ -22,6 +22,11 @@ export function isMessenger(profile: P): boolean {
   return read(profile, 'isMessenger');
 }
 
+/** ส่งซองได้ — มาจากการที่หน่วยงานของผู้ใช้เป็นเจ้าของสาขารับเงิน */
+export function isCashier(profile: P): boolean {
+  return read(profile, 'isCashier');
+}
+
 export function canViewCash(profile: P): boolean {
   return read(profile, 'canViewCash');
 }

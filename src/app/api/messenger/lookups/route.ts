@@ -12,7 +12,7 @@ export async function GET() {
     const supabase = getServiceSupabase();
     const [{ data: branches }, { data: banks }, { data: bankBranches }, { data: cashiers }] =
       await Promise.all([
-        supabase.from('branches').select('id, name, code').eq('is_active', true).order('code'),
+        supabase.from('branches').select('id, name, code, department_id').eq('is_active', true).order('code'),
         supabase.from('approved_banks').select('id, name, code').eq('is_active', true).order('name'),
         // สาขาธนาคารที่ใช้นำฝาก — คนละอย่างกับ branches ซึ่งเป็นสาขาบริษัท
         supabase
@@ -20,7 +20,9 @@ export async function GET() {
           .select('id, bank_id, name, branch_code')
           .eq('is_active', true)
           .order('name'),
-        supabase.from('profiles').select('id, full_name').eq('is_active', true).order('full_name'),
+        // department_id ไว้ให้หน้าจอกรองรายชื่อแคชเชียร์ตามสาขาที่เลือก
+        // ไม่งั้นพอมีแคชเชียร์ครบ 10 สาขา จะได้รายชื่อคละกันทั้งบริษัท
+        supabase.from('profiles').select('id, full_name, department_id').eq('is_active', true).order('full_name'),
       ]);
 
     return NextResponse.json({

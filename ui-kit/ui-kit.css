@@ -16,6 +16,10 @@
   --primary-strong: #046662;
   --primary-soft: rgba(5,133,129,0.1);
   --primary-rgb: 5,133,129;
+  /* พื้นของปุ่มที่ตัวหนังสือเป็นสีขาว hardcode — ต้องเข้มพอในทั้งสองธีม
+     ขาวบน #046662 = 6.40:1 ผ่าน 4.5:1 สบาย (ดู DESIGN.md ข้อ 3) */
+  --primary-button-bg: #046662;
+  --primary-button-bg-hover: #02514e;
   --brand-accent: #00bac6;
   --brand-mint: #51ddd7;
   --warning: #b45f06;
@@ -55,6 +59,10 @@
   --primary-strong: #51ddd7;
   --primary-soft: rgba(26,163,157,0.16);
   --primary-rgb: 26,163,157;
+  /* คงค่าเข้มไว้เหมือนธีมสว่าง เพราะตัวหนังสือบนปุ่มนี้เป็นขาวตายตัว
+     ถ้าพลิกไปใช้ --primary-strong (#51ddd7) ขาวบนพื้นนั้นเหลือ ~1.6:1 */
+  --primary-button-bg: #0a6f6a;
+  --primary-button-bg-hover: #04524e;
   --brand-accent: #00bac6;
   --brand-mint: #51ddd7;
   --warning: #ff9f0a;
@@ -626,8 +634,14 @@ select:hover {
   font-weight: 700;
 }
 
+/* ปุ่มหลักของทุกหน้า — ตัวหนังสือขาวบน --primary ได้ 4.49:1 ซึ่งตกเกณฑ์ 4.5:1
+   อยู่หนึ่งจุดทศนิยม สำคัญกับหน้าจอภาคสนามที่ใช้กลางแดด
+   ใช้ --primary-button-bg ไม่ใช่ --primary-strong เพราะ --primary-strong พลิกเป็น
+   สีมิ้นต์สว่าง (#51ddd7) ในธีมมืด ซึ่งขาวบนพื้นนั้นเหลือ ~1.6:1
+   (กฎเดียวกับ DESIGN.md ข้อ 3: พื้นของตัวหนังสือที่ hardcode สี ต้องใช้ token
+   ที่เข้มทั้งสองธีม) */
 .secondary-button {
-  background: var(--primary);
+  background: var(--primary-button-bg);
   color: #ffffff;
   border: 0;
   font-weight: 600;
@@ -635,11 +649,11 @@ select:hover {
 
 .secondary-button:not(:disabled):hover {
   filter: none;
-  background: var(--primary-strong);
+  background: var(--primary-button-bg-hover);
 }
 
 .secondary-button:not(:disabled):active {
-  background: var(--primary-strong);
+  background: var(--primary-button-bg-hover);
 }
 
 .ghost-button {

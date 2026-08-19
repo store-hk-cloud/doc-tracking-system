@@ -1,5 +1,6 @@
 import type { AuthContext } from '@/lib/supabase/auth-helpers';
 import { getCashDeptCodes } from '@/lib/cash-settings';
+import { getServiceSupabase } from '@/lib/supabase/admin';
 
 /**
  * ชั้น capability ฝั่ง server สำหรับโมดูลเงินสด
@@ -22,6 +23,10 @@ type Ctx = AuthContext | null | undefined;
 
 export type CashCapabilities = {
   isMessenger: boolean;
+  /** อยู่หน่วยงานที่เป็นเจ้าของสาขารับเงิน = ส่งซองได้ (ไม่ใช่ role ใหม่) */
+  isCashier: boolean;
+  /** รหัสสาขาที่ผู้ใช้นี้ส่งซองได้ (ปกติหนึ่งแห่ง) */
+  cashierBranchIds: string[];
   canViewCash: boolean;
   canCloseShortage: boolean;
   canApproveOverage: boolean;
@@ -29,6 +34,8 @@ export type CashCapabilities = {
 
 export const NO_CAPABILITIES: CashCapabilities = {
   isMessenger: false,
+  isCashier: false,
+  cashierBranchIds: [],
   canViewCash: false,
   canCloseShortage: false,
   canApproveOverage: false,
@@ -46,6 +53,11 @@ export async function getCashCapabilities(ctx: Ctx): Promise<CashCapabilities> {
   const isSuper = role === 'super_admin';
   const inList = (list: string[]) => !!dept && list.includes(dept);
 
+  // แคชเชียร์ไม่ได้เป็น role ใหม่ และไม่ได้เก็บใน app_settings — อนุมานจากข้อมูลจริง
+  // ว่าผู้ใช้นี้อยู่หน่วยงานที่เป็นเจ้าของสาขารับเงินสาขาใดบ้าง (branches.department_id)
+  // ตั้งใจให้เป็นเช่นนี้เพื่อไม่ต้องดูแลรายชื่อซ้ำสองที่ ย้ายคนข้ามแผนกแล้วสิทธิ์ตามทันที
+  const cashierBranchIds = await getCashierBranchIds(ctx.profile.department_id);
+
   // เงินขาดและเงินเกินสำคัญเท่ากัน จึงใช้กติกาเดียวกันและเป็นกติกาที่เข้มกว่า:
   // ต้องเป็น admin ในแผนกผู้อนุมัติ หรือ super_admin เท่านั้น
   //
@@ -57,10 +69,34 @@ export async function getCashCapabilities(ctx: Ctx): Promise<CashCapabilities> {
 
   return {
     isMessenger: inList(codes.messenger_dept_codes),
+    isCashier: cashierBranchIds.length > 0,
+    cashierBranchIds,
     canViewCash: isSuper || inList(codes.cash_viewer_dept_codes) || inList(codes.cash_shortage_dept_codes),
     canCloseShortage: canDecideVariance,
     canApproveOverage: canDecideVariance,
   };
+}
+
+/**
+ * สาขาที่หน่วยงานนี้เป็นเจ้าของ — cache สั้น ๆ เพราะถูกเรียกทุก request
+ * ที่แตะโมดูลเงินสด และรายชื่อสาขาเปลี่ยนไม่บ่อย
+ */
+const branchCache = new Map<string, { ids: string[]; at: number }>();
+const BRANCH_TTL_MS = 60_000;
+
+async function getCashierBranchIds(departmentId: string | null | undefined): Promise<string[]> {
+  if (!departmentId) return [];
+  const hit = branchCache.get(departmentId);
+  if (hit && Date.now() - hit.at < BRANCH_TTL_MS) return hit.ids;
+
+  const { data } = await getServiceSupabase()
+    .from('branches')
+    .select('id')
+    .eq('department_id', departmentId)
+    .eq('is_active', true);
+  const ids = (data || []).map((b: any) => b.id);
+  branchCache.set(departmentId, { ids, at: Date.now() });
+  return ids;
 }
 
 export async function isMessenger(ctx: Ctx): Promise<boolean> {
@@ -112,4 +148,8 @@ export async function canSeeJob(
 /** เห็น audit trail ได้ — เฉพาะฝ่ายการเงิน ประวัติเงินไม่ใช่ข้อมูลสาธารณะ */
 export async function canReadAudit(ctx: Ctx): Promise<boolean> {
   return (await getCashCapabilities(ctx)).canViewCash;
+}
+
+export async function isCashier(ctx: Ctx): Promise<boolean> {
+  return (await getCashCapabilities(ctx)).isCashier;
 }

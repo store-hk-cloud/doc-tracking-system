@@ -36,6 +36,8 @@ export interface Profile {
    */
   capabilities?: {
     isMessenger: boolean;
+    isCashier?: boolean;
+    cashierBranchIds?: string[];
     canViewCash: boolean;
     canCloseShortage: boolean;
     canApproveOverage: boolean;

@@ -28,7 +28,7 @@ export type NavItem = {
    * FIN/ACC หลังย้ายไปใช้รหัสจริง 0-ADM03 ทำให้ผู้อนุมัติตัวจริงไม่เห็นเมนู
    * ทั้งที่ API ยอมให้เข้า) capabilities มาจาก server ที่อ่าน app_settings ชุดเดียวกัน
    */
-  capability?: 'isMessenger' | 'canViewCash';
+  capability?: 'isMessenger' | 'canViewCash' | 'isCashier';
   /** 1-4 = ได้ช่องจริงบนแถบล่าง ไม่ใส่ = ไปอยู่ในเมนู "เพิ่มเติม" */
   mobilePriority?: number;
 };
@@ -46,6 +46,15 @@ export const NAV_ITEMS: NavItem[] = [
     icon: 'Cash',
     roles: ALL_ROLES,
     capability: 'isMessenger',
+    mobilePriority: 2,
+  },
+  {
+    path: '/cashier',
+    label: '💰 ส่งซองเงิน',
+    shortLabel: 'ส่งซอง',
+    icon: 'Cash',
+    roles: ALL_ROLES,
+    capability: 'isCashier',
     mobilePriority: 2,
   },
   {
