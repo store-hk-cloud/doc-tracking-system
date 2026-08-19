@@ -3,8 +3,8 @@ import { getServiceSupabase } from '@/lib/supabase/admin';
 import { appendRow } from '@/lib/google-sheets';
 import { requireRoles } from '@/lib/supabase/auth-helpers';
 
-// เอกสารสองประเภทนี้ต้องส่งให้ฝ่ายบัญชีเท่านั้น ไม่ว่าผู้ใช้จะเลือกปลายทางใด
-// จากหน้าจอหรือเรียก API โดยตรงก็ตาม
+// เอกสารสองประเภทนี้เลือกหน่วยงานปลายทางเพิ่มได้ แต่ต้องมีฝ่ายบัญชีเป็น
+// ปลายทางหลักเสมอ ไม่ว่าผู้ใช้จะเลือกจากหน้าจอหรือเรียก API โดยตรงก็ตาม
 const ACCOUNTING_ONLY_DOCUMENT_TYPES = new Set(['ใบเบิก', 'ใบรับสินค้า']);
 
 // A "document" returned to the client is a document_recipients row flattened
@@ -156,7 +156,12 @@ export async function POST(request: NextRequest) {
           { status: 422 }
         );
       }
-      deptIds = [accountingDepartment.id];
+      // วาง ACC ไว้ลำดับแรกเพื่อคงความหมายของ recipient_dept_id แบบเดิมว่าเป็น
+      // ปลายทางหลัก ขณะที่ document_recipients เก็บปลายทางเพิ่มเติมได้ครบถ้วน
+      deptIds = [
+        accountingDepartment.id,
+        ...requestedDeptIds.filter((departmentId) => departmentId !== accountingDepartment.id),
+      ];
     }
 
     const { data: doc, error: docError } = await supabase

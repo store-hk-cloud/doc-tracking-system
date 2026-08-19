@@ -54,14 +54,20 @@ export default function RegisterPage() {
     });
   }, []);
 
-  // ถ้าผู้ใช้เลือกประเภทเอกสารก่อนข้อมูลหน่วยงานโหลดเสร็จ ให้กำหนด ACC
+  // ถ้าผู้ใช้เลือกประเภทเอกสารก่อนข้อมูลหน่วยงานโหลดเสร็จ ให้เพิ่ม ACC
   // ทันทีที่มีข้อมูล โดย API จะบังคับซ้ำอีกชั้นเพื่อความปลอดภัย
   useEffect(() => {
     const accountingDepartment = departments.find((department: any) => department.code === 'ACC');
     if (!accountingDepartment) return;
     setRows((current) => current.map((row) => (
       isAccountingOnlyDocument(row.subject)
-        ? { ...row, recipient_dept_ids: [accountingDepartment.id] }
+        ? {
+            ...row,
+            recipient_dept_ids: [
+              accountingDepartment.id,
+              ...row.recipient_dept_ids.filter((departmentId) => departmentId !== accountingDepartment.id),
+            ],
+          }
         : row
     )));
   }, [departments]);
@@ -79,12 +85,21 @@ export default function RegisterPage() {
 
   const updateSubject = (id: string, subject: string) => {
     const accountingDepartment = departments.find((department: any) => department.code === 'ACC');
-    updateRow(id, {
-      subject,
-      ...(isAccountingOnlyDocument(subject) && accountingDepartment
-        ? { recipient_dept_ids: [accountingDepartment.id] }
-        : {}),
-    });
+    setRows((current) => current.map((row) => {
+      if (row.id !== id) return row;
+      return {
+        ...row,
+        subject,
+        ...(isAccountingOnlyDocument(subject) && accountingDepartment
+          ? {
+              recipient_dept_ids: [
+                accountingDepartment.id,
+                ...row.recipient_dept_ids.filter((departmentId) => departmentId !== accountingDepartment.id),
+              ],
+            }
+          : {}),
+      };
+    }));
   };
 
   const addRow = () => setRows((current) => [...current, emptyRow()]);
@@ -98,9 +113,10 @@ export default function RegisterPage() {
   };
 
   const toggleDept = (rowId: string, deptId: string) => {
+    const accountingDepartment = departments.find((department: any) => department.code === 'ACC');
     setRows((current) => current.map((r) => (
       r.id === rowId
-        ? isAccountingOnlyDocument(r.subject)
+        ? isAccountingOnlyDocument(r.subject) && deptId === accountingDepartment?.id
           ? r
           : { ...r, recipient_dept_ids: r.recipient_dept_ids.includes(deptId) ? r.recipient_dept_ids.filter((id) => id !== deptId) : [...r.recipient_dept_ids, deptId] }
         : r
@@ -293,10 +309,9 @@ export default function RegisterPage() {
                       className="ghost-button"
                       style={{ width: 'auto', padding: '0 12px', whiteSpace: 'nowrap' }}
                       onClick={() => setDeptPopupRowId(row.id)}
-                      disabled={isAccountingOnlyDocument(row.subject)}
                     >
                       🏢 {isAccountingOnlyDocument(row.subject)
-                        ? 'บัญชี (ACC)'
+                        ? `เลือกแล้ว (${row.recipient_dept_ids.length}) · มีบัญชี (ACC)`
                         : row.recipient_dept_ids.length > 0 ? `เลือกแล้ว (${row.recipient_dept_ids.length})` : 'เลือกหน่วยงาน'}
                     </button>
                   </td>
@@ -346,6 +361,11 @@ export default function RegisterPage() {
           <div className="scan-popup-sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 500, margin: '0 auto' }}>
             <div className="scan-popup-handle" />
             <h3 style={{ marginBottom: 12 }}>🏢 เลือกหน่วยงานผู้รับ (เลือกได้มากกว่า 1)</h3>
+            {isAccountingOnlyDocument(deptPopupRow.subject) && (
+              <div className="issue-bar" style={{ marginBottom: 12 }}>
+                เอกสารประเภทนี้ต้องส่งถึงบัญชี (ACC) เสมอ และเลือกหน่วยงานอื่นเพิ่มได้
+              </div>
+            )}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }} role="group" aria-label="หน่วยงานผู้รับ">
               {departments.map((d: any) => (
                 <button
@@ -354,6 +374,7 @@ export default function RegisterPage() {
                   className={`document-type-chip ${deptPopupRow.recipient_dept_ids.includes(d.id) ? 'active' : ''}`}
                   aria-pressed={deptPopupRow.recipient_dept_ids.includes(d.id)}
                   onClick={() => toggleDept(deptPopupRow.id, d.id)}
+                  disabled={isAccountingOnlyDocument(deptPopupRow.subject) && d.code === 'ACC'}
                 >
                   {d.name} ({d.code})
                 </button>
