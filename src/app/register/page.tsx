@@ -24,8 +24,6 @@ function emptyRow() {
     sender: '',
     subject: '',
     recipient_dept_ids: [] as string[],
-    inspector_signature: '',
-    purchasing_signature: '',
     note: '',
     is_damaged: false,
     photoFile: null as File | null,
@@ -184,8 +182,6 @@ export default function RegisterPage() {
         subject: row.subject,
         // API เป็นผู้บังคับปลายทางฝ่ายบัญชีอีกชั้นหนึ่ง แม้มีการแก้ request โดยตรง
         recipient_dept_ids: row.recipient_dept_ids,
-        inspector_signature: row.inspector_signature,
-        purchasing_signature: row.purchasing_signature,
         note: row.note,
         is_damaged: row.is_damaged,
         damage_image_url,
@@ -254,7 +250,7 @@ export default function RegisterPage() {
   const deptPopupRow = rows.find((r) => r.id === deptPopupRowId);
   const detailsPopupRow = rows.find((r) => r.id === detailsPopupRowId);
   const hasExtraDetails = (row: Row) =>
-    !!(row.tax_invoice_no || row.inspector_signature || row.purchasing_signature || row.note || row.is_damaged);
+    !!(row.tax_invoice_no || row.note || row.is_damaged);
 
   return (
     <div>
@@ -389,7 +385,7 @@ export default function RegisterPage() {
         </div>
       )}
 
-      {/* Extra details popup: tax invoice no., inspector/purchasing, note, damage + photo */}
+      {/* Extra details popup: tax invoice no., note, damage + photo */}
       {detailsPopupRow && (
         <div className="scan-popup-overlay" onClick={() => setDetailsPopupRowId(null)}>
           <div className="scan-popup-sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 500, margin: '0 auto' }}>
@@ -405,29 +401,6 @@ export default function RegisterPage() {
                 placeholder="เลขใบกำกับภาษี"
               />
             </div>
-
-            {detailsPopupRow.subject === 'ใบรับสินค้า' && (
-              <div className="form-row">
-                <div className="form-group">
-                  <label>ผู้ตรวจสอบ</label>
-                  <input
-                    type="text"
-                    value={detailsPopupRow.inspector_signature}
-                    onChange={(e) => updateRow(detailsPopupRow.id, { inspector_signature: e.target.value })}
-                    placeholder="ชื่อ/ลายเซ็นผู้ตรวจสอบ"
-                  />
-                </div>
-                <div className="form-group">
-                  <label>จัดซื้อ</label>
-                  <input
-                    type="text"
-                    value={detailsPopupRow.purchasing_signature}
-                    onChange={(e) => updateRow(detailsPopupRow.id, { purchasing_signature: e.target.value })}
-                    placeholder="ชื่อ/ลายเซ็นจัดซื้อ"
-                  />
-                </div>
-              </div>
-            )}
 
             <div className="form-group">
               <label>หมายเหตุ</label>
