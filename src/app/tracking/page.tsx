@@ -3,11 +3,14 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 
-const STATUS_OPTIONS = ['ทั้งหมด', 'registered', 'delivered', 'signed', 'closed', 'rejected'];
+const STATUS_OPTIONS = ['ทั้งหมด', 'registered', 'delivered', 'awaiting_inspector', 'awaiting_purchasing', 'awaiting_recipient', 'signed', 'closed', 'rejected'];
 const STATUS_LABELS: Record<string, string> = {
   'ทั้งหมด': 'ทั้งหมด',
   registered: 'ลงทะเบียน',
   delivered: 'ส่งมอบแล้ว',
+  awaiting_inspector: 'รอผู้ตรวจสอบ',
+  awaiting_purchasing: 'รอจัดซื้อ',
+  awaiting_recipient: 'รอผู้รับ',
   signed: 'ลงนามแล้ว',
   closed: 'ปิดงานแล้ว',
   rejected: 'แจ้งปัญหา',
@@ -15,6 +18,9 @@ const STATUS_LABELS: Record<string, string> = {
 const STATUS_COLORS: Record<string, string> = {
   registered: '',
   delivered: ' success',
+  awaiting_inspector: '',
+  awaiting_purchasing: '',
+  awaiting_recipient: '',
   signed: ' success',
   closed: ' success',
   rejected: ' error',
@@ -123,7 +129,7 @@ export default function TrackingPage() {
     const res = await window.fetch(`/api/documents/${doc.id}/redeliver`, { method: 'PUT' });
     const data = await res.json();
     if (data.success) {
-      setDocs(docs.map((d: any) => (d.id === doc.id ? { ...d, status: 'delivered' } : d)));
+      setDocs(docs.map((d: any) => (d.id === doc.id ? { ...d, status: data.data.status } : d)));
       setSelectedDoc(null);
     } else {
       window.alert(data.error || 'เกิดข้อผิดพลาด');

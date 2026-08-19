@@ -60,7 +60,7 @@ export default function ReportsPage() {
   };
 
   const statusLabels: Record<string, string> = {
-    registered: 'ลงทะเบียน', delivered: 'ส่งมอบแล้ว', signed: 'ลงนามแล้ว', closed: 'ปิดงานแล้ว', rejected: 'แจ้งปัญหา',
+    registered: 'ลงทะเบียน', delivered: 'ส่งมอบแล้ว', awaiting_inspector: 'รอผู้ตรวจสอบ', awaiting_purchasing: 'รอจัดซื้อ', awaiting_recipient: 'รอผู้รับ', signed: 'ลงนามแล้ว', closed: 'ปิดงานแล้ว', rejected: 'แจ้งปัญหา',
   };
 
   return (

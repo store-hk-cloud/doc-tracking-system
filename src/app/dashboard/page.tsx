@@ -36,6 +36,9 @@ export default function DashboardPage() {
   const statusMap: Record<string, { label: string; color: string }> = {
     registered: { label: 'ลงทะเบียน', color: '' },
     delivered: { label: 'ส่งมอบแล้ว', color: ' success' },
+    awaiting_inspector: { label: 'รอผู้ตรวจสอบ', color: '' },
+    awaiting_purchasing: { label: 'รอจัดซื้อ', color: '' },
+    awaiting_recipient: { label: 'รอผู้รับ', color: '' },
     signed: { label: 'ลงนามแล้ว', color: ' success' },
     closed: { label: 'ปิดงานแล้ว', color: ' success' },
     rejected: { label: 'แจ้งปัญหา', color: ' error' },

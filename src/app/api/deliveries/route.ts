@@ -100,17 +100,26 @@ export async function POST(request: NextRequest) {
     // คนที่กดได้ทุกกรณี
     const typedSignature = String(body.recipient_signature || '').trim();
     const recipientName = typedSignature ? typedSignature.slice(0, 255) : accountName;
+    const { data: parentDocument, error: parentDocumentError } = await supabase
+      .from('documents')
+      .select('subject')
+      .eq('id', recipientBefore.document_id)
+      .single();
+    if (parentDocumentError || !parentDocument) throw parentDocumentError || new Error('Parent document not found');
+
+    const isGoodsReceipt = parentDocument.subject === 'ใบรับสินค้า';
+    const expectedStatus = isGoodsReceipt ? 'awaiting_recipient' : 'delivered';
     const isVerified = body.is_verified === true;
     const newStatus = isVerified ? 'closed' : 'rejected';
 
-    // Atomically flip the recipient row out of 'delivered' first. If two requests race,
-    // only one WHERE status='delivered' update can succeed — the loser gets 409
+    // Atomically flip the recipient row out of its final receiving stage. If two
+    // requests race, only one update can succeed — the loser gets 409.
     // instead of both inserting a delivery log for the same recipient row.
     const { data: recipient, error: recipientUpdateError } = await supabase
       .from('document_recipients')
       .update({ status: newStatus })
       .eq('id', body.document_recipient_id)
-      .eq('status', 'delivered')
+      .eq('status', expectedStatus)
       .select()
       .single();
 

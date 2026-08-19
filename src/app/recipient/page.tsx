@@ -4,6 +4,13 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 
 const todayStr = () => new Date().toISOString().split('T')[0];
+const PENDING_STATUSES = ['delivered', 'awaiting_inspector', 'awaiting_purchasing', 'awaiting_recipient'];
+const STAGE_LABELS: Record<string, string> = {
+  awaiting_inspector: 'เซ็นผู้ตรวจสอบ',
+  awaiting_purchasing: 'เซ็นจัดซื้อ',
+  awaiting_recipient: 'ลงชื่อรับ',
+  delivered: 'ลงชื่อรับ',
+};
 
 export default function RecipientListPage() {
   const { profile } = useAuth();
@@ -33,9 +40,10 @@ export default function RecipientListPage() {
   const loadPending = async () => {
     setPendingLoading(true);
     try {
-      const res = await window.fetch(`/api/documents?status=delivered${deptQuery}`);
+      const statusQuery = PENDING_STATUSES.map((status) => `status=${status}`).join('&');
+      const res = await window.fetch(`/api/documents?${statusQuery}${deptQuery}`);
       const data = await res.json();
-      if (data.success) setPendingDocs(data.data.filter((d: any) => d.status === 'delivered'));
+      if (data.success) setPendingDocs(data.data.filter((d: any) => PENDING_STATUSES.includes(d.status)));
     } catch (e) {
       console.error('fetch pending docs error:', e);
     }
@@ -66,9 +74,10 @@ export default function RecipientListPage() {
   }, [tab]);
 
   const canSign = (doc: any) => !!profile?.department_id && profile.department_id === doc.recipient_dept_id;
+  const canReceive = (doc: any) => canSign(doc) && ['delivered', 'awaiting_recipient'].includes(doc.status);
 
   const visiblePending = pendingDocs.filter((d: any) => (d.admin_signed_at || '').split('T')[0] === pendingDate);
-  const signablePending = visiblePending.filter(canSign);
+  const signablePending = visiblePending.filter(canReceive);
 
   const toggleSelect = (id: string) => {
     setSelectedIds((current) => {
@@ -210,16 +219,17 @@ export default function RecipientListPage() {
                     <th>ผู้ตรวจสอบ</th>
                     <th>จัดซื้อ</th>
                     <th>ปลายทาง</th>
-                    <th>ดำเนินการ</th>
+                    <th>ขั้นตอน</th>
                   </tr>
                 </thead>
                 <tbody>
                   {visiblePending.map((doc: any) => {
                     const eligible = canSign(doc);
+                    const eligibleForBulkReceive = canReceive(doc);
                     return (
                       <tr key={doc.id}>
                         <td>
-                          {eligible && (
+                          {eligibleForBulkReceive && (
                             <input type="checkbox" checked={selectedIds.has(doc.id)} onChange={() => toggleSelect(doc.id)} />
                           )}
                         </td>
@@ -235,7 +245,7 @@ export default function RecipientListPage() {
                         <td>
                           {eligible ? (
                             <a href={`/recipient/${doc.id}`} className="table-action-button" style={{ textDecoration: 'none', display: 'inline-flex', padding: '6px 14px' }}>
-                              ✍️ ลงชื่อรับ
+                              ✍️ {STAGE_LABELS[doc.status] || 'ดำเนินการ'}
                             </a>
                           ) : (
                             <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>หน่วยงานอื่น</span>

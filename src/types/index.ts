@@ -45,10 +45,21 @@ export interface Profile {
 }
 
 // ── Document Status ──
-export type DocumentStatus = 'registered' | 'delivered' | 'signed' | 'closed' | 'rejected';
+export type DocumentStatus =
+  | 'registered'
+  | 'awaiting_inspector'
+  | 'awaiting_purchasing'
+  | 'awaiting_recipient'
+  | 'delivered'
+  | 'signed'
+  | 'closed'
+  | 'rejected';
 
 export const DOCUMENT_STATUS_LABELS: Record<DocumentStatus, string> = {
   registered: 'ลงทะเบียน',
+  awaiting_inspector: 'รอผู้ตรวจสอบ',
+  awaiting_purchasing: 'รอจัดซื้อ',
+  awaiting_recipient: 'รอผู้รับ',
   delivered: 'ส่งมอบแล้ว',
   signed: 'ลงนามแล้ว',
   closed: 'ปิดงานแล้ว',
@@ -57,6 +68,9 @@ export const DOCUMENT_STATUS_LABELS: Record<DocumentStatus, string> = {
 
 export const DOCUMENT_STATUS_COLORS: Record<DocumentStatus, string> = {
   registered: 'status-badge',
+  awaiting_inspector: 'status-badge',
+  awaiting_purchasing: 'status-badge',
+  awaiting_recipient: 'status-badge success',
   delivered: 'status-badge success',
   signed: 'status-badge success',
   closed: 'status-badge success',
@@ -80,7 +94,11 @@ export interface Document {
   recipient_dept_id: string;
   recipient_dept_name?: string;
   inspector_signature: string | null;
+  inspector_signed_by?: string | null;
+  inspector_signed_at?: string | null;
   purchasing_signature: string | null;
+  purchasing_signed_by?: string | null;
+  purchasing_signed_at?: string | null;
   note: string | null;
   status: DocumentStatus;
   is_damaged: boolean;

@@ -5,7 +5,7 @@ import { isRealEmail, sendEmail } from '@/lib/email';
 /**
  * GET /api/cron/overdue-documents — แจ้งเตือนต้นทางเมื่อเอกสารค้างไม่มีผู้กดรับ
  *
- * นิยาม "ค้าง": document_recipients ที่สถานะยังเป็น 'delivered' (ส่งมอบแล้ว
+ * นิยาม "ค้าง": document_recipients ที่ส่งมอบแล้วและยังรอขั้นตอนของหน่วยงาน
  * แต่ปลายทางยังไม่กดรับ) นานเกินเกณฑ์ที่ตั้งไว้ใน app_settings.overdue_alert_hours
  * (ค่าเริ่มต้น 24 ชั่วโมง) นับจากเวลาที่ส่งมอบ (admin_signed_at)
  *
@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
     const { data: overdue, error } = await supabase
       .from('document_recipients')
       .select('id, department_id, admin_signed_at, status, documents!inner(*)')
-      .eq('status', 'delivered')
+      .in('status', ['delivered', 'awaiting_inspector', 'awaiting_purchasing', 'awaiting_recipient'])
       .not('admin_signed_at', 'is', null)
       .lte('admin_signed_at', cutoff)
       .order('admin_signed_at', { ascending: true })
