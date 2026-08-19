@@ -9,7 +9,11 @@
   --surface-soft: #f3f8f7;
   --surface-raised: #ffffff;
   --text: #1c1c1e;
-  --muted: #6b7280;
+  /* ค่าเดิม #6b7280 (Tailwind gray-500) เพี้ยนจาก palette ของ DESIGN.md และตกเกณฑ์:
+     บน --page (#eaf4f3) ได้ 4.31:1 ต่ำกว่า 4.5:1 ซึ่งกระทบทุกที่ที่วางตัวหนังสือ
+     สีนี้บนพื้นหน้า ไม่ใช่ในการ์ด (บน --surface ขาวได้ 4.83:1 จึงไม่เคยเห็นปัญหา)
+     #5c6a68 ของ DESIGN.md ได้ 5.04:1 บน --page และ 5.94:1 บน --surface */
+  --muted: #5c6a68;
   --line: #dde3e2;
   --line-strong: #c7d0ce;
   --primary: #058581;

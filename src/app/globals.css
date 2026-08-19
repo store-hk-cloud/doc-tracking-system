@@ -451,7 +451,9 @@ body {
   padding: clamp(22px, 4vw, 42px);
   border: 1px solid rgba(5, 133, 129, 0.22);
   border-radius: 18px;
-  background: linear-gradient(125deg, #073e44 0%, #086f6c 58%, #0a8b83 100%);
+  /* ปลายสว่างเดิม #0a8b83 ทำให้ตัวหนังสือขาวโปร่ง (.72-.82 alpha) ได้แค่ 3.3-3.8:1
+     ตกเกณฑ์ 4.5:1 — ไล่โทนใหม่เข้มลงทั้งแถบ ยังเป็นเทียลแบรนด์ */
+  background: linear-gradient(125deg, #05343a 0%, #05564f 58%, #066b63 100%);
   color: #fff;
   overflow: hidden;
   position: relative;
@@ -472,17 +474,24 @@ body {
 
 .policy-hero-copy,
 .policy-hero-panel { position: relative; z-index: 1; }
-.policy-hero .title-badge { color: #bff3e9; background: rgba(255, 255, 255, 0.12); border-color: rgba(255, 255, 255, 0.18); }
-.policy-hero h1 { max-width: 760px; margin: 12px 0 10px; font-size: clamp(1.7rem, 3.8vw, 2.75rem); line-height: 1.18; letter-spacing: -0.03em; }
-.policy-hero p { max-width: 720px; margin: 0; color: rgba(255, 255, 255, 0.82); font-size: 1rem; line-height: 1.8; }
+/* พื้นขาวโปร่งเดิม (.12) ทำให้ backdrop สว่างขึ้น ตัวหนังสือสว่างจึงเหลือ 4.38:1
+   — ใช้พื้นเข้มโปร่งแทน ทำให้ทั้งตัวหนังสือและขอบยังเห็นชัดบนไล่โทนทั้งช่วง */
+.policy-hero .title-badge { color: #d9f8f1; background: rgba(0, 32, 36, 0.32); border-color: rgba(255, 255, 255, 0.28); }
+/* ต้องกำหนด color เอง: ui-kit มีกฎระดับ element `h1 { color: var(--text) }` ซึ่งชนะ
+   การสืบทอด #fff จาก .policy-hero ผลคือธีมสว่างได้หัวข้อ #1c1c1e บนพื้นเทียลเข้ม
+   = 1.4:1 อ่านไม่ออก (พื้นนี้เข้มทั้งสองธีมเพราะ hardcode ไว้ จึงตรึงขาวได้) */
+.policy-hero h1 { max-width: 760px; margin: 12px 0 10px; color: #fff; font-size: clamp(1.7rem, 3.8vw, 2.75rem); line-height: 1.18; letter-spacing: -0.03em; }
+.policy-hero p { max-width: 720px; margin: 0; color: rgba(255, 255, 255, 0.92); font-size: 1rem; line-height: 1.8; }
 .policy-hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
 .policy-hero .secondary-button { width: auto; padding: 0 20px; background: #f7d27c; color: #193b3d; border-color: #f7d27c; }
 .policy-link-button { width: auto; border-color: rgba(255, 255, 255, 0.3); color: #fff; background: rgba(255, 255, 255, 0.08); text-decoration: none; }
 .policy-hero-panel { align-self: center; padding: 22px; border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 14px; background: rgba(0, 38, 42, 0.24); backdrop-filter: blur(4px); }
-.policy-hero-panel-label, .policy-section-kicker { color: var(--primary); font-size: 0.7rem; font-weight: 900; letter-spacing: 0.13em; }
-.policy-hero-panel-label { color: #9ae5db; }
-.policy-hero-panel strong { display: block; margin: 10px 0 4px; font-size: 1.08rem; letter-spacing: 0.04em; }
-.policy-hero-panel span, .policy-hero-panel small { display: block; color: rgba(255, 255, 255, 0.72); font-size: 0.8rem; }
+/* --primary เป็นสีตัวหนังสือบน --surface ได้ 4.49:1 ตกเกณฑ์ 4.5:1 อยู่หนึ่งจุดทศนิยม
+   --primary-strong พลิกค่าถูกทั้งสองธีม (เข้มบนสว่าง / มิ้นต์บนมืด) */
+.policy-hero-panel-label, .policy-section-kicker { color: var(--primary-strong); font-size: 0.7rem; font-weight: 900; letter-spacing: 0.13em; }
+.policy-hero-panel-label { color: #c9f4ec; }
+.policy-hero-panel strong { display: block; margin: 10px 0 4px; color: #fff; font-size: 1.08rem; letter-spacing: 0.04em; }
+.policy-hero-panel span, .policy-hero-panel small { display: block; color: rgba(255, 255, 255, 0.92); font-size: 0.8rem; }
 .policy-hero-meter { height: 6px; margin: 22px 0 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); overflow: hidden; }
 .policy-hero-meter span { height: 100%; border-radius: inherit; background: #f7d27c; }
 
@@ -503,7 +512,7 @@ body {
 .policy-filter-panel { position: sticky; top: 78px; padding: 18px; }
 .policy-filter-panel h2, .policy-list-heading h2, .handbook-intro h2, .handbook-panel h2 { margin: 4px 0 12px; font-size: 1.25rem; }
 .policy-search { display: flex; align-items: center; gap: 7px; height: 42px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); }
-.policy-search span { color: var(--primary); font-size: 1.25rem; }
+.policy-search span { color: var(--primary-strong); font-size: 1.25rem; }
 .policy-search input { min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; font-size: 0.78rem; }
 .policy-category-list { display: grid; gap: 4px; margin-top: 14px; }
 .policy-category-list button { display: flex; align-items: center; justify-content: space-between; min-height: 36px; padding: 0 9px; border: 0; border-radius: 7px; color: var(--muted); background: transparent; text-align: left; font: inherit; font-size: 0.8rem; font-weight: 700; cursor: pointer; }
@@ -545,18 +554,29 @@ body {
 .handbook-version { flex: 0 0 150px; padding: 14px; border-left: 3px solid var(--primary); background: var(--primary-soft); }
 .handbook-version span, .handbook-version small { display: block; color: var(--primary-strong); font-size: 0.68rem; font-weight: 900; }
 .handbook-version strong { display: block; margin: 4px 0; color: var(--primary-strong); font-size: 1.4rem; }
-.workflow-timeline { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; padding: 18px 8px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+/* --steps มาจาก inline style ของแต่ละไทม์ไลน์: หน้านี้มีหลายกระบวนการที่จำนวน
+   ขั้นไม่เท่ากัน ถ้า fix ไว้ที่ 5 กระบวนการที่สั้นกว่าจะเหลือช่องว่างค้าง */
+.workflow-timeline { display: grid; grid-template-columns: repeat(var(--steps, 5), minmax(0, 1fr)); gap: 0; padding: 18px 8px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
 .workflow-step { position: relative; min-width: 0; padding: 0 10px; }
-.workflow-number { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; color: white; background: var(--primary); font-size: 0.7rem; font-weight: 900; }
+/* ตัวเลขขาวบน --primary ได้ 4.49:1 ตกเกณฑ์ 4.5:1 ที่ 0.7rem — ใช้ token ปุ่มที่เข้ม
+   พอทั้งสองธีมแบบเดียวกับ .secondary-button */
+.workflow-number { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; color: white; background: var(--primary-button-bg); font-size: 0.7rem; font-weight: 900; }
 .workflow-line { position: absolute; top: 17px; left: 44px; right: 4px; height: 1px; background: var(--line-strong); }
 .workflow-copy { position: relative; padding-top: 14px; }
-.workflow-copy > span { color: var(--primary); font-size: 0.68rem; font-weight: 900; }
+.workflow-copy > span { color: var(--primary-strong); font-size: 0.68rem; font-weight: 900; }
 .workflow-copy h3 { margin: 4px 0; font-size: 0.9rem; }
 .workflow-copy p { margin: 0; color: var(--muted); font-size: 0.75rem; line-height: 1.55; }
 .workflow-arrow { position: absolute; top: 8px; right: -3px; color: var(--line-strong); font-size: 1.2rem; }
-.handbook-two-column { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 16px; }
-.handbook-panel { padding: 18px; }
-.role-table-wrap { overflow-x: auto; }
+/* คอลัมน์ต้องยุบตาม "ความกว้างที่เหลือจริง" ไม่ใช่ความกว้างจอ: เมื่อ sidebar กิน
+   280px จอ 768px จะเหลือที่ให้เนื้อหาแค่ ~441px แต่ media query ที่ 720px ยังไม่ทำงาน
+   ผลคือสองคอลัมน์ยังอยู่แล้วตารางที่ min-width 590px ดันจนล้นหน้าออกไป 294px
+   max(320px, 42%) การันตีว่าเหลือที่ไม่ถึงสองคอลัมน์ก็ยุบเอง และไม่เกินสองคอลัมน์
+   แม้จอกว้าง */
+.handbook-two-column { display: grid; grid-template-columns: repeat(auto-fit, minmax(max(320px, 42%), 1fr)); gap: 16px; }
+/* grid item มี min-width: auto ตามค่าเริ่มต้น = ไม่ยอมแคบกว่า min-content ของลูก
+   ทำให้ overflow-x: auto ข้างในไม่มีผล ต้องปล่อยให้หดได้ก่อนตารางจึงจะเลื่อนเอง */
+.handbook-panel { padding: 18px; min-width: 0; }
+.role-table-wrap { overflow-x: auto; min-width: 0; }
 .role-table { width: 100%; min-width: 590px; border-collapse: collapse; }
 .role-table th, .role-table td { padding: 10px 8px; border-bottom: 1px solid var(--line); text-align: left; font-size: 0.76rem; vertical-align: top; }
 .role-table th { color: var(--muted); font-size: 0.68rem; letter-spacing: 0.04em; }
@@ -564,7 +584,7 @@ body {
 .role-table td:first-child { color: var(--text); }
 .rules-list { display: grid; gap: 3px; }
 .rules-list > div { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
-.rules-list span { color: var(--primary); font-size: 0.7rem; font-weight: 900; }
+.rules-list span { color: var(--primary-strong); font-size: 0.7rem; font-weight: 900; }
 .rules-list p { margin: 0; color: var(--muted); font-size: 0.78rem; line-height: 1.5; }
 .incident-panel { display: grid; gap: 16px; }
 .incident-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }

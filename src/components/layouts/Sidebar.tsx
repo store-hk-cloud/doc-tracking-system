@@ -31,7 +31,9 @@ export function Sidebar() {
       <div style={{ padding: '20px 16px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
         <img src="/icons/hillkoff-emblem.png" alt="Hillkoff" width={38} height={38} style={{ flexShrink: 0 }} />
         <div>
-          <h3 style={{ fontSize: '0.95rem', fontWeight: 800, margin: 0, lineHeight: 1.25, color: 'var(--primary)' }}>
+          {/* --primary บนพื้นการ์ดได้ 4.49:1 ตกเกณฑ์ 4.5:1 — --primary-strong พลิกค่า
+              ถูกทั้งสองธีมและได้ 6.81:1 */}
+          <h3 style={{ fontSize: '0.95rem', fontWeight: 800, margin: 0, lineHeight: 1.25, color: 'var(--primary-strong)' }}>
             จดหมาย พัสดุ<br />เอกสารภายใน
           </h3>
           <div className="title-accent" style={{ width: 32, height: 3, marginTop: 6, animation: 'none' }} />
