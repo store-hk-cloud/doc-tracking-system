@@ -276,24 +276,21 @@ export default function RecipientListPage() {
       }
     };
 
-    // ส่งพร้อมกันได้ไม่เกิน 4 คำขอ: ฝั่งเซิร์ฟเวอร์แต่ละรายการต้องไปอัปเดต Google
-    // Sheets ซึ่งอ่านทุกแท็บทุกแถวเพื่อหาแถวของเอกสารนั้น ยิง 50 คำขอพร้อมกันจะชน
-    // โควตาของ Sheets แล้วช้ากว่าเดิม ไม่ใช่เร็วกว่า
-    const CONCURRENCY = 4;
-    const queue = [...targets];
+    // ยิงทุกใบพร้อมกัน ให้เหมือนหน้าส่งมอบ (ตามที่ผู้ใช้สั่ง)
+    //
+    // เดิมจำกัดไว้ 4 คำขอเพราะฝั่งเซิร์ฟเวอร์ต้องอ่านทุกแท็บของ Google Sheets ต่อ
+    // หนึ่งใบเพื่อหาแถวของเอกสารนั้น ยิงพร้อมกันหลายสิบใบจึงชนโควตาได้ แต่ตอนนี้การ
+    // sync Sheets เป็น best-effort แล้ว (api/deliveries/route.ts) ถ้าชนโควตาเอกสารยัง
+    // ถูกรับสำเร็จ เสียแค่แถวใน Sheets ไม่ถูกอัปเดต ความเสียหายจึงจำกัดอยู่ที่กระจก
+    // ไม่ใช่ฐานข้อมูล — ส่วนใบที่ไม่สำเร็จจริงยังถูกรายงานรายใบด้านล่าง
     const failures: { label: string; error: string }[] = [];
     let okCount = 0;
-    const worker = async () => {
-      for (;;) {
-        const doc = queue.shift();
-        if (!doc) return;
-        const result = await receiveOne(doc);
-        if (result.ok) okCount += 1;
-        else failures.push({ label: result.label!, error: result.error! });
-        setBulkProgress((current) => ({ ...current, done: current.done + 1 }));
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker));
+    await Promise.all(targets.map(async (doc: any) => {
+      const result = await receiveOne(doc);
+      if (result.ok) okCount += 1;
+      else failures.push({ label: result.label!, error: result.error! });
+      setBulkProgress((current) => ({ ...current, done: current.done + 1 }));
+    }));
 
     setBulkMessage(
       failures.length > 0

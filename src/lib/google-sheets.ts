@@ -39,6 +39,52 @@ function todaySheetName(): string {
   return new Date().toISOString().split('T')[0];
 }
 
+/* ─────────────────────── กันชนโควตาของ Google Sheets ───────────────────────
+ *
+ * โควตาคือ 300 คำขอ/นาที ต่อโปรเจกต์ และ 60 คำขอ/นาที ต่อผู้ใช้ ซึ่งที่นี่คือ
+ * service account ตัวเดียว หน้าเว็บยิงการลงนามพร้อมกันทั้งหมดได้ (หลายสิบใบ)
+ * และแต่ละใบต้องอ่านทุกแท็บเพื่อหาแถวของตัวเอง ถ้าปล่อยตามนั้นจะเกินโควตาทันที
+ *
+ * กันสามชั้น: จำกัดจำนวนคำขอที่ออกไปพร้อมกัน · retry แบบถอยหลังเมื่อโดน 429
+ * · ทำดัชนีตำแหน่งแถวครั้งเดียวแล้วใช้ร่วมกันทุกคำขอ (ดู getLocationIndex)
+ * ทั้งหมดอยู่ฝั่งเซิร์ฟเวอร์ หน้าเว็บจึงยังยิงพร้อมกันได้เหมือนเดิม
+ */
+const SHEETS_MAX_CONCURRENT = 5;
+let activeSheetsCalls = 0;
+const sheetsQueue: (() => void)[] = [];
+
+const RETRYABLE_STATUSES = [429, 500, 502, 503, 504];
+
+async function callWithRetry<T>(fn: () => Promise<T>, attempts = 4): Promise<T> {
+  let delay = 600;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      const status = Number(error?.code ?? error?.status ?? error?.response?.status);
+      if (attempt >= attempts || !RETRYABLE_STATUSES.includes(status)) throw error;
+      // jitter กันไม่ให้คำขอที่โดน 429 พร้อมกันกลับมายิงพร้อมกันอีกรอบ
+      await new Promise((resolve) => setTimeout(resolve, delay + Math.random() * 300));
+      delay *= 2;
+      console.warn(`[Google Sheets] โดน ${status} ลองใหม่ครั้งที่ ${attempt + 1}`);
+    }
+  }
+}
+
+/** ปล่อยคำขอออกไปได้ไม่เกิน SHEETS_MAX_CONCURRENT ตัวพร้อมกัน ที่เหลือเข้าคิว */
+async function withSheetsSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (activeSheetsCalls >= SHEETS_MAX_CONCURRENT) {
+    await new Promise<void>((resolve) => sheetsQueue.push(resolve));
+  }
+  activeSheetsCalls += 1;
+  try {
+    return await callWithRetry(fn);
+  } finally {
+    activeSheetsCalls -= 1;
+    sheetsQueue.shift()?.();
+  }
+}
+
 async function getOrCreateSpreadsheet(): Promise<string> {
   return process.env.GOOGLE_SHEETS_SPREADSHEET_ID || PINNED_SPREADSHEET_ID;
 }
@@ -131,13 +177,13 @@ export async function batchUpdateRowsOrThrow(sheet: string, updates: { row: numb
   if (updates.length === 0) return;
   const spreadsheetId = await getSpreadsheetId();
   const sheets = getSheetsClient();
-  await sheets.spreadsheets.values.batchUpdate({
+  await withSheetsSlot(() => sheets.spreadsheets.values.batchUpdate({
     spreadsheetId,
     requestBody: {
       valueInputOption: 'USER_ENTERED',
       data: updates.map((u) => ({ range: `${sheet}!A${u.row}:U${u.row}`, values: [u.values] })),
     },
-  });
+  }));
 }
 
 export async function appendRow(sheetName: string, values: string[]) {
@@ -161,12 +207,15 @@ export async function appendRowsOrThrow(sheetName: string, rows: string[][]) {
   const spreadsheetId = await getSpreadsheetId();
   const sheets = getSheetsClient();
   const today = await getOrCreateDailySheet();
-  await sheets.spreadsheets.values.append({
+  await withSheetsSlot(() => sheets.spreadsheets.values.append({
     spreadsheetId,
     range: `${today}!A:U`,
     valueInputOption: 'USER_ENTERED',
     requestBody: { values: rows },
-  });
+  }));
+  // แถวที่เพิ่งเพิ่มยังไม่อยู่ในดัชนี — ทิ้งดัชนีเพื่อไม่ให้ findRowLocation หาไม่เจอ
+  // แล้วต้อง rebuild เองทุกครั้งที่ถูกเรียกถึงแถวใหม่
+  locationIndexes.clear();
 }
 
 // Update a row in a specific sheet tab (use findRowLocation first — a row may
@@ -175,44 +224,83 @@ export async function updateRowInSheet(sheet: string, rowIndex: number, values: 
   try {
     const spreadsheetId = await getSpreadsheetId();
     const sheets = getSheetsClient();
-    await sheets.spreadsheets.values.update({
+    await withSheetsSlot(() => sheets.spreadsheets.values.update({
       spreadsheetId,
       range: `${sheet}!A${rowIndex}:U${rowIndex}`,
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: [values] },
-    });
+    }));
   } catch (error) {
     console.error(`[Google Sheets] Update in sheet error:`, error);
   }
 }
 
+type RowLocation = { sheet: string; row: number };
+
+// ดัชนี "ค่าในคอลัมน์ → แท็บ+แถว" ต่อหนึ่งคอลัมน์ อ่านทุกแท็บครั้งเดียวแล้วใช้ซ้ำ
+// เดิมทุกคำขอสแกนทุกแท็บของตัวเอง การรับ 50 ใบจึงเท่ากับสแกนสเปรดชีต 50 รอบ
+// TTL สั้นเพราะดัชนีเก็บ "เลขแถว" ถ้ามีคนแทรก/ลบแถวในสเปรดชีตด้วยมือ เลขแถวที่
+// จำไว้จะเลื่อน และการเขียนอาจไปทับแถวข้างเคียง 60 วินาทีคือหน้าต่างที่ยอมรับได้
+const LOCATION_INDEX_TTL_MS = 60_000;
+const locationIndexes = new Map<number, { builtAt: number; byValue: Map<string, RowLocation> }>();
+// คำขอที่มาพร้อมกันต้องรอดัชนีชุดเดียวกัน ไม่ใช่ต่างคนต่างสร้าง
+const locationIndexBuilds = new Map<number, Promise<Map<string, RowLocation>>>();
+
+async function buildLocationIndex(column: number): Promise<Map<string, RowLocation>> {
+  const spreadsheetId = await getSpreadsheetId();
+  const sheets = getSheetsClient();
+  const today = todaySheetName();
+  const { data: info } = await withSheetsSlot<any>(() => sheets.spreadsheets.get({ spreadsheetId }));
+  const allSheets = (info?.sheets || []).map((s: any) => s.properties?.title).filter(Boolean);
+
+  // เรียงแท็บวันนี้ไว้หน้าสุด และเก็บ "ค่าแรกที่เจอ" เพื่อให้ผลลัพธ์ตรงกับการ
+  // ค้นแบบเดิมทุกกรณี รวมถึงกรณีรหัสอ้างอิงซ้ำข้ามแท็บ
+  const targetSheets = allSheets.includes(today)
+    ? [today, ...allSheets.filter((s: string) => s !== today)]
+    : allSheets;
+
+  const byValue = new Map<string, RowLocation>();
+  for (const sheet of targetSheets) {
+    const res = await withSheetsSlot<any>(() => sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${sheet}!A:U`,
+    }));
+    const rows = res.data.values || [];
+    for (let i = 1; i < rows.length; i++) {
+      const key = rows[i][column - 1]?.toString();
+      if (key && !byValue.has(key)) byValue.set(key, { sheet, row: i + 1 });
+    }
+  }
+  return byValue;
+}
+
+async function getLocationIndex(column: number, forceRebuild: boolean): Promise<Map<string, RowLocation>> {
+  const cached = locationIndexes.get(column);
+  if (!forceRebuild && cached && Date.now() - cached.builtAt < LOCATION_INDEX_TTL_MS) {
+    return cached.byValue;
+  }
+  const inFlight = locationIndexBuilds.get(column);
+  if (inFlight) return inFlight;
+
+  const build = buildLocationIndex(column)
+    .then((byValue) => {
+      locationIndexes.set(column, { builtAt: Date.now(), byValue });
+      return byValue;
+    })
+    .finally(() => locationIndexBuilds.delete(column));
+  locationIndexBuilds.set(column, build);
+  return build;
+}
+
 // Returns which sheet TAB a row lives in, not just its row number — a match found
 // in an older daily tab must be updated there, not in today's tab (see updateRowInSheet).
-export async function findRowLocation(column: number, value: string): Promise<{ sheet: string; row: number } | null> {
+export async function findRowLocation(column: number, value: string): Promise<RowLocation | null> {
   try {
-    const spreadsheetId = await getSpreadsheetId();
-    const sheets = getSheetsClient();
-    const today = todaySheetName();
-    const { data: info } = await sheets.spreadsheets.get({ spreadsheetId });
-    const allSheets = (info?.sheets || []).map((s: any) => s.properties?.title).filter(Boolean);
-
-    const targetSheets = allSheets.includes(today)
-      ? [today, ...allSheets.filter((s: string) => s !== today)]
-      : allSheets;
-
-    for (const sheet of targetSheets) {
-      const res = await sheets.spreadsheets.values.get({
-        spreadsheetId,
-        range: `${sheet}!A:U`,
-      });
-      const rows = res.data.values || [];
-      for (let i = 1; i < rows.length; i++) {
-        if (rows[i][column - 1]?.toString() === value) {
-          return { sheet, row: i + 1 };
-        }
-      }
-    }
-    return null;
+    const hit = (await getLocationIndex(column, false)).get(value);
+    if (hit) return hit;
+    // ไม่เจอในดัชนี = อาจเป็นแถวที่ถูก append หลังดัชนีถูกสร้าง จึงสร้างใหม่หนึ่งครั้ง
+    // ก่อนจะสรุปว่าไม่มีจริง (ราคาเท่าการสแกนแบบเดิม ไม่แพงกว่า)
+    return (await getLocationIndex(column, true)).get(value) || null;
   } catch (error) {
     console.error('[Google Sheets] Find error:', error);
     return null;
