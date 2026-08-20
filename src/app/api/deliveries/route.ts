@@ -150,6 +150,15 @@ export async function POST(request: NextRequest) {
     if (deliveryError) throw deliveryError;
 
     // Sync to Sheets (update this department's row only)
+    //
+    // ต้องเป็น best-effort: ณ จุดนี้เอกสารถูกรับเรียบร้อยแล้วในฐานข้อมูล ถ้า Sheets
+    // ล้มแล้วปล่อยให้ throw จะไปโดน catch ด้านล่างและตอบ 500 ทั้งที่งานสำเร็จแล้ว
+    // ผู้ใช้เห็น "ล้มเหลว" แล้วกดซ้ำ รอบสองได้ 409 ยิ่งสับสนหนักกว่าเดิม
+    //
+    // เห็นชัดตอนรับหลายรายการพร้อมกัน เพราะ findRowLocation อ่านทุกแท็บทุกแถวต่อ
+    // หนึ่งรายการ รับ 50 รายการจึงยิง Sheets API หลายร้อยครั้งและชนโควตาได้ง่าย
+    // ความล้มเหลวของกระจกข้อมูลต้องไม่กลายเป็นความล้มเหลวของงานจริง
+    try {
     const { data: doc } = await supabase.from('documents').select('*').eq('id', recipient.document_id).single();
     if (doc) {
       let deptName = '';
@@ -187,6 +196,9 @@ export async function POST(request: NextRequest) {
           recipient.id,                     // U: รหัสอ้างอิง
         ]);
       }
+    }
+    } catch (sheetsError: any) {
+      console.error('[Deliveries] sync Google Sheets ไม่สำเร็จ (เอกสารถูกบันทึกแล้ว):', sheetsError?.message || sheetsError);
     }
 
     return NextResponse.json({ success: true, data: delivery });

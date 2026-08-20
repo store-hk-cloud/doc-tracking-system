@@ -307,22 +307,25 @@ body {
   animation: toast-fade-in 0.15s ease;
 }
 
+/* ตัวหนังสือในกล่องแจ้งผลต้องเป็น --text: วัดค่าที่ render จริงแล้ว --warning บน
+   --warning-bg ได้ 4.23:1 และ --danger บน --danger-bg ได้ 4.28:1 ในธีมมืด ทั้งคู่
+   ต่ำกว่า 4.5:1 — สีของสถานะยังสื่อผ่านเส้นขอบและพื้นซึ่งไม่มีเกณฑ์ตัวอักษร */
 .toast.success {
   border-color: var(--success-line);
   background: var(--success-bg);
-  color: var(--success);
+  color: var(--text);
 }
 
 .toast.error {
   border-color: var(--danger-line);
   background: var(--danger-bg);
-  color: var(--danger);
+  color: var(--text);
 }
 
 .toast.warning {
   border-color: var(--warning-line);
   background: var(--warning-bg);
-  color: var(--warning);
+  color: var(--text);
 }
 
 .loading-screen {

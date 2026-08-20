@@ -20,10 +20,16 @@ export default function RecipientListPage() {
   // Pending tab
   const [pendingDocs, setPendingDocs] = useState<any[]>([]);
   const [pendingLoading, setPendingLoading] = useState(true);
-  const [pendingDate, setPendingDate] = useState(todayStr());
+  // ค่าว่าง = แสดงทุกวัน ซึ่งเป็นค่าเริ่มต้น เพราะหน้านี้คือ "คิวงานที่ค้าง"
+  // เดิมล็อกไว้ที่วันนี้วันเดียว งานที่ค้างจากวันก่อนจึงมองไม่เห็นและ "เลือกทั้งหมด"
+  // ก็หมายถึงทั้งหมดของวันนั้นเท่านั้น (ตรวจข้อมูลจริง: ค้าง 114 รายการกระจายอยู่ 7 วัน
+  // วันนี้มีแค่ 9 รายการ อีก 105 รายการถูกซ่อนไว้)
+  const [pendingDate, setPendingDate] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkSigning, setBulkSigning] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState({ done: 0, total: 0 });
   const [bulkMessage, setBulkMessage] = useState('');
+  const [bulkFailures, setBulkFailures] = useState<{ label: string; error: string }[]>([]);
   const [showBulkSignModal, setShowBulkSignModal] = useState(false);
   const [bulkSignature, setBulkSignature] = useState('');
   const [bulkSignError, setBulkSignError] = useState('');
@@ -77,8 +83,11 @@ export default function RecipientListPage() {
     : profile?.department_id === doc.recipient_dept_id && doc.status === 'delivered' ? 'recipient' : null;
   const canReceive = (doc: any) => workflowAction(doc) === 'recipient';
 
-  const visiblePending = pendingDocs.filter((d: any) => (d.admin_signed_at || '').split('T')[0] === pendingDate);
+  const visiblePending = pendingDocs.filter(
+    (d: any) => !pendingDate || (d.admin_signed_at || '').split('T')[0] === pendingDate
+  );
   const signablePending = visiblePending.filter(canReceive);
+  const allSignableSelected = signablePending.length > 0 && signablePending.every((d: any) => selectedIds.has(d.id));
 
   const toggleSelect = (id: string) => {
     setSelectedIds((current) => {
@@ -88,10 +97,10 @@ export default function RecipientListPage() {
     });
   };
 
+  // เทียบว่า "ทุกใบที่เลือกได้ถูกเลือกแล้วหรือยัง" ไม่ใช่เทียบแค่จำนวน เพราะจำนวน
+  // เท่ากันได้ทั้งที่เป็นชุดคนละชุด (เช่นเลือกไว้แล้วเปลี่ยนตัวกรองวันที่)
   const toggleSelectAll = () => {
-    setSelectedIds((current) =>
-      current.size === signablePending.length ? new Set() : new Set(signablePending.map((d: any) => d.id))
-    );
+    setSelectedIds(allSignableSelected ? new Set() : new Set(signablePending.map((d: any) => d.id)));
   };
 
   const openBulkSignModal = () => {
@@ -107,37 +116,64 @@ export default function RecipientListPage() {
       setBulkSignError('กรุณาระบุชื่อผู้รับเอกสาร');
       return;
     }
+    const targets = signablePending.filter((d: any) => selectedIds.has(d.id));
     setBulkSigning(true);
     setBulkSignError('');
     setBulkMessage('');
-    const ids = Array.from(selectedIds);
-    const results = await Promise.all(
-      ids.map((id) =>
-        window
-          .fetch('/api/deliveries', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              document_recipient_id: id,
-              is_verified: true,
-              recipient_signature: recipientSignature,
-              verification_note: null,
-            }),
-          })
-          .then((r) => r.json())
-          .catch(() => ({ success: false }))
-      )
-    );
-    const okCount = results.filter((r: any) => r.success).length;
-    const failCount = results.length - okCount;
+    setBulkFailures([]);
+    setBulkProgress({ done: 0, total: targets.length });
+    setShowBulkSignModal(false);
+
+    const receiveOne = async (doc: any) => {
+      try {
+        const res = await window.fetch('/api/deliveries', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            document_recipient_id: doc.id,
+            is_verified: true,
+            recipient_signature: recipientSignature,
+            verification_note: null,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!data?.success) {
+          return { ok: false, label: `เลขที่ ${doc.running_no}`, error: data?.error || `HTTP ${res.status}` };
+        }
+        return { ok: true };
+      } catch (e: any) {
+        return { ok: false, label: `เลขที่ ${doc.running_no}`, error: e?.message || 'ส่งคำขอไม่สำเร็จ' };
+      }
+    };
+
+    // ส่งพร้อมกันได้ไม่เกิน 4 คำขอ: ฝั่งเซิร์ฟเวอร์แต่ละรายการต้องไปอัปเดต Google
+    // Sheets ซึ่งอ่านทุกแท็บทุกแถวเพื่อหาแถวของเอกสารนั้น ยิง 50 คำขอพร้อมกันจะชน
+    // โควตาของ Sheets แล้วช้ากว่าเดิม ไม่ใช่เร็วกว่า
+    const CONCURRENCY = 4;
+    const queue = [...targets];
+    const failures: { label: string; error: string }[] = [];
+    let okCount = 0;
+    const worker = async () => {
+      for (;;) {
+        const doc = queue.shift();
+        if (!doc) return;
+        const result = await receiveOne(doc);
+        if (result.ok) okCount += 1;
+        else failures.push({ label: result.label!, error: result.error! });
+        setBulkProgress((current) => ({ ...current, done: current.done + 1 }));
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker));
+
     setBulkMessage(
-      failCount > 0
-        ? `✅ สำเร็จ ${okCount} รายการ, ❌ ล้มเหลว ${failCount} รายการ (อาจถูกดำเนินการไปแล้ว)`
+      failures.length > 0
+        ? `ลงชื่อรับสำเร็จ ${okCount} รายการ · ไม่สำเร็จ ${failures.length} รายการ`
         : `✅ ลงชื่อรับสำเร็จ ${okCount} รายการ`
     );
+    setBulkFailures(failures);
     setSelectedIds(new Set());
     setBulkSigning(false);
-    setShowBulkSignModal(false);
+    setBulkProgress({ done: 0, total: 0 });
     await loadPending();
     setClosedLoaded(false);
   };
@@ -166,14 +202,24 @@ export default function RecipientListPage() {
               วันที่ส่งมอบ:
               <input type="date" value={pendingDate} onChange={(e) => setPendingDate(e.target.value)} />
             </label>
-            {pendingDate !== todayStr() && (
-              <button className="ghost-button" style={{ width: 'auto', padding: '0 12px' }} onClick={() => setPendingDate(todayStr())}>
-                กลับไปวันนี้
+            {pendingDate !== '' && (
+              <button className="ghost-button" style={{ width: 'auto', padding: '0 12px' }} onClick={() => setPendingDate('')}>
+                แสดงทุกวัน
               </button>
             )}
+            {pendingDate !== todayStr() && (
+              <button className="ghost-button" style={{ width: 'auto', padding: '0 12px' }} onClick={() => setPendingDate(todayStr())}>
+                เฉพาะวันนี้
+              </button>
+            )}
+            <span style={{ color: 'var(--muted)', fontSize: '0.82rem' }}>
+              {pendingDate ? `แสดงเฉพาะวันที่ ${pendingDate}` : `งานค้างทุกวัน ${visiblePending.length} รายการ`}
+            </span>
           </div>
 
-          {selectedIds.size > 0 && (
+          {/* แถบนี้อยู่เหนือตารางเสมอเมื่อมีงานที่รับได้ เพราะช่องติ๊ก "เลือกทั้งหมด"
+              อยู่ในหัวตารางที่กว้างอย่างน้อย 720px บนมือถือจึงอยู่นอกจอจนกว่าจะเลื่อนไปหา */}
+          {signablePending.length > 0 && (
             <div
               style={{
                 display: 'flex',
@@ -186,19 +232,54 @@ export default function RecipientListPage() {
                 flexWrap: 'wrap',
               }}
             >
-              <span style={{ fontWeight: 700 }}>เลือกแล้ว {selectedIds.size} รายการ</span>
-              <button className="secondary-button" style={{ width: 'auto', padding: '0 16px' }} onClick={openBulkSignModal} disabled={bulkSigning}>
-                {bulkSigning ? 'กำลังดำเนินการ...' : '✅ ลงชื่อรับทั้งหมด'}
+              <button
+                className="ghost-button"
+                style={{ width: 'auto', padding: '0 14px' }}
+                onClick={toggleSelectAll}
+                disabled={bulkSigning}
+              >
+                {allSignableSelected ? 'ไม่เลือกเลย' : `เลือกทั้งหมด (${signablePending.length})`}
+              </button>
+              <span style={{ fontWeight: 700 }}>
+                {selectedIds.size > 0 ? `เลือกแล้ว ${selectedIds.size} รายการ` : `รับได้ ${signablePending.length} รายการ`}
+              </span>
+              <button
+                className="secondary-button"
+                style={{ width: 'auto', padding: '0 16px' }}
+                onClick={openBulkSignModal}
+                disabled={bulkSigning || selectedIds.size === 0}
+              >
+                {bulkSigning
+                  ? `กำลังดำเนินการ ${bulkProgress.done}/${bulkProgress.total}`
+                  : `✅ ลงชื่อรับ ${selectedIds.size || ''} รายการ`}
               </button>
             </div>
           )}
 
-          {bulkMessage && <div className="toast success" style={{ position: 'static', marginBottom: 12 }}>{bulkMessage}</div>}
+          {bulkMessage && (
+            <div
+              className={`toast ${bulkFailures.length > 0 ? 'warning' : 'success'}`}
+              style={{ position: 'static', marginBottom: 12 }}
+            >
+              {bulkMessage}
+              {bulkFailures.length > 0 && (
+                <ul style={{ margin: '8px 0 0', paddingLeft: 20, fontSize: '0.82rem', fontWeight: 400 }}>
+                  {bulkFailures.map((failure) => (
+                    <li key={failure.label}>
+                      {failure.label} — {failure.error}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
 
           {pendingLoading ? (
             <div className="empty-search">กำลังโหลด...</div>
           ) : visiblePending.length === 0 ? (
-            <div className="empty-search">ไม่มีเอกสารรอดำเนินการในวันที่เลือก</div>
+            <div className="empty-search">
+              {pendingDate ? 'ไม่มีเอกสารรอดำเนินการในวันที่เลือก' : 'ไม่มีเอกสารรอดำเนินการ'}
+            </div>
           ) : (
             <div className="table-wrap">
               <table>
@@ -207,8 +288,10 @@ export default function RecipientListPage() {
                     <th>
                       <input
                         type="checkbox"
-                        checked={selectedIds.size === signablePending.length && signablePending.length > 0}
+                        aria-label="เลือกทุกรายการที่รับได้"
+                        checked={allSignableSelected}
                         onChange={toggleSelectAll}
+                        disabled={bulkSigning || signablePending.length === 0}
                       />
                     </th>
                     <th>No.</th>
@@ -217,6 +300,7 @@ export default function RecipientListPage() {
                     <th>ผู้ส่ง</th>
                     <th>เรื่อง</th>
                     <th>ผู้ส่งมอบ</th>
+                    <th>วันที่ส่งมอบ</th>
                     <th>ผู้ตรวจสอบ</th>
                     <th>จัดซื้อ</th>
                     <th>ปลายทาง</th>
@@ -231,7 +315,13 @@ export default function RecipientListPage() {
                       <tr key={doc.id}>
                         <td>
                           {eligibleForBulkReceive && (
-                            <input type="checkbox" checked={selectedIds.has(doc.id)} onChange={() => toggleSelect(doc.id)} />
+                            <input
+                              type="checkbox"
+                              aria-label={`เลือกเอกสารเลขที่ ${doc.running_no}`}
+                              checked={selectedIds.has(doc.id)}
+                              onChange={() => toggleSelect(doc.id)}
+                              disabled={bulkSigning}
+                            />
                           )}
                         </td>
                         <td className="code-cell">{doc.running_no}</td>
@@ -240,6 +330,7 @@ export default function RecipientListPage() {
                         <td>{doc.sender}</td>
                         <td>{doc.subject}</td>
                         <td>{doc.admin_signature || '-'}</td>
+                        <td>{(doc.admin_signed_at || '').split('T')[0] || '-'}</td>
                         <td>{doc.inspector_signature || '-'}</td>
                         <td>{doc.purchasing_signature || '-'}</td>
                         <td>{doc.recipient_dept_name}</td>

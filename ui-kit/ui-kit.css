@@ -795,12 +795,15 @@ select:hover {
   min-width: 980px;
 }
 
+/* color เป็น --text ไม่ใช่ --warning: วัดที่ render จริงได้ 4.08-4.23:1 ตกเกณฑ์
+   4.5:1 และปุ่มนี้อยู่ทุกแถวของทุกตารางในระบบ จึงกระทบทั้งแอป — เส้นขอบและพื้น
+   สีเตือนยังคงเดิม ปุ่มยังเด่นเหมือนเก่า */
 .table-action-button {
   min-height: 32px;
   border: 1px solid var(--warning-line);
   border-radius: var(--radius-sm);
   background: var(--warning-bg);
-  color: var(--warning);
+  color: var(--text);
   font-weight: 700;
   white-space: nowrap;
 }
