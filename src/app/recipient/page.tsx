@@ -11,6 +11,18 @@ const ACTION_LABELS: Record<string, string> = {
   purchasing: 'เซ็นจัดซื้อ',
   recipient: 'ลงชื่อรับ',
 };
+// ชื่อช่องลายเซ็นที่ต้องกรอกในแต่ละขั้น ใช้ทั้งใน popup เดี่ยวและตอนกดหลายรายการ
+const ACTION_SIGNATURE_LABELS: Record<string, string> = {
+  inspector: 'ชื่อผู้ตรวจสอบ',
+  purchasing: 'ชื่อจัดซื้อ',
+  recipient: 'ชื่อผู้รับเอกสาร',
+};
+const STAGE_LABELS: Record<string, string> = {
+  awaiting_inspector: 'รอผู้ตรวจสอบ',
+  awaiting_purchasing: 'รอจัดซื้อ',
+  awaiting_recipient: 'รอผู้รับ',
+  delivered: 'รอลงชื่อรับ',
+};
 
 export default function RecipientListPage() {
   const { profile } = useAuth();
@@ -33,6 +45,17 @@ export default function RecipientListPage() {
   const [showBulkSignModal, setShowBulkSignModal] = useState(false);
   const [bulkSignature, setBulkSignature] = useState('');
   const [bulkSignError, setBulkSignError] = useState('');
+
+  // popup ลงนามรายการเดียว: เดิมกดปุ่มในตารางแล้วเด้งไป /recipient/[id] ซึ่งทำให้
+  // เสียคิวงานที่เลื่อนหาไว้ แล้วต้องกด back กลับมาเองทุกใบ
+  const [signTarget, setSignTarget] = useState<any>(null);
+  const [signAction, setSignAction] = useState('');
+  const [signSignature, setSignSignature] = useState('');
+  const [signVerified, setSignVerified] = useState(true);
+  const [signNote, setSignNote] = useState('');
+  const [signSubmitting, setSignSubmitting] = useState(false);
+  const [signError, setSignError] = useState('');
+  const [signEditing, setSignEditing] = useState(false);
 
   // Closed tab
   const [closedDocs, setClosedDocs] = useState<any[]>([]);
@@ -81,13 +104,41 @@ export default function RecipientListPage() {
   const workflowAction = (doc: any) => isGoodsReceipt(doc.subject)
     ? getGoodsReceiptWorkflowAction(profile?.department_code, doc.status)
     : profile?.department_id === doc.recipient_dept_id && doc.status === 'delivered' ? 'recipient' : null;
-  const canReceive = (doc: any) => workflowAction(doc) === 'recipient';
 
   const visiblePending = pendingDocs.filter(
     (d: any) => !pendingDate || (d.admin_signed_at || '').split('T')[0] === pendingDate
   );
-  const signablePending = visiblePending.filter(canReceive);
+  // getGoodsReceiptWorkflowAction คืน 'inspector' ทั้งตอน awaiting_inspector (งานที่รอ)
+  // และ awaiting_purchasing (เปิดให้ย้อนแก้ชื่อที่เซ็นไว้แล้ว) เหมือนกัน ถ้านับรวมเข้า
+  // "เลือกทั้งหมด" การกดครั้งเดียวจะทับลายเซ็นที่เก็บมาแล้วทั้งกอง — เลือกเป็นชุดได้
+  // เฉพาะขั้นที่ยังรอตัวเองจริง ส่วนการย้อนแก้ยังทำได้ทีละใบจากปุ่มในตาราง
+  const isPendingOwnStage = (doc: any) => {
+    const action = workflowAction(doc);
+    if (action === 'inspector') return doc.status === 'awaiting_inspector';
+    if (action === 'purchasing') return doc.status === 'awaiting_purchasing';
+    return action === 'recipient';
+  };
+
+  // เลือกได้ทุกใบที่เป็นงานของตัวเอง ไม่ใช่เฉพาะขั้น "ลงชื่อรับ" เพราะคนคนเดียว
+  // มีทั้งใบที่รอเซ็นผู้ตรวจสอบและใบที่รอลงชื่อรับค้างอยู่พร้อมกันได้
+  const signablePending = visiblePending.filter(isPendingOwnStage);
   const allSignableSelected = signablePending.length > 0 && signablePending.every((d: any) => selectedIds.has(d.id));
+  const selectedByAction = signablePending
+    .filter((d: any) => selectedIds.has(d.id))
+    .reduce((acc: Record<string, number>, d: any) => {
+      const action = workflowAction(d) as string;
+      acc[action] = (acc[action] || 0) + 1;
+      return acc;
+    }, {});
+  // ขั้นต่างกันใช้ช่องลายเซ็นชื่อต่างกัน ถ้าเลือกคละขั้นจะเรียกชื่อรวมว่า "ชื่อผู้ลงนาม"
+  const selectedActionKeys = Object.keys(selectedByAction);
+  const bulkSignatureLabel = selectedActionKeys.length === 1
+    ? ACTION_SIGNATURE_LABELS[selectedActionKeys[0]]
+    : 'ชื่อผู้ลงนาม';
+  const bulkConfirmLabel = selectedActionKeys.length === 1
+    ? (selectedActionKeys[0] === 'recipient' ? '✅ ยืนยันรับเอกสาร'
+      : selectedActionKeys[0] === 'inspector' ? '✅ ยืนยันผู้ตรวจสอบ' : '✅ ยืนยันจัดซื้อ')
+    : '✅ ยืนยันลงนามทั้งหมด';
 
   const toggleSelect = (id: string) => {
     setSelectedIds((current) => {
@@ -103,6 +154,91 @@ export default function RecipientListPage() {
     setSelectedIds(allSignableSelected ? new Set() : new Set(signablePending.map((d: any) => d.id)));
   };
 
+  // ส่งคำขอลงนามหนึ่งใบตามขั้นของใบนั้น — ใช้ร่วมกันทั้ง popup เดี่ยวและแบบหลายรายการ
+  // เพื่อไม่ให้กติกาของสองทางเดินแตกต่างกันเงียบ ๆ
+  const submitSignature = async (
+    doc: any,
+    action: string,
+    signature: string,
+    options: { verified: boolean; note: string },
+  ) => {
+    if (action === 'recipient') {
+      return window.fetch('/api/deliveries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          document_recipient_id: doc.id,
+          is_verified: options.verified,
+          recipient_signature: signature,
+          verification_note: options.verified ? null : options.note,
+        }),
+      });
+    }
+    const field = action === 'inspector' ? 'inspector_signature' : 'purchasing_signature';
+    return window.fetch(`/api/documents/${doc.id}/sign`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [field]: signature }),
+    });
+  };
+
+  const openSignModal = (doc: any, action: string) => {
+    const editing = !isPendingOwnStage(doc);
+    setSignTarget(doc);
+    setSignAction(action);
+    setSignEditing(editing);
+    const previous = action === 'inspector' ? doc.inspector_signature : doc.purchasing_signature;
+    setSignSignature((editing && previous) || profile?.full_name || '');
+    setSignVerified(true);
+    setSignNote('');
+    setSignError('');
+  };
+
+  const closeSignModal = () => {
+    if (signSubmitting) return;
+    setSignTarget(null);
+    setSignAction('');
+    setSignError('');
+  };
+
+  const handleSingleSign = async () => {
+    const signature = signSignature.trim();
+    if (!signature) {
+      setSignError(`กรุณาระบุ${ACTION_SIGNATURE_LABELS[signAction] || 'ชื่อผู้ลงนาม'}`);
+      return;
+    }
+    if (signAction === 'recipient' && !signVerified && !signNote.trim()) {
+      setSignError('กรุณาระบุสาเหตุที่เอกสารไม่ถูกต้อง');
+      return;
+    }
+    setSignSubmitting(true);
+    setSignError('');
+    try {
+      const res = await submitSignature(signTarget, signAction, signature, { verified: signVerified, note: signNote.trim() });
+      const data = await res.json().catch(() => ({}));
+      if (!data?.success) {
+        setSignError(data?.error || `ไม่สำเร็จ (HTTP ${res.status})`);
+        setSignSubmitting(false);
+        return;
+      }
+      setBulkFailures([]);
+      setBulkMessage(
+        signAction === 'recipient'
+          ? (signVerified ? `✅ ลงชื่อรับเลขที่ ${signTarget.running_no} เรียบร้อย` : `⚠️ แจ้งปัญหาเลขที่ ${signTarget.running_no} เรียบร้อย`)
+          : `✅ บันทึก${ACTION_SIGNATURE_LABELS[signAction]}เลขที่ ${signTarget.running_no} แล้ว`
+      );
+      // ปิด popup แล้วกลับมาที่คิวงานทันที พร้อมโหลดรายการใหม่ให้สถานะตรงกับ DB
+      setSignTarget(null);
+      setSignAction('');
+      setSignSubmitting(false);
+      await loadPending();
+      setClosedLoaded(false);
+    } catch (e: any) {
+      setSignError(e?.message || 'ส่งคำขอไม่สำเร็จ');
+      setSignSubmitting(false);
+    }
+  };
+
   const openBulkSignModal = () => {
     if (selectedIds.size === 0) return;
     setBulkSignature(profile?.full_name || '');
@@ -113,7 +249,7 @@ export default function RecipientListPage() {
   const handleBulkSign = async () => {
     const recipientSignature = bulkSignature.trim();
     if (!recipientSignature) {
-      setBulkSignError('กรุณาระบุชื่อผู้รับเอกสาร');
+      setBulkSignError(`กรุณาระบุ${bulkSignatureLabel}`);
       return;
     }
     const targets = signablePending.filter((d: any) => selectedIds.has(d.id));
@@ -124,25 +260,19 @@ export default function RecipientListPage() {
     setBulkProgress({ done: 0, total: targets.length });
     setShowBulkSignModal(false);
 
+    // แบบหลายรายการลงนามว่า "ถูกต้อง" เท่านั้น การแจ้งปัญหาต้องระบุสาเหตุรายใบ
+    // จึงเปิดเป็น popup รายการเดียวแทน
     const receiveOne = async (doc: any) => {
+      const label = `เลขที่ ${doc.running_no} (${ACTION_LABELS[workflowAction(doc) as string] || 'ดำเนินการ'})`;
       try {
-        const res = await window.fetch('/api/deliveries', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            document_recipient_id: doc.id,
-            is_verified: true,
-            recipient_signature: recipientSignature,
-            verification_note: null,
-          }),
-        });
+        const res = await submitSignature(doc, workflowAction(doc) as string, recipientSignature, { verified: true, note: '' });
         const data = await res.json().catch(() => ({}));
         if (!data?.success) {
-          return { ok: false, label: `เลขที่ ${doc.running_no}`, error: data?.error || `HTTP ${res.status}` };
+          return { ok: false, label, error: data?.error || `HTTP ${res.status}` };
         }
         return { ok: true };
       } catch (e: any) {
-        return { ok: false, label: `เลขที่ ${doc.running_no}`, error: e?.message || 'ส่งคำขอไม่สำเร็จ' };
+        return { ok: false, label, error: e?.message || 'ส่งคำขอไม่สำเร็จ' };
       }
     };
 
@@ -167,8 +297,8 @@ export default function RecipientListPage() {
 
     setBulkMessage(
       failures.length > 0
-        ? `ลงชื่อรับสำเร็จ ${okCount} รายการ · ไม่สำเร็จ ${failures.length} รายการ`
-        : `✅ ลงชื่อรับสำเร็จ ${okCount} รายการ`
+        ? `ลงนามสำเร็จ ${okCount} รายการ · ไม่สำเร็จ ${failures.length} รายการ`
+        : `✅ ลงนามสำเร็จ ${okCount} รายการ`
     );
     setBulkFailures(failures);
     setSelectedIds(new Set());
@@ -241,8 +371,13 @@ export default function RecipientListPage() {
                 {allSignableSelected ? 'ไม่เลือกเลย' : `เลือกทั้งหมด (${signablePending.length})`}
               </button>
               <span style={{ fontWeight: 700 }}>
-                {selectedIds.size > 0 ? `เลือกแล้ว ${selectedIds.size} รายการ` : `รับได้ ${signablePending.length} รายการ`}
+                {selectedIds.size > 0 ? `เลือกแล้ว ${selectedIds.size} รายการ` : `งานของคุณ ${signablePending.length} รายการ`}
               </span>
+              {selectedIds.size > 0 && selectedActionKeys.length > 0 && (
+                <span style={{ color: 'var(--muted)', fontSize: '0.82rem' }}>
+                  {selectedActionKeys.map((action) => `${ACTION_LABELS[action]} ${selectedByAction[action]}`).join(' · ')}
+                </span>
+              )}
               <button
                 className="secondary-button"
                 style={{ width: 'auto', padding: '0 16px' }}
@@ -251,7 +386,7 @@ export default function RecipientListPage() {
               >
                 {bulkSigning
                   ? `กำลังดำเนินการ ${bulkProgress.done}/${bulkProgress.total}`
-                  : `✅ ลงชื่อรับ ${selectedIds.size || ''} รายการ`}
+                  : selectedIds.size > 0 ? `✅ ลงนาม ${selectedIds.size} รายการ` : '✅ ลงนามที่เลือก'}
               </button>
             </div>
           )}
@@ -288,7 +423,7 @@ export default function RecipientListPage() {
                     <th>
                       <input
                         type="checkbox"
-                        aria-label="เลือกทุกรายการที่รับได้"
+                        aria-label="เลือกทุกรายการที่เป็นงานของคุณ"
                         checked={allSignableSelected}
                         onChange={toggleSelectAll}
                         disabled={bulkSigning || signablePending.length === 0}
@@ -310,11 +445,10 @@ export default function RecipientListPage() {
                 <tbody>
                   {visiblePending.map((doc: any) => {
                     const action = workflowAction(doc);
-                    const eligibleForBulkReceive = canReceive(doc);
                     return (
                       <tr key={doc.id}>
                         <td>
-                          {eligibleForBulkReceive && (
+                          {isPendingOwnStage(doc) && (
                             <input
                               type="checkbox"
                               aria-label={`เลือกเอกสารเลขที่ ${doc.running_no}`}
@@ -336,9 +470,17 @@ export default function RecipientListPage() {
                         <td>{doc.recipient_dept_name}</td>
                         <td>
                           {action ? (
-                            <a href={`/recipient/${doc.id}`} className="table-action-button" style={{ textDecoration: 'none', display: 'inline-flex', padding: '6px 14px' }}>
-                              ✍️ {ACTION_LABELS[action] || 'ดำเนินการ'}
-                            </a>
+                            <button
+                              type="button"
+                              className="table-action-button"
+                              style={{ padding: '6px 14px' }}
+                              onClick={() => openSignModal(doc, action)}
+                              disabled={bulkSigning}
+                            >
+                              {isPendingOwnStage(doc)
+                                ? `✍️ ${ACTION_LABELS[action] || 'ดำเนินการ'}`
+                                : `✏️ แก้ไข${action === 'inspector' ? 'ผู้ตรวจสอบ' : 'จัดซื้อ'}`}
+                            </button>
                           ) : (
                             <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>หน่วยงานอื่น</span>
                           )}
@@ -444,10 +586,15 @@ export default function RecipientListPage() {
           >
             <div className="scan-popup-handle" />
             <h3 id="bulk-recipient-signature-title" style={{ marginBottom: 12 }}>
-              ✍️ ลงชื่อรับเอกสาร {selectedIds.size} รายการ
+              ✍️ ลงนาม {selectedIds.size} รายการ
             </h3>
+            {selectedActionKeys.length > 0 && (
+              <div style={{ marginBottom: 12, color: 'var(--muted)', fontSize: '0.85rem' }}>
+                {selectedActionKeys.map((action) => `${ACTION_LABELS[action]} ${selectedByAction[action]} รายการ`).join(' · ')}
+              </div>
+            )}
             <div className="form-group">
-              <label htmlFor="bulk-recipient-signature">ชื่อผู้รับเอกสาร *</label>
+              <label htmlFor="bulk-recipient-signature">{bulkSignatureLabel} *</label>
               <input
                 id="bulk-recipient-signature"
                 type="text"
@@ -459,7 +606,8 @@ export default function RecipientListPage() {
                 style={{ fontFamily: 'Caveat, cursive', fontSize: '1.4rem', minHeight: 48 }}
               />
               <div style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: 4 }}>
-                ชื่อนี้จะใช้เป็นลายเซ็นผู้รับของทุกรายการที่เลือก
+                ชื่อนี้จะใช้เป็นลายเซ็นของทุกรายการที่เลือก · ทุกรายการถูกบันทึกว่า &quot;ถูกต้อง&quot;
+                ถ้าใบใดมีปัญหาให้กดปุ่มในตารางเพื่อแจ้งแยกรายการ
               </div>
             </div>
             {bulkSignError && <div className="toast error" style={{ position: 'static', marginBottom: 8 }}>{bulkSignError}</div>}
@@ -468,10 +616,150 @@ export default function RecipientListPage() {
                 ยกเลิก
               </button>
               <button type="submit" className="secondary-button" disabled={bulkSigning}>
-                {bulkSigning ? 'กำลังดำเนินการ...' : '✅ ยืนยันรับเอกสาร'}
+                {bulkSigning ? 'กำลังดำเนินการ...' : bulkConfirmLabel}
               </button>
             </div>
             <button type="button" className="scan-popup-close" onClick={() => setShowBulkSignModal(false)} disabled={bulkSigning}>ปิด</button>
+          </form>
+        </div>
+      )}
+
+      {signTarget && (
+        <div className="scan-popup-overlay" role="presentation" onClick={closeSignModal}>
+          <form
+            className="scan-popup-sheet"
+            aria-modal="true"
+            aria-labelledby="single-sign-title"
+            role="dialog"
+            style={{ maxWidth: 520, margin: '0 auto' }}
+            onClick={(event) => event.stopPropagation()}
+            onSubmit={(event) => {
+              event.preventDefault();
+              handleSingleSign();
+            }}
+          >
+            <div className="scan-popup-handle" />
+            <h3 id="single-sign-title" style={{ marginBottom: 12 }}>
+              {signEditing
+                ? `✏️ แก้ไข${signAction === 'inspector' ? 'ชื่อผู้ตรวจสอบ' : 'ชื่อจัดซื้อ'}`
+                : `✍️ ${ACTION_LABELS[signAction] || 'ดำเนินการ'}`} — เลขที่ {signTarget.running_no}
+            </h3>
+            {signEditing && (
+              <div className="toast warning" style={{ position: 'static', marginBottom: 12 }}>
+                ใบนี้ผ่านขั้นของคุณไปแล้ว การยืนยันจะเขียนทับชื่อเดิมและบันทึกไว้ในประวัติการแก้ไข
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
+              <div className="field-control">
+                <span>ผู้ส่ง</span>
+                <div style={{ fontWeight: 700 }}>{signTarget.sender}</div>
+              </div>
+              <div className="field-control">
+                <span>เรื่อง</span>
+                <div style={{ fontWeight: 700 }}>{signTarget.subject}</div>
+              </div>
+              <div className="form-row">
+                <div className="field-control">
+                  <span>เลขที่เอกสาร</span>
+                  <div style={{ fontWeight: 700 }}>{signTarget.doc_number || '-'}</div>
+                </div>
+                <div className="field-control">
+                  <span>ขั้นตอนปัจจุบัน</span>
+                  <div style={{ fontWeight: 700 }}>{STAGE_LABELS[signTarget.status] || signTarget.status}</div>
+                </div>
+              </div>
+              <div className="field-control">
+                <span>ปลายทาง</span>
+                <div style={{ fontWeight: 700 }}>{signTarget.recipient_dept_name}</div>
+              </div>
+              {signTarget.inspector_signature && (
+                <div className="field-control">
+                  <span>ผู้ตรวจสอบ</span>
+                  <div style={{ fontWeight: 700 }}>{signTarget.inspector_signature}</div>
+                </div>
+              )}
+              {signTarget.note && (
+                <div className="field-control">
+                  <span>หมายเหตุ</span>
+                  <div style={{ fontWeight: 700, color: 'var(--text)' }}>{signTarget.note}</div>
+                </div>
+              )}
+            </div>
+
+            {/* การตรวจถูกต้อง/ไม่ถูกต้องมีเฉพาะขั้นลงชื่อรับ ขั้นผู้ตรวจสอบและจัดซื้อ
+                เป็นการรับรองลำดับงาน ไม่มีทางเดินแจ้งปัญหาในฝั่ง API */}
+            {signAction === 'recipient' && (
+              <div className="form-group">
+                <label>✅ ตรวจสอบความถูกต้อง</label>
+                <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
+                  <button
+                    type="button"
+                    className={signVerified ? 'secondary-button' : 'ghost-button'}
+                    onClick={() => { setSignVerified(true); setSignNote(''); }}
+                    style={{ flex: 1, minHeight: 44 }}
+                  >
+                    ✅ ถูกต้อง
+                  </button>
+                  <button
+                    type="button"
+                    className={!signVerified ? 'secondary-button' : 'ghost-button'}
+                    onClick={() => setSignVerified(false)}
+                    style={{ flex: 1, minHeight: 44, background: !signVerified ? 'var(--danger)' : undefined, borderColor: 'var(--danger)' }}
+                  >
+                    ❌ ไม่ถูกต้อง
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {signAction === 'recipient' && !signVerified && (
+              <div className="form-group">
+                <label htmlFor="single-sign-note">สาเหตุ *</label>
+                <textarea
+                  id="single-sign-note"
+                  value={signNote}
+                  onChange={(event) => setSignNote(event.target.value)}
+                  placeholder="ระบุรายละเอียดปัญหา..."
+                />
+              </div>
+            )}
+
+            <div className="form-group">
+              <label htmlFor="single-sign-signature">{ACTION_SIGNATURE_LABELS[signAction] || 'ชื่อผู้ลงนาม'} *</label>
+              <input
+                id="single-sign-signature"
+                type="text"
+                value={signSignature}
+                onChange={(event) => setSignSignature(event.target.value)}
+                placeholder={`พิมพ์${ACTION_SIGNATURE_LABELS[signAction] || 'ชื่อผู้ลงนาม'}`}
+                maxLength={255}
+                autoFocus
+                style={{ fontFamily: 'Caveat, cursive', fontSize: '1.4rem', minHeight: 48 }}
+              />
+              <div style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: 4 }}>
+                {signEditing ? 'แสดงชื่อที่บันทึกไว้เดิม แก้เป็นชื่อที่ถูกต้องได้' : 'เติมชื่อจากบัญชีที่ล็อกอินไว้ให้แล้ว แก้เป็นชื่อผู้ลงนามตัวจริงได้'}
+                {profile?.full_name && signSignature.trim() && signSignature.trim() !== profile.full_name && (
+                  <> · บันทึกว่าบัญชี {profile.full_name} เป็นผู้กดยืนยัน</>
+                )}
+              </div>
+            </div>
+
+            {signError && <div className="toast error" style={{ position: 'static', marginBottom: 8 }}>{signError}</div>}
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+              <button type="button" className="ghost-button" onClick={closeSignModal} disabled={signSubmitting}>
+                ยกเลิก
+              </button>
+              <button type="submit" className="secondary-button" disabled={signSubmitting}>
+                {signSubmitting
+                  ? 'กำลังดำเนินการ...'
+                  : signAction === 'recipient'
+                    ? (signVerified ? '✅ ยืนยันรับเอกสาร' : '⚠️ แจ้งปัญหา')
+                    : `✅ ยืนยัน${signAction === 'inspector' ? 'ผู้ตรวจสอบ' : 'จัดซื้อ'}`}
+              </button>
+            </div>
+            <button type="button" className="scan-popup-close" onClick={closeSignModal} disabled={signSubmitting}>ปิด</button>
           </form>
         </div>
       )}
