@@ -3,20 +3,21 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { createClient } from '@/lib/supabase/client';
+import { ACCOUNTING_DESTINATION_CODES, accountingDestinationFor, isGoodsReceipt } from '@/lib/document-workflow';
 
 const DOCUMENT_TYPES = [
   'จดหมาย', 'ใบกำกับภาษี', 'ใบวางบิล', 'พัสดุ', 'ใบเสร็จ', 'บิลต่างๆ',
   'ใบเบิก', 'ใบรับสินค้าสำเร็จรูป', 'ใบรับสินค้า', 'ใบโอนสินค้า', 'เอกสารอื่นๆ',
 ];
-const ACCOUNTING_ONLY_DOCUMENT_TYPES = new Set(['ใบเบิก', 'ใบรับสินค้า']);
-const ACCOUNTING_DEPARTMENT_CODE = '0-ADM03';
-
+// กฎว่าเรื่องไหนต้องส่งถึงบัญชี และ "บัญชี" หน่วยงานไหน อยู่ที่ document-workflow.ts
+// ที่เดียว ห้ามถือสำเนาไว้ที่นี่: สำเนาชุดเดิมทำให้ใบเบิกถูกล็อกไปที่ 0-ADM03
+// ทั้งที่ต้องเป็น 0-ADM03-1 และแก้ที่เดียวไม่พอเพราะ API ก็มีสำเนาของตัวเอง
 function isAccountingOnlyDocument(subject: string) {
-  return ACCOUNTING_ONLY_DOCUMENT_TYPES.has(subject.trim());
+  return accountingDestinationFor(subject) !== null;
 }
 
 function isGoodsReceiptDocument(subject: string) {
-  return subject.trim() === 'ใบรับสินค้า';
+  return isGoodsReceipt(subject.trim());
 }
 
 function emptyRow() {
@@ -57,22 +58,29 @@ export default function RegisterPage() {
     });
   }, []);
 
+  /** หน่วยงานบัญชีที่ต้องเป็นปลายทางของเรื่องนี้ — undefined ถ้าเรื่องนี้เลือกได้อิสระ */
+  const accountingDepartmentFor = (subject: string) => {
+    const code = accountingDestinationFor(subject);
+    if (!code) return undefined;
+    return departments.find((department: any) => department.code === code);
+  };
+
   // ถ้าผู้ใช้เลือกประเภทเอกสารก่อนข้อมูลหน่วยงานโหลดเสร็จ ให้เพิ่มฝ่ายบัญชี
   // ทันทีที่มีข้อมูล โดย API จะบังคับซ้ำอีกชั้นเพื่อความปลอดภัย
   useEffect(() => {
-    const accountingDepartment = departments.find((department: any) => department.code === ACCOUNTING_DEPARTMENT_CODE);
-    if (!accountingDepartment) return;
-    setRows((current) => current.map((row) => (
-      isAccountingOnlyDocument(row.subject)
-        ? {
-            ...row,
-            recipient_dept_ids: [
-              accountingDepartment.id,
-              ...row.recipient_dept_ids.filter((departmentId) => departmentId !== accountingDepartment.id),
-            ],
-          }
-        : row
-    )));
+    if (departments.length === 0) return;
+    setRows((current) => current.map((row) => {
+      const accountingDepartment = accountingDepartmentFor(row.subject);
+      if (!accountingDepartment) return row;
+      return {
+        ...row,
+        recipient_dept_ids: [
+          accountingDepartment.id,
+          ...row.recipient_dept_ids.filter((departmentId) => departmentId !== accountingDepartment.id),
+        ],
+      };
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [departments]);
 
   useEffect(() => {
@@ -87,20 +95,24 @@ export default function RegisterPage() {
   };
 
   const updateSubject = (id: string, subject: string) => {
-    const accountingDepartment = departments.find((department: any) => department.code === ACCOUNTING_DEPARTMENT_CODE);
+    const accountingDepartment = accountingDepartmentFor(subject);
+    // เปลี่ยนเรื่องแล้วต้องถอนบัญชีปลายทางของเรื่องเดิมออกด้วย ไม่ใช่แค่เพิ่มของใหม่
+    // (เช่น เลือกใบรับสินค้าแล้วเปลี่ยนเป็นใบเบิก 0-ADM03 ต้องหลุดไป ไม่ค้างอยู่)
+    const staleAccountingIds = new Set(
+      departments
+        .filter((department: any) => ACCOUNTING_DESTINATION_CODES.has(department.code))
+        .filter((department: any) => department.id !== accountingDepartment?.id)
+        .map((department: any) => department.id)
+    );
     setRows((current) => current.map((row) => {
       if (row.id !== id) return row;
+      const kept = row.recipient_dept_ids.filter((departmentId) => !staleAccountingIds.has(departmentId));
       return {
         ...row,
         subject,
-        ...(isAccountingOnlyDocument(subject) && accountingDepartment
-          ? {
-              recipient_dept_ids: [
-                accountingDepartment.id,
-                ...row.recipient_dept_ids.filter((departmentId) => departmentId !== accountingDepartment.id),
-              ],
-            }
-          : {}),
+        recipient_dept_ids: accountingDepartment
+          ? [accountingDepartment.id, ...kept.filter((departmentId) => departmentId !== accountingDepartment.id)]
+          : kept,
       };
     }));
   };
@@ -116,10 +128,9 @@ export default function RegisterPage() {
   };
 
   const toggleDept = (rowId: string, deptId: string) => {
-    const accountingDepartment = departments.find((department: any) => department.code === ACCOUNTING_DEPARTMENT_CODE);
     setRows((current) => current.map((r) => (
       r.id === rowId
-        ? isAccountingOnlyDocument(r.subject) && deptId === accountingDepartment?.id
+        ? deptId === accountingDepartmentFor(r.subject)?.id
           ? r
           : { ...r, recipient_dept_ids: r.recipient_dept_ids.includes(deptId) ? r.recipient_dept_ids.filter((id) => id !== deptId) : [...r.recipient_dept_ids, deptId] }
         : r
@@ -367,8 +378,8 @@ export default function RegisterPage() {
             {isAccountingOnlyDocument(deptPopupRow.subject) && (
               <div className="issue-bar" style={{ marginBottom: 12 }}>
                 {isGoodsReceiptDocument(deptPopupRow.subject)
-                  ? 'ใบรับสินค้าส่งถึงบัญชีเป็นปลายทางเดียว โดยหน่วยงานที่เลือกเพิ่มใช้กำกับเอกสารเท่านั้น'
-                  : 'เอกสารประเภทนี้ต้องส่งถึงบัญชีเสมอ และเลือกหน่วยงานอื่นเพิ่มได้'}
+                  ? 'ใบรับสินค้าส่งถึง ACC/บัญชี เป็นปลายทางเดียว โดยหน่วยงานที่เลือกเพิ่มใช้กำกับเอกสารเท่านั้น'
+                  : `เอกสารประเภทนี้ต้องส่งถึง ${accountingDepartmentFor(deptPopupRow.subject)?.name || 'บัญชี'} เสมอ และเลือกหน่วยงานอื่นเพิ่มได้`}
               </div>
             )}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }} role="group" aria-label={isGoodsReceiptDocument(deptPopupRow.subject) ? 'หน่วยงานกำกับเอกสาร' : 'หน่วยงานผู้รับ'}>
@@ -379,7 +390,7 @@ export default function RegisterPage() {
                   className={`document-type-chip ${deptPopupRow.recipient_dept_ids.includes(d.id) ? 'active' : ''}`}
                   aria-pressed={deptPopupRow.recipient_dept_ids.includes(d.id)}
                   onClick={() => toggleDept(deptPopupRow.id, d.id)}
-                  disabled={isAccountingOnlyDocument(deptPopupRow.subject) && d.code === ACCOUNTING_DEPARTMENT_CODE}
+                  disabled={d.code === accountingDestinationFor(deptPopupRow.subject)}
                 >
                   {d.name} ({d.code})
                 </button>

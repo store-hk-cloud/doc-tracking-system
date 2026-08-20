@@ -2,11 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
 import { appendRow } from '@/lib/google-sheets';
 import { requireRoles } from '@/lib/supabase/auth-helpers';
-import { ACCOUNTING_DEPARTMENT_CODE, canViewGoodsReceiptWorkflow, GOODS_RECEIPT_SUBJECT, isGoodsReceipt } from '@/lib/document-workflow';
-
-// เอกสารสองประเภทนี้ต้องมีฝ่ายบัญชีเป็นปลายทางหลักเสมอ. ใบเบิกเลือก
-// ปลายทางเพิ่มได้ ส่วนใบรับสินค้าเก็บหน่วยงานเพิ่มเป็น metadata ของเอกสาร.
-const ACCOUNTING_ONLY_DOCUMENT_TYPES = new Set(['ใบเบิก', 'ใบรับสินค้า']);
+import { accountingDestinationFor, canViewGoodsReceiptWorkflow, GOODS_RECEIPT_SUBJECT, isGoodsReceipt } from '@/lib/document-workflow';
 
 // A "document" returned to the client is a document_recipients row flattened
 // with its parent document's shared fields (see migration 006). A document
@@ -148,23 +144,25 @@ export async function POST(request: NextRequest) {
     const requestedDeptIds: string[] = Array.isArray(body.recipient_dept_ids)
       ? [...new Set(body.recipient_dept_ids.filter(Boolean))]
       : [];
-    const mustSendToAccounting = ACCOUNTING_ONLY_DOCUMENT_TYPES.has(subject);
+    // หน่วยงานบัญชีปลายทางต่างกันตามประเภทเอกสาร (ใบเบิก → 0-ADM03-1,
+    // ใบรับสินค้า → 0-ADM03) จึงต้องอ่านจากแผนที่ ไม่ใช่ค่าคงที่ตัวเดียว
+    const accountingDeptCode = accountingDestinationFor(subject);
     let deptIds = requestedDeptIds;
 
-    if (!body.sender || !subject || (!mustSendToAccounting && deptIds.length === 0)) {
+    if (!body.sender || !subject || (!accountingDeptCode && deptIds.length === 0)) {
       return NextResponse.json({ success: false, error: 'sender, subject and recipient_dept_ids (at least 1) are required' }, { status: 400 });
     }
 
-    if (mustSendToAccounting) {
+    if (accountingDeptCode) {
       const { data: accountingDepartment, error: accountingError } = await supabase
         .from('departments')
         .select('id')
-        .eq('code', ACCOUNTING_DEPARTMENT_CODE)
+        .eq('code', accountingDeptCode)
         .maybeSingle();
       if (accountingError) throw accountingError;
       if (!accountingDepartment) {
         return NextResponse.json(
-          { success: false, error: 'ไม่พบหน่วยงานบัญชีสำหรับเอกสารประเภทนี้' },
+          { success: false, error: `ไม่พบหน่วยงานบัญชี (${accountingDeptCode}) สำหรับเอกสารประเภทนี้` },
           { status: 422 }
         );
       }

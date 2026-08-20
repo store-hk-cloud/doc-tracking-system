@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
 import { updateRowInSheet, findRowLocation } from '@/lib/google-sheets';
 import { requireRoles } from '@/lib/supabase/auth-helpers';
+import { isGoodsReceipt as isGoodsReceiptSubject } from '@/lib/document-workflow';
 
 // [id] here is a document_recipients.id. A rejected goods receipt starts its
 // inspection workflow again; other document types return straight to receiving.
@@ -28,7 +29,9 @@ export async function PUT(_request: NextRequest, { params }: { params: Promise<{
 
     const { data } = await supabase.from('documents').select('*').eq('id', before.document_id).single();
     if (!data) throw new Error('Parent document not found');
-    const isGoodsReceipt = data.subject === 'ใบรับสินค้า';
+    // ใช้ predicate ร่วม ไม่เทียบสตริงตรงนี้เอง: ชื่อเรื่องที่ hardcode ซ้ำหลายไฟล์
+    // คือต้นเหตุที่การล็อกปลายทางเพี้ยนไปคนละทางระหว่างหน้าเว็บกับ API
+    const isGoodsReceipt = isGoodsReceiptSubject(data.subject);
     const status = isGoodsReceipt ? 'awaiting_inspector' : 'delivered';
 
     const { data: recipient, error } = await supabase
