@@ -37,6 +37,8 @@ export default function RecipientListPage() {
   // ก็หมายถึงทั้งหมดของวันนั้นเท่านั้น (ตรวจข้อมูลจริง: ค้าง 114 รายการกระจายอยู่ 7 วัน
   // วันนี้มีแค่ 9 รายการ อีก 105 รายการถูกซ่อนไว้)
   const [pendingDate, setPendingDate] = useState('');
+  const [pendingKeyword, setPendingKeyword] = useState('');
+  const [pendingStage, setPendingStage] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkSigning, setBulkSigning] = useState(false);
   const [bulkProgress, setBulkProgress] = useState({ done: 0, total: 0 });
@@ -61,7 +63,8 @@ export default function RecipientListPage() {
   const [closedDocs, setClosedDocs] = useState<any[]>([]);
   const [closedLoading, setClosedLoading] = useState(false);
   const [closedLoaded, setClosedLoaded] = useState(false);
-  const [closedFilter, setClosedFilter] = useState({ keyword: '', date_from: '', date_to: '' });
+  const [closedFilter, setClosedFilter] = useState({ keyword: '', dept_id: '', date_from: '', date_to: '' });
+  const [departments, setDepartments] = useState<any[]>([]);
 
   // API ตัดสิทธิ์ตามขั้น workflow แล้ว ห้ามกรองด้วย recipient_dept_id ที่หน้าเว็บ
   // เพราะใบรับสินค้าเก็บ recipient เป็นบัญชี แม้ผู้ตรวจสอบ/จัดซื้ออยู่คนละหน่วยงาน.
@@ -83,6 +86,7 @@ export default function RecipientListPage() {
     try {
       let url = '/api/documents?status=closed&status=signed';
       if (closedFilter.keyword) url += `&keyword=${encodeURIComponent(closedFilter.keyword)}`;
+      if (closedFilter.dept_id) url += `&dept_id=${closedFilter.dept_id}`;
       if (closedFilter.date_from) url += `&date_from=${closedFilter.date_from}`;
       if (closedFilter.date_to) url += `&date_to=${closedFilter.date_to}`;
       const res = await window.fetch(url);
@@ -98,6 +102,12 @@ export default function RecipientListPage() {
   useEffect(() => { loadPending(); }, []);
 
   useEffect(() => {
+    window.fetch('/api/departments').then((r) => r.json()).then((data) => {
+      if (data.success) setDepartments(data.data);
+    });
+  }, []);
+
+  useEffect(() => {
     if (tab === 'closed' && !closedLoaded) loadClosed();
   }, [tab]);
 
@@ -105,9 +115,16 @@ export default function RecipientListPage() {
     ? getGoodsReceiptWorkflowAction(profile?.department_code, doc.status)
     : profile?.department_id === doc.recipient_dept_id && doc.status === 'delivered' ? 'recipient' : null;
 
-  const visiblePending = pendingDocs.filter(
-    (d: any) => !pendingDate || (d.admin_signed_at || '').split('T')[0] === pendingDate
-  );
+  const visiblePending = pendingDocs.filter((d: any) => {
+    if (pendingDate && (d.admin_signed_at || '').split('T')[0] !== pendingDate) return false;
+    if (pendingStage && d.status !== pendingStage) return false;
+    if (pendingKeyword) {
+      const keyword = pendingKeyword.toLowerCase();
+      const haystack = [d.sender, d.subject, d.doc_number, d.running_no].join(' ').toLowerCase();
+      if (!haystack.includes(keyword)) return false;
+    }
+    return true;
+  });
   // getGoodsReceiptWorkflowAction คืน 'inspector' ทั้งตอน awaiting_inspector (งานที่รอ)
   // และ awaiting_purchasing (เปิดให้ย้อนแก้ชื่อที่เซ็นไว้แล้ว) เหมือนกัน ถ้านับรวมเข้า
   // "เลือกทั้งหมด" การกดครั้งเดียวจะทับลายเซ็นที่เก็บมาแล้วทั้งกอง — เลือกเป็นชุดได้
@@ -324,6 +341,30 @@ export default function RecipientListPage() {
 
       {tab === 'pending' ? (
         <div className="scan-panel">
+          <div className="search-panel" style={{ marginBottom: 16 }}>
+            <div className="search-form">
+              <div className="search-top-row">
+                <div className="search-input-row">
+                  <input
+                    placeholder="ค้นหา ผู้ส่ง, เรื่อง, เลขที่เอกสาร..."
+                    value={pendingKeyword}
+                    onChange={(e) => setPendingKeyword(e.target.value)}
+                  />
+                </div>
+                <select
+                  value={pendingStage}
+                  onChange={(e) => setPendingStage(e.target.value)}
+                  style={{ minHeight: 42, borderRadius: 8, border: '1px solid var(--line-strong)', padding: '0 10px' }}
+                >
+                  <option value="">ทุกขั้นตอน</option>
+                  {Object.entries(STAGE_LABELS).map(([status, label]) => (
+                    <option key={status} value={status}>{label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}>
               วันที่ส่งมอบ:
@@ -503,6 +544,16 @@ export default function RecipientListPage() {
                     onKeyDown={(e) => e.key === 'Enter' && loadClosed()}
                   />
                 </div>
+                <select
+                  value={closedFilter.dept_id}
+                  onChange={(e) => setClosedFilter({ ...closedFilter, dept_id: e.target.value })}
+                  style={{ minHeight: 42, borderRadius: 8, border: '1px solid var(--line-strong)', padding: '0 10px' }}
+                >
+                  <option value="">ทุกหน่วยงาน</option>
+                  {departments.map((d: any) => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
                 <input
                   type="date"
                   value={closedFilter.date_from}
