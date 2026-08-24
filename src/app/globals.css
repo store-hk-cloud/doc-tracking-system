@@ -409,6 +409,36 @@ body {
   background: var(--warning-bg);
 }
 
+.tracking-date-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tracking-date-row select,
+.tracking-date-row input[type="date"] {
+  min-height: 42px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.tracking-date-row .segmented-control {
+  margin-left: auto;
+}
+
+.tracking-date-sep {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
 .tracking-scope-row {
   display: flex;
   align-items: center;

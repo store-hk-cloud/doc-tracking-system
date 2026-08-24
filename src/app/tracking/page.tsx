@@ -39,12 +39,31 @@ function formatDate(value: string | null) {
   return new Date(value).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' });
 }
 
+// ประกอบ y-m-d เองตามเวลาเครื่อง ไม่ใช้ toISOString() ที่แปลงเป็น UTC ก่อน
+// แล้วทำให้ "วันนี้" ของไทยกลายเป็นเมื่อวานในช่วงเช้ามืด
+function toDateInput(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function presetRanges() {
+  const today = new Date();
+  const weekAgo = new Date(today);
+  weekAgo.setDate(today.getDate() - 6);
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  return [
+    { key: 'today', label: 'วันนี้', from: toDateInput(today), to: toDateInput(today) },
+    { key: 'week', label: '7 วัน', from: toDateInput(weekAgo), to: toDateInput(today) },
+    { key: 'month', label: 'เดือนนี้', from: toDateInput(monthStart), to: toDateInput(today) },
+    { key: 'all', label: 'ทั้งหมด', from: '', to: '' },
+  ];
+}
+
 export default function TrackingPage() {
   const { profile, user } = useAuth();
   const [docs, setDocs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [filter, setFilter] = useState({ status: '', keyword: '', dept_id: '' });
+  const [filter, setFilter] = useState({ status: '', keyword: '', dept_id: '', date_field: 'received', date_from: '', date_to: '' });
   const [onlyMine, setOnlyMine] = useState(false);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [departments, setDepartments] = useState<any[]>([]);
@@ -78,14 +97,20 @@ export default function TrackingPage() {
 
   useEffect(() => { loadSignedCount(); }, [loadSignedCount]);
 
-  const loadDocs = useCallback(async () => {
+  // รับ override ได้เพราะปุ่มลัดวันที่ต้องยิงค้นทันทีในจังหวะเดียวกับที่ setFilter
+  // ซึ่ง state ยังไม่อัปเดตให้ใช้
+  const loadDocs = useCallback(async (override?: Partial<typeof filter>) => {
+    const active = { ...filter, ...override };
     const seq = ++requestSeq.current;
     setLoading(true);
     setLoadError('');
     let url = '/api/documents?';
-    if (filter.status) url += `status=${filter.status}&`;
-    if (filter.keyword) url += `keyword=${encodeURIComponent(filter.keyword)}&`;
-    if (filter.dept_id) url += `dept_id=${filter.dept_id}&`;
+    if (active.status) url += `status=${active.status}&`;
+    if (active.keyword) url += `keyword=${encodeURIComponent(active.keyword)}&`;
+    if (active.dept_id) url += `dept_id=${active.dept_id}&`;
+    if (active.date_from) url += `date_from=${active.date_from}&`;
+    if (active.date_to) url += `date_to=${active.date_to}&`;
+    if (active.date_field === 'delivered') url += 'date_field=delivered&';
     // ปล่อยให้ API กรองตามขั้น workflow เพื่อให้คลังสินค้า/FAC-PP และจัดซื้อ
     // เห็นเฉพาะใบรับสินค้าที่ถึงคิว แม้ recipient task อยู่ที่บัญชี.
 
@@ -107,12 +132,18 @@ export default function TrackingPage() {
     } finally {
       if (seq === requestSeq.current) setLoading(false);
     }
-  }, [filter.status, filter.keyword, filter.dept_id]);
+  }, [filter]);
 
   // โหลดใหม่อัตโนมัติเมื่อเปลี่ยนสถานะหรือหน่วยงาน ส่วนคำค้นรอให้กดค้นหาเอง จึงไม่
   // ใส่ loadDocs (ซึ่งเปลี่ยนตัวตนทุกครั้งที่พิมพ์) ลงใน deps
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadDocs(); }, [filter.status, filter.dept_id]);
+
+  const applyPreset = (from: string, to: string) => {
+    const next = { ...filter, date_from: from, date_to: to };
+    setFilter(next);
+    loadDocs(next);
+  };
 
   const handleDeleteDoc = async (doc: any) => {
     if (!window.confirm(`⚠️ ลบเอกสาร #${doc.running_no} "${doc.subject}"?`)) return;
@@ -252,9 +283,47 @@ export default function TrackingPage() {
                 ))}
               </select>
             )}
-            <button className="secondary-button" onClick={loadDocs} style={{ minHeight: 44 }}>
+            <button className="secondary-button" onClick={() => loadDocs()} style={{ minHeight: 44 }}>
               🔍 ค้นหา
             </button>
+          </div>
+          <div className="tracking-date-row">
+            <select
+              value={filter.date_field}
+              onChange={(e) => setFilter({ ...filter, date_field: e.target.value })}
+              aria-label="เลือกวันที่ที่จะใช้กรอง"
+            >
+              <option value="received">วันที่รับ</option>
+              <option value="delivered">วันที่ส่งมอบ</option>
+            </select>
+            <input
+              type="date"
+              value={filter.date_from}
+              max={filter.date_to || undefined}
+              onChange={(e) => setFilter({ ...filter, date_from: e.target.value })}
+              onKeyDown={(e) => e.key === 'Enter' && loadDocs()}
+              aria-label="ตั้งแต่วันที่"
+            />
+            <span className="tracking-date-sep">ถึง</span>
+            <input
+              type="date"
+              value={filter.date_to}
+              min={filter.date_from || undefined}
+              onChange={(e) => setFilter({ ...filter, date_to: e.target.value })}
+              onKeyDown={(e) => e.key === 'Enter' && loadDocs()}
+              aria-label="ถึงวันที่"
+            />
+            <div className="segmented-control">
+              {presetRanges().map((p) => (
+                <button
+                  key={p.key}
+                  className={filter.date_from === p.from && filter.date_to === p.to ? 'active' : ''}
+                  onClick={() => applyPreset(p.from, p.to)}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="segmented-control search-status-row">
             {STATUS_OPTIONS.map((s) => (
@@ -311,7 +380,7 @@ export default function TrackingPage() {
         ) : loadError ? (
           <div className="toast error" style={{ position: 'static' }}>
             {loadError}{' '}
-            <button className="ghost-button" style={{ width: 'auto', minHeight: 32, marginLeft: 8 }} onClick={loadDocs}>ลองใหม่</button>
+            <button className="ghost-button" style={{ width: 'auto', minHeight: 32, marginLeft: 8 }} onClick={() => loadDocs()}>ลองใหม่</button>
           </div>
         ) : visibleDocs.length === 0 ? (
           <div className="empty-search">{onlyMine ? 'ไม่พบเอกสารที่คุณส่งมอบ' : 'ไม่พบเอกสาร'}</div>

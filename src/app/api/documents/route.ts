@@ -50,6 +50,9 @@ export async function GET(request: NextRequest) {
     const keyword = searchParams.get('keyword');
     const date_from = searchParams.get('date_from');
     const date_to = searchParams.get('date_to');
+    // date_field=delivered กรองจากวันที่เซ็นส่งมอบ (admin_signed_at ของ recipient row)
+    // แทนวันที่รับเอกสารเข้าระบบ ค่าเริ่มต้นคงพฤติกรรมเดิมไว้เพื่อไม่กระทบหน้าอื่น
+    const byDeliveredDate = searchParams.get('date_field') === 'delivered';
     const limit = parseInt(searchParams.get('limit') || '0', 10);
 
     // Phase 1: filter on shared document-level fields.
@@ -59,8 +62,8 @@ export async function GET(request: NextRequest) {
         const pattern = ilikePattern(keyword);
         q = q.or(`sender.ilike.${pattern},subject.ilike.${pattern},doc_number.ilike.${pattern},tax_invoice_no.ilike.${pattern}`);
       }
-      if (date_from) q = q.gte('received_date', date_from);
-      if (date_to) q = q.lte('received_date', date_to);
+      if (!byDeliveredDate && date_from) q = q.gte('received_date', date_from);
+      if (!byDeliveredDate && date_to) q = q.lte('received_date', date_to);
       return q;
     });
     const docMap = new Map(docs.map((d: any) => [d.id, d]));
@@ -80,6 +83,10 @@ export async function GET(request: NextRequest) {
             if (statuses.length === 1) q = q.eq('status', statuses[0]);
             else if (statuses.length > 1) q = q.in('status', statuses);
             if (dept_id) q = q.eq('department_id', dept_id);
+            // admin_signed_at เป็น timestamptz แต่ผู้ใช้เลือกเป็น "วัน" ตามเวลาไทย
+            // จึงต้องระบุ offset +07:00 ตรง ๆ ไม่งั้นขอบวันจะเพี้ยนไป 7 ชั่วโมง
+            if (byDeliveredDate && date_from) q = q.gte('admin_signed_at', `${date_from}T00:00:00+07:00`);
+            if (byDeliveredDate && date_to) q = q.lte('admin_signed_at', `${date_to}T23:59:59.999+07:00`);
             return q;
           })
         )
