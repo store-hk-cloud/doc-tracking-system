@@ -385,6 +385,42 @@ body {
   z-index: 9999;
 }
 
+/* ปุ่มที่สื่อความหมายด้วยสี — พื้นทึบ + ตัวหนังสือขาวตกเกณฑ์ contrast ในธีมมืด
+   (ขาวบน --danger ได้ 3.34:1 ตามที่ ui-kit.css ระบุไว้ ส่วน --warning แย่กว่านั้น)
+   จึงใช้พื้นอ่อนกับเส้นขอบสีแทน และคง color: var(--text) ของปุ่มฐานไว้
+   แบบเดียวกับ .toast */
+.table-action-button.danger {
+  border-color: var(--danger-line);
+  background: var(--danger-bg);
+}
+
+.ghost-button.danger {
+  border-color: var(--danger-line);
+  background: var(--danger-bg);
+}
+
+.ghost-button.success {
+  border-color: var(--success-line);
+  background: var(--success-bg);
+}
+
+.ghost-button.warning {
+  border-color: var(--warning-line);
+  background: var(--warning-bg);
+}
+
+.tracking-scope-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.tracking-scope-row .segmented-control {
+  flex: 1;
+  min-width: 220px;
+}
+
 @media (max-width: 560px) {
   .form-row {
     grid-template-columns: 1fr;
