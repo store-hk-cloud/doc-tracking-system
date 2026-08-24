@@ -15,6 +15,14 @@ const STATUS_LABELS: Record<string, string> = {
   closed: 'ปิดงานแล้ว',
   rejected: 'แจ้งปัญหา',
 };
+// ใบรับสินค้าข้าม delivered ไป awaiting_* ทันทีที่ส่งมอบ ปุ่ม "ส่งมอบแล้ว" จึงต้อง
+// หมายถึง "ส่งออกไปแล้วแต่ยังไม่จบ" ทุกด่าน ไม่งั้นใบรับสินค้าจะไม่ถูกจับด้วยปุ่มไหนเลย
+// ส่วนปุ่มรายด่านยังกดดูเจาะจงได้เหมือนเดิม
+const STATUS_QUERY: Record<string, string[]> = {
+  delivered: ['delivered', 'awaiting_inspector', 'awaiting_purchasing', 'awaiting_recipient'],
+};
+// ปุ่มกรองกินความกว้างกว่า badge ในตาราง จึงต้องมีป้ายของตัวเอง
+const FILTER_LABELS: Record<string, string> = { ...STATUS_LABELS, delivered: 'ส่งมอบแล้ว (ทุกด่าน)' };
 const STATUS_COLORS: Record<string, string> = {
   registered: '',
   delivered: ' success',
@@ -58,7 +66,9 @@ export default function TrackingPage() {
   const loadDocs = async () => {
     setLoading(true);
     let url = '/api/documents?';
-    if (filter.status) url += `status=${filter.status}&`;
+    if (filter.status) {
+      for (const s of STATUS_QUERY[filter.status] || [filter.status]) url += `status=${s}&`;
+    }
     if (filter.keyword) url += `keyword=${encodeURIComponent(filter.keyword)}&`;
     if (filter.dept_id) url += `dept_id=${filter.dept_id}&`;
     // ปล่อยให้ API กรองตามขั้น workflow เพื่อให้คลังสินค้า/FAC-PP และจัดซื้อ
@@ -181,7 +191,7 @@ export default function TrackingPage() {
                 className={filter.status === (s === 'ทั้งหมด' ? '' : s) ? 'active' : ''}
                 onClick={() => setFilter({ ...filter, status: s === 'ทั้งหมด' ? '' : s })}
               >
-                {STATUS_LABELS[s]}
+                {FILTER_LABELS[s]}
               </button>
             ))}
           </div>
