@@ -409,6 +409,37 @@ body {
   background: var(--warning-bg);
 }
 
+/* ตัวกรองหน้าติดตามจัดเป็นแถวป้ายซ้าย-ตัวควบคุมขวา ป้ายกว้างเท่ากันทุกแถวเพื่อให้
+   ขอบซ้ายของตัวควบคุมตรงกันเป็นเส้นเดียว */
+.tracking-filters .filter-row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.tracking-filters .filter-row > .eyebrow {
+  margin: 0;
+}
+
+/* .secondary-button เป็น width:100% ซึ่งใน flex row ที่ห้ามหดจะกินพื้นที่ทั้งแถว
+   จนช่องค้นหาเหลือนิดเดียว — ปุ่มในแถวนี้จึงต้องกว้างตามเนื้อหา */
+.tracking-filters .search-top-row button {
+  width: auto;
+  min-height: 42px;
+  padding: 0 20px;
+}
+
+/* 9 สถานะ: 3 คอลัมน์ลงตัวพอดี 3 แถว ไม่เหลือช่องว่างแหว่งเหมือน 6+3 */
+.tracking-filters .search-status-row {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.tracking-filters .scope-control {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 340px;
+}
+
 .tracking-date-row {
   display: flex;
   align-items: center;
@@ -429,8 +460,11 @@ body {
   font-weight: 700;
 }
 
+/* ปุ่มลัด 4 ปุ่ม — .segmented-control ตั้งไว้ 3 คอลัมน์ ปุ่มที่ 4 จึงตกบรรทัดถ้าไม่สั่ง */
 .tracking-date-row .segmented-control {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   margin-left: auto;
+  min-width: 320px;
 }
 
 .tracking-date-sep {
@@ -439,16 +473,97 @@ body {
   font-weight: 700;
 }
 
-.tracking-scope-row {
+.table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.table-toolbar-count {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.table-toolbar-action {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+  padding: 6px 6px 6px 14px;
+  border-radius: var(--radius-md);
+  background: var(--primary-soft);
 }
 
-.tracking-scope-row .segmented-control {
-  flex: 1;
-  min-width: 220px;
+.table-toolbar-action span {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.table-toolbar-action button {
+  width: auto;
+  min-height: 36px;
+  padding: 0 16px;
+}
+
+/* ตารางติดตามกว้างเกินจอเสมอ ให้เลื่อนแนวนอนแทนการบีบจนตัดบรรทัด */
+.tracking-table td,
+.tracking-table th {
+  white-space: nowrap;
+}
+
+/* คอลัมน์ข้อความยาว (ผู้ส่ง/เรื่อง/หน่วยงาน) ตัดด้วย ellipsis แทนการดันตารางยาว
+   ไม่จำกัด — ข้อความเต็มดูได้จาก title และใน popup รายละเอียด */
+.tracking-table .clip-cell {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tracking-table .num-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 720px) {
+  .tracking-filters .filter-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  /* จอแคบ: ชนิดวันเต็มบรรทัด แล้ววาง จาก-ถึง คู่กัน คำว่า "ถึง" ตัดทิ้งเพราะ
+     ลำดับซ้าย-ขวาสื่อความหมายอยู่แล้วและ input มี aria-label กำกับ */
+  .tracking-date-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .tracking-date-row > select {
+    grid-column: 1 / -1;
+  }
+
+  .tracking-date-sep {
+    display: none;
+  }
+
+  .tracking-date-row .segmented-control {
+    grid-column: 1 / -1;
+    min-width: 0;
+    margin-left: 0;
+  }
+
+  .tracking-filters .search-status-row button {
+    padding: 0 4px;
+    font-size: 0.78rem;
+  }
+
+  .tracking-filters .scope-control {
+    max-width: none;
+  }
 }
 
 @media (max-width: 560px) {

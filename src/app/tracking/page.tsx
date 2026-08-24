@@ -264,10 +264,12 @@ export default function TrackingPage() {
       </div>
 
       {/* Filters */}
-      <div className="search-panel">
+      <div className="search-panel tracking-filters">
         <div className="search-form">
-          <div className="search-top-row">
-            <div className="search-input-row">
+          <div className="filter-row">
+            <span className="eyebrow">ค้นหา</span>
+            <div className="search-top-row">
+              <div className="search-input-row">
               <input
                 placeholder="ค้นหา ผู้ส่ง, เรื่อง, เลขที่เอกสาร..."
                 value={filter.keyword}
@@ -283,93 +285,76 @@ export default function TrackingPage() {
                 ))}
               </select>
             )}
-            <button className="secondary-button" onClick={() => loadDocs()} style={{ minHeight: 44 }}>
-              🔍 ค้นหา
-            </button>
+              <button className="secondary-button" onClick={() => loadDocs()}>
+                🔍 ค้นหา
+              </button>
+            </div>
           </div>
-          <div className="tracking-date-row">
-            <select
-              value={filter.date_field}
-              onChange={(e) => setFilter({ ...filter, date_field: e.target.value })}
-              aria-label="เลือกวันที่ที่จะใช้กรอง"
-            >
-              <option value="received">วันที่รับ</option>
-              <option value="delivered">วันที่ส่งมอบ</option>
-            </select>
-            <input
-              type="date"
-              value={filter.date_from}
-              max={filter.date_to || undefined}
-              onChange={(e) => setFilter({ ...filter, date_from: e.target.value })}
-              onKeyDown={(e) => e.key === 'Enter' && loadDocs()}
-              aria-label="ตั้งแต่วันที่"
-            />
-            <span className="tracking-date-sep">ถึง</span>
-            <input
-              type="date"
-              value={filter.date_to}
-              min={filter.date_from || undefined}
-              onChange={(e) => setFilter({ ...filter, date_to: e.target.value })}
-              onKeyDown={(e) => e.key === 'Enter' && loadDocs()}
-              aria-label="ถึงวันที่"
-            />
-            <div className="segmented-control">
-              {presetRanges().map((p) => (
+
+          <div className="filter-row">
+            <span className="eyebrow">ช่วงวันที่</span>
+            <div className="tracking-date-row">
+              <select
+                value={filter.date_field}
+                onChange={(e) => setFilter({ ...filter, date_field: e.target.value })}
+                aria-label="เลือกวันที่ที่จะใช้กรอง"
+              >
+                <option value="received">วันที่รับ</option>
+                <option value="delivered">วันที่ส่งมอบ</option>
+              </select>
+              <input
+                type="date"
+                value={filter.date_from}
+                max={filter.date_to || undefined}
+                onChange={(e) => setFilter({ ...filter, date_from: e.target.value })}
+                onKeyDown={(e) => e.key === 'Enter' && loadDocs()}
+                aria-label="ตั้งแต่วันที่"
+              />
+              <span className="tracking-date-sep">ถึง</span>
+              <input
+                type="date"
+                value={filter.date_to}
+                min={filter.date_from || undefined}
+                onChange={(e) => setFilter({ ...filter, date_to: e.target.value })}
+                onKeyDown={(e) => e.key === 'Enter' && loadDocs()}
+                aria-label="ถึงวันที่"
+              />
+              <div className="segmented-control">
+                {presetRanges().map((p) => (
+                  <button
+                    key={p.key}
+                    className={filter.date_from === p.from && filter.date_to === p.to ? 'active' : ''}
+                    onClick={() => applyPreset(p.from, p.to)}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="filter-row">
+            <span className="eyebrow">สถานะ</span>
+            <div className="segmented-control search-status-row">
+              {STATUS_OPTIONS.map((s) => (
                 <button
-                  key={p.key}
-                  className={filter.date_from === p.from && filter.date_to === p.to ? 'active' : ''}
-                  onClick={() => applyPreset(p.from, p.to)}
+                  key={s}
+                  className={filter.status === (s === 'ทั้งหมด' ? '' : s) ? 'active' : ''}
+                  onClick={() => setFilter({ ...filter, status: s === 'ทั้งหมด' ? '' : s })}
                 >
-                  {p.label}
+                  {STATUS_LABELS[s]}
                 </button>
               ))}
             </div>
           </div>
-          <div className="segmented-control search-status-row">
-            {STATUS_OPTIONS.map((s) => (
-              <button
-                key={s}
-                className={filter.status === (s === 'ทั้งหมด' ? '' : s) ? 'active' : ''}
-                onClick={() => setFilter({ ...filter, status: s === 'ทั้งหมด' ? '' : s })}
-              >
-                {STATUS_LABELS[s]}
-              </button>
-            ))}
-          </div>
-          <div className="tracking-scope-row">
+
+          <div className="filter-row">
             <span className="eyebrow">ผู้ส่งมอบ</span>
-            <div className="segmented-control">
+            <div className="segmented-control scope-control">
               <button className={onlyMine ? '' : 'active'} onClick={() => setOnlyMine(false)}>ทุกคน</button>
               <button className={onlyMine ? 'active' : ''} onClick={() => setOnlyMine(true)}>ที่ฉันส่งมอบ</button>
             </div>
           </div>
-
-          {isAdmin && signedCount !== null && signedCount > 0 && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
-                marginTop: 12,
-                padding: '10px 14px',
-                background: 'var(--primary-soft)',
-                borderRadius: 8,
-                flexWrap: 'wrap',
-              }}
-            >
-              <span style={{ fontWeight: 700 }}>
-                มีเอกสารที่ลงลายเซ็นผู้รับแล้ว {signedCount} รายการ ยังไม่ถูกปิดงาน (รวมเอกสารเก่า)
-              </span>
-              <button className="secondary-button" style={{ width: 'auto', padding: '0 16px' }} onClick={handleCloseAllSigned} disabled={closingAll}>
-                {closingAll ? 'กำลังปิดงาน...' : '🔒 ปิดงานทั้งหมด'}
-              </button>
-            </div>
-          )}
-          {closeAllMessage && (
-            <div className={`toast ${closeAllFailed ? 'error' : 'success'}`} style={{ position: 'static', marginTop: 12 }}>
-              {closeAllMessage}
-            </div>
-          )}
         </div>
       </div>
 
@@ -382,11 +367,32 @@ export default function TrackingPage() {
             {loadError}{' '}
             <button className="ghost-button" style={{ width: 'auto', minHeight: 32, marginLeft: 8 }} onClick={() => loadDocs()}>ลองใหม่</button>
           </div>
-        ) : visibleDocs.length === 0 ? (
-          <div className="empty-search">{onlyMine ? 'ไม่พบเอกสารที่คุณส่งมอบ' : 'ไม่พบเอกสาร'}</div>
         ) : (
           <>
-            <div className="table-wrap">
+            <div className="table-toolbar">
+              <span className="table-toolbar-count">
+                พบทั้งหมด {visibleDocs.length} รายการ
+                {visibleDocs.length > pagedDocs.length && ` · แสดง ${pagedDocs.length} รายการแรก`}
+              </span>
+              {isAdmin && signedCount !== null && signedCount > 0 && (
+                <div className="table-toolbar-action">
+                  <span>ลงลายเซ็นผู้รับแล้ว {signedCount} รายการ ยังไม่ปิดงาน</span>
+                  <button className="secondary-button" onClick={handleCloseAllSigned} disabled={closingAll}>
+                    {closingAll ? 'กำลังปิดงาน...' : `🔒 ปิดงานทั้งหมด (${signedCount})`}
+                  </button>
+                </div>
+              )}
+            </div>
+            {closeAllMessage && (
+              <div className={`toast ${closeAllFailed ? 'error' : 'success'}`} style={{ position: 'static', marginBottom: 12 }}>
+                {closeAllMessage}
+              </div>
+            )}
+            {visibleDocs.length === 0 ? (
+              <div className="empty-search">{onlyMine ? 'ไม่พบเอกสารที่คุณส่งมอบ' : 'ไม่พบเอกสาร'}</div>
+            ) : (
+              <>
+            <div className="table-wrap tracking-table">
               <table>
                 <thead>
                   <tr>
@@ -425,18 +431,18 @@ export default function TrackingPage() {
                         style={{ cursor: 'pointer' }}
                       >
                         <td className="code-cell">{doc.running_no}</td>
-                        <td>{doc.received_date}</td>
-                        <td>{doc.sender}</td>
+                        <td>{formatDate(doc.received_date)}</td>
+                        <td className="clip-cell" title={doc.sender}>{doc.sender}</td>
                         <td>{doc.doc_number || '-'}</td>
-                        <td>{doc.subject}</td>
-                        <td>{doc.recipient_dept_name}</td>
+                        <td className="clip-cell" title={doc.subject}>{doc.subject}</td>
+                        <td className="clip-cell" title={doc.recipient_dept_name || ''}>{doc.recipient_dept_name}</td>
                         <td>
                           <span className={`status-badge${STATUS_COLORS[doc.status] || ''}`}>
                             {STATUS_LABELS[doc.status] || doc.status}
                           </span>
                         </td>
                         <td>{formatDate(doc.admin_signed_at)}</td>
-                        <td>{pending === null ? '-' : `${pending} วัน`}</td>
+                        <td className="num-cell">{pending === null ? '-' : `${pending} วัน`}</td>
                         <td>{doc.admin_signature || '-'}</td>
                         <td>{doc.inspector_signature || '-'}</td>
                         <td>{doc.purchasing_signature || '-'}</td>
@@ -456,18 +462,17 @@ export default function TrackingPage() {
                   })}
                 </tbody>
               </table>
-            </div>
-            <div style={{ marginTop: 8, color: 'var(--muted)', fontSize: '0.85rem', fontWeight: 700 }}>
-              พบทั้งหมด {visibleDocs.length} รายการ{visibleDocs.length > pagedDocs.length ? ` (แสดง ${pagedDocs.length} รายการแรก)` : ''}
-            </div>
-            {visibleDocs.length > pagedDocs.length && (
-              <button
-                className="ghost-button"
-                style={{ marginTop: 12 }}
-                onClick={() => setVisibleCount((current) => current + PAGE_SIZE)}
-              >
-                แสดงเพิ่ม (เหลืออีก {visibleDocs.length - pagedDocs.length} รายการ)
-              </button>
+                </div>
+                {visibleDocs.length > pagedDocs.length && (
+                  <button
+                    className="ghost-button"
+                    style={{ marginTop: 12 }}
+                    onClick={() => setVisibleCount((current) => current + PAGE_SIZE)}
+                  >
+                    แสดงเพิ่ม (เหลืออีก {visibleDocs.length - pagedDocs.length} รายการ)
+                  </button>
+                )}
+              </>
             )}
           </>
         )}
