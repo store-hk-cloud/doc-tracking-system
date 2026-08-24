@@ -27,10 +27,11 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function TrackingPage() {
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
   const [docs, setDocs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState({ status: '', keyword: '', dept_id: '' });
+  const [onlyMine, setOnlyMine] = useState(false);
   const [departments, setDepartments] = useState<any[]>([]);
   const isAdmin = profile?.role === 'super_admin' || profile?.role === 'admin';
   const isSuperAdmin = profile?.role === 'super_admin';
@@ -137,6 +138,10 @@ export default function TrackingPage() {
     }
   };
 
+  // recorded_by ติดมากับทุกแถวของ /api/documents อยู่แล้ว จึงสลับมุมมองได้ฝั่ง
+  // client ไม่ต้องยิง API ซ้ำ
+  const visibleDocs = onlyMine ? docs.filter((d: any) => d.recorded_by === user?.id) : docs;
+
   return (
     <div>
       <div className="app-title" style={{ marginBottom: 20 }}>
@@ -180,6 +185,10 @@ export default function TrackingPage() {
               </button>
             ))}
           </div>
+          <div className="segmented-control search-status-row">
+            <button className={onlyMine ? '' : 'active'} onClick={() => setOnlyMine(false)}>ทั้งหมด</button>
+            <button className={onlyMine ? 'active' : ''} onClick={() => setOnlyMine(true)}>ที่ฉันส่งมอบ</button>
+          </div>
 
           {isAdmin && signedCount !== null && signedCount > 0 && (
             <div
@@ -210,8 +219,8 @@ export default function TrackingPage() {
       <div className="report-panel">
         {loading ? (
           <div className="empty-search">กำลังโหลด...</div>
-        ) : docs.length === 0 ? (
-          <div className="empty-search">ไม่พบเอกสาร</div>
+        ) : visibleDocs.length === 0 ? (
+          <div className="empty-search">{onlyMine ? 'ไม่พบเอกสารที่คุณส่งมอบ' : 'ไม่พบเอกสาร'}</div>
         ) : (
           <>
             <div className="table-wrap">
@@ -233,7 +242,7 @@ export default function TrackingPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {docs.map((doc: any) => (
+                  {visibleDocs.map((doc: any) => (
                     <tr key={doc.id} onClick={() => setSelectedDoc(doc)} style={{ cursor: 'pointer' }}>
                       <td className="code-cell">{doc.running_no}</td>
                       <td>{doc.received_date}</td>
@@ -266,7 +275,7 @@ export default function TrackingPage() {
               </table>
             </div>
             <div style={{ marginTop: 8, color: 'var(--muted)', fontSize: '0.85rem', fontWeight: 700 }}>
-              พบทั้งหมด {docs.length} รายการ
+              พบทั้งหมด {visibleDocs.length} รายการ
             </div>
           </>
         )}

@@ -60,6 +60,9 @@ export async function GET(request: NextRequest) {
       // ไม่ได้เป็นปลายทางงาน จึงมองเห็นได้เฉพาะผู้ที่ถึงคิวของตนจริง.
       rows = rows.filter((r: any) => {
         const doc = docMap.get(r.document_id);
+        // ผู้บันทึกคือคนที่เซ็นส่งมอบเอกสารนั้นเอง ต้องตามงานของตัวเองต่อได้
+        // แม้ปลายทางจะเป็นหน่วยงานอื่น (ซึ่งเป็นกรณีปกติของการส่งมอบ)
+        if (doc?.recorded_by === auth.context!.user.id) return true;
         if (isGoodsReceipt(doc?.subject)) {
           return canViewGoodsReceiptWorkflow(auth.context!.profile.department_code, r.status);
         }
