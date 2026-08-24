@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 
 const STATUS_OPTIONS = ['ทั้งหมด', 'registered', 'delivered', 'awaiting_inspector', 'awaiting_purchasing', 'awaiting_recipient', 'signed', 'closed', 'rejected'];
@@ -15,14 +15,6 @@ const STATUS_LABELS: Record<string, string> = {
   closed: 'ปิดงานแล้ว',
   rejected: 'แจ้งปัญหา',
 };
-// ใบรับสินค้าข้าม delivered ไป awaiting_* ทันทีที่ส่งมอบ ปุ่ม "ส่งมอบแล้ว" จึงต้อง
-// หมายถึง "ส่งออกไปแล้วแต่ยังไม่จบ" ทุกด่าน ไม่งั้นใบรับสินค้าจะไม่ถูกจับด้วยปุ่มไหนเลย
-// ส่วนปุ่มรายด่านยังกดดูเจาะจงได้เหมือนเดิม
-const STATUS_QUERY: Record<string, string[]> = {
-  delivered: ['delivered', 'awaiting_inspector', 'awaiting_purchasing', 'awaiting_recipient'],
-};
-// ปุ่มกรองกินความกว้างกว่า badge ในตาราง จึงต้องมีป้ายของตัวเอง
-const FILTER_LABELS: Record<string, string> = { ...STATUS_LABELS, delivered: 'ส่งมอบแล้ว (ทุกด่าน)' };
 const STATUS_COLORS: Record<string, string> = {
   registered: '',
   delivered: ' success',
@@ -33,13 +25,28 @@ const STATUS_COLORS: Record<string, string> = {
   closed: ' success',
   rejected: ' error',
 };
+// สถานะที่แปลว่าเอกสารออกจากมือผู้ส่งแล้วแต่ยังไม่จบ — ใช้นับวันที่ค้างเท่านั้น
+const IN_FLIGHT_STATUSES = new Set(['delivered', 'awaiting_inspector', 'awaiting_purchasing', 'awaiting_recipient', 'rejected']);
+const PAGE_SIZE = 100;
+
+function daysPending(doc: any): number | null {
+  if (!doc.admin_signed_at || !IN_FLIGHT_STATUSES.has(doc.status)) return null;
+  return Math.floor((Date.now() - new Date(doc.admin_signed_at).getTime()) / 86400000);
+}
+
+function formatDate(value: string | null) {
+  if (!value) return '-';
+  return new Date(value).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' });
+}
 
 export default function TrackingPage() {
   const { profile, user } = useAuth();
   const [docs, setDocs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [filter, setFilter] = useState({ status: '', keyword: '', dept_id: '' });
   const [onlyMine, setOnlyMine] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [departments, setDepartments] = useState<any[]>([]);
   const isAdmin = profile?.role === 'super_admin' || profile?.role === 'admin';
   const isSuperAdmin = profile?.role === 'super_admin';
@@ -47,69 +54,119 @@ export default function TrackingPage() {
   const [signedCount, setSignedCount] = useState<number | null>(null);
   const [closingAll, setClosingAll] = useState(false);
   const [closeAllMessage, setCloseAllMessage] = useState('');
+  const [closeAllFailed, setCloseAllFailed] = useState(false);
+  // คำขอที่ยิงทีหลังต้องชนะเสมอ ไม่งั้นผลของคำค้นเก่าที่กลับมาช้ากว่าจะทับผลล่าสุด
+  const requestSeq = useRef(0);
 
   useEffect(() => {
-    window.fetch('/api/departments').then(r => r.json()).then(data => {
-      if (data.success) setDepartments(data.data);
-    });
+    window.fetch('/api/departments')
+      .then((r) => r.json())
+      .then((data) => { if (data.success) setDepartments(data.data); })
+      .catch(() => {});
   }, []);
 
-  const loadSignedCount = async () => {
+  const loadSignedCount = useCallback(async () => {
     if (!isAdmin) return;
-    const res = await window.fetch('/api/documents?status=signed');
-    const data = await res.json();
-    if (data.success) setSignedCount(data.data.filter((d: any) => d.delivery_log_id).length);
-  };
-
-  useEffect(() => { loadSignedCount(); }, [isAdmin]);
-
-  const loadDocs = async () => {
-    setLoading(true);
-    let url = '/api/documents?';
-    if (filter.status) {
-      for (const s of STATUS_QUERY[filter.status] || [filter.status]) url += `status=${s}&`;
+    try {
+      const res = await window.fetch('/api/documents?status=signed');
+      const data = await res.json();
+      if (data.success) setSignedCount(data.data.filter((d: any) => d.delivery_log_id).length);
+    } catch {
+      setSignedCount(null);
     }
+  }, [isAdmin]);
+
+  useEffect(() => { loadSignedCount(); }, [loadSignedCount]);
+
+  const loadDocs = useCallback(async () => {
+    const seq = ++requestSeq.current;
+    setLoading(true);
+    setLoadError('');
+    let url = '/api/documents?';
+    if (filter.status) url += `status=${filter.status}&`;
     if (filter.keyword) url += `keyword=${encodeURIComponent(filter.keyword)}&`;
     if (filter.dept_id) url += `dept_id=${filter.dept_id}&`;
     // ปล่อยให้ API กรองตามขั้น workflow เพื่อให้คลังสินค้า/FAC-PP และจัดซื้อ
     // เห็นเฉพาะใบรับสินค้าที่ถึงคิว แม้ recipient task อยู่ที่บัญชี.
 
-    const res = await window.fetch(url);
-    const data = await res.json();
-    if (data.success) setDocs(data.data);
-    setLoading(false);
-  };
+    try {
+      const res = await window.fetch(url);
+      const data = await res.json();
+      if (seq !== requestSeq.current) return;
+      if (data.success) {
+        setDocs(data.data);
+        setVisibleCount(PAGE_SIZE);
+      } else {
+        setDocs([]);
+        setLoadError(data.error || 'โหลดข้อมูลไม่สำเร็จ');
+      }
+    } catch {
+      if (seq !== requestSeq.current) return;
+      setDocs([]);
+      setLoadError('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่');
+    } finally {
+      if (seq === requestSeq.current) setLoading(false);
+    }
+  }, [filter.status, filter.keyword, filter.dept_id]);
 
-  useEffect(() => { loadDocs(); }, [filter.status]);
+  // โหลดใหม่อัตโนมัติเมื่อเปลี่ยนสถานะหรือหน่วยงาน ส่วนคำค้นรอให้กดค้นหาเอง จึงไม่
+  // ใส่ loadDocs (ซึ่งเปลี่ยนตัวตนทุกครั้งที่พิมพ์) ลงใน deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { loadDocs(); }, [filter.status, filter.dept_id]);
 
   const handleDeleteDoc = async (doc: any) => {
     if (!window.confirm(`⚠️ ลบเอกสาร #${doc.running_no} "${doc.subject}"?`)) return;
-    const res = await window.fetch(`/api/documents/${doc.id}`, { method: 'DELETE' });
-    const data = await res.json();
-    if (data.success) {
-      setDocs(docs.filter((d: any) => d.id !== doc.id));
+    try {
+      const res = await window.fetch(`/api/documents/${doc.id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!data.success) {
+        window.alert(data.error || 'ลบเอกสารไม่สำเร็จ');
+        return;
+      }
+      setDocs((current) => current.filter((d: any) => d.id !== doc.id));
+      setSelectedDoc((current: any) => (current && current.id === doc.id ? null : current));
+      await loadSignedCount();
+    } catch {
+      window.alert('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่');
     }
   };
 
   const handleCloseTask = async (doc: any) => {
     if (!doc.delivery_log_id) return;
     if (!window.confirm(`ปิดงานเอกสาร #${doc.running_no} "${doc.subject}"?`)) return;
-    const res = await window.fetch(`/api/deliveries/${doc.delivery_log_id}/verify`, { method: 'PUT' });
-    const data = await res.json();
-    if (data.success) {
-      setDocs(docs.map((d: any) => (d.id === doc.id ? { ...d, status: 'closed' } : d)));
+    try {
+      const res = await window.fetch(`/api/deliveries/${doc.delivery_log_id}/verify`, { method: 'PUT' });
+      const data = await res.json();
+      if (!data.success) {
+        window.alert(data.error || 'เกิดข้อผิดพลาด');
+        return;
+      }
+      setDocs((current) => current.map((d: any) => (d.id === doc.id ? { ...d, status: 'closed' } : d)));
       setSelectedDoc((current: any) => (current && current.id === doc.id ? { ...current, status: 'closed' } : current));
-    } else {
-      window.alert(data.error || 'เกิดข้อผิดพลาด');
+      await loadSignedCount();
+    } catch {
+      window.alert('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่');
     }
   };
 
   const handleCloseAllSigned = async () => {
     setCloseAllMessage('');
-    const res = await window.fetch('/api/documents?status=signed');
-    const data = await res.json();
-    if (!data.success) return;
-    const targets = data.data.filter((d: any) => d.delivery_log_id);
+    setCloseAllFailed(false);
+    let targets: any[] = [];
+    try {
+      const res = await window.fetch('/api/documents?status=signed');
+      const data = await res.json();
+      if (!data.success) {
+        setCloseAllFailed(true);
+        setCloseAllMessage(data.error || 'ดึงรายการที่รอปิดงานไม่สำเร็จ');
+        return;
+      }
+      targets = data.data.filter((d: any) => d.delivery_log_id);
+    } catch {
+      setCloseAllFailed(true);
+      setCloseAllMessage('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่');
+      return;
+    }
     if (targets.length === 0) {
       setSignedCount(0);
       return;
@@ -126,6 +183,7 @@ export default function TrackingPage() {
     );
     const okCount = results.filter((r: any) => r.success).length;
     const failCount = results.length - okCount;
+    setCloseAllFailed(failCount > 0);
     setCloseAllMessage(
       failCount > 0
         ? `✅ ปิดงานสำเร็จ ${okCount} รายการ, ❌ ล้มเหลว ${failCount} รายการ`
@@ -138,19 +196,33 @@ export default function TrackingPage() {
 
   const handleRedeliver = async (doc: any) => {
     if (!window.confirm(`ส่งเอกสาร #${doc.running_no} ให้ผู้รับเซ็นใหม่?`)) return;
-    const res = await window.fetch(`/api/documents/${doc.id}/redeliver`, { method: 'PUT' });
-    const data = await res.json();
-    if (data.success) {
-      setDocs(docs.map((d: any) => (d.id === doc.id ? { ...d, status: data.data.status } : d)));
+    try {
+      const res = await window.fetch(`/api/documents/${doc.id}/redeliver`, { method: 'PUT' });
+      const data = await res.json();
+      if (!data.success) {
+        window.alert(data.error || 'เกิดข้อผิดพลาด');
+        return;
+      }
+      setDocs((current) => current.map((d: any) => (d.id === doc.id ? { ...d, status: data.data.status } : d)));
       setSelectedDoc(null);
-    } else {
-      window.alert(data.error || 'เกิดข้อผิดพลาด');
+    } catch {
+      window.alert('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่');
     }
   };
 
   // recorded_by ติดมากับทุกแถวของ /api/documents อยู่แล้ว จึงสลับมุมมองได้ฝั่ง
   // client ไม่ต้องยิง API ซ้ำ
   const visibleDocs = onlyMine ? docs.filter((d: any) => d.recorded_by === user?.id) : docs;
+  const pagedDocs = visibleDocs.slice(0, visibleCount);
+
+  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [onlyMine]);
+
+  useEffect(() => {
+    if (!selectedDoc) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setSelectedDoc(null); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedDoc]);
 
   return (
     <div>
@@ -191,13 +263,16 @@ export default function TrackingPage() {
                 className={filter.status === (s === 'ทั้งหมด' ? '' : s) ? 'active' : ''}
                 onClick={() => setFilter({ ...filter, status: s === 'ทั้งหมด' ? '' : s })}
               >
-                {FILTER_LABELS[s]}
+                {STATUS_LABELS[s]}
               </button>
             ))}
           </div>
-          <div className="segmented-control search-status-row">
-            <button className={onlyMine ? '' : 'active'} onClick={() => setOnlyMine(false)}>ทั้งหมด</button>
-            <button className={onlyMine ? 'active' : ''} onClick={() => setOnlyMine(true)}>ที่ฉันส่งมอบ</button>
+          <div className="tracking-scope-row">
+            <span className="eyebrow">ผู้ส่งมอบ</span>
+            <div className="segmented-control">
+              <button className={onlyMine ? '' : 'active'} onClick={() => setOnlyMine(false)}>ทุกคน</button>
+              <button className={onlyMine ? 'active' : ''} onClick={() => setOnlyMine(true)}>ที่ฉันส่งมอบ</button>
+            </div>
           </div>
 
           {isAdmin && signedCount !== null && signedCount > 0 && (
@@ -221,7 +296,11 @@ export default function TrackingPage() {
               </button>
             </div>
           )}
-          {closeAllMessage && <div className="toast success" style={{ position: 'static', marginTop: 12 }}>{closeAllMessage}</div>}
+          {closeAllMessage && (
+            <div className={`toast ${closeAllFailed ? 'error' : 'success'}`} style={{ position: 'static', marginTop: 12 }}>
+              {closeAllMessage}
+            </div>
+          )}
         </div>
       </div>
 
@@ -229,6 +308,11 @@ export default function TrackingPage() {
       <div className="report-panel">
         {loading ? (
           <div className="empty-search">กำลังโหลด...</div>
+        ) : loadError ? (
+          <div className="toast error" style={{ position: 'static' }}>
+            {loadError}{' '}
+            <button className="ghost-button" style={{ width: 'auto', minHeight: 32, marginLeft: 8 }} onClick={loadDocs}>ลองใหม่</button>
+          </div>
         ) : visibleDocs.length === 0 ? (
           <div className="empty-search">{onlyMine ? 'ไม่พบเอกสารที่คุณส่งมอบ' : 'ไม่พบเอกสาร'}</div>
         ) : (
@@ -244,6 +328,8 @@ export default function TrackingPage() {
                     <th>เรื่อง</th>
                     <th>หน่วยงาน</th>
                     <th>สถานะ</th>
+                    <th>ส่งมอบเมื่อ</th>
+                    <th>ค้าง</th>
                     <th>ลายเซ็น Admin</th>
                     <th>ผู้ตรวจสอบ</th>
                     <th>จัดซื้อ</th>
@@ -252,51 +338,85 @@ export default function TrackingPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {visibleDocs.map((doc: any) => (
-                    <tr key={doc.id} onClick={() => setSelectedDoc(doc)} style={{ cursor: 'pointer' }}>
-                      <td className="code-cell">{doc.running_no}</td>
-                      <td>{doc.received_date}</td>
-                      <td>{doc.sender}</td>
-                      <td>{doc.doc_number || '-'}</td>
-                      <td>{doc.subject}</td>
-                      <td>{doc.recipient_dept_name}</td>
-                      <td>
-                        <span className={`status-badge${STATUS_COLORS[doc.status] || ''}`}>
-                          {STATUS_LABELS[doc.status] || doc.status}
-                        </span>
-                      </td>
-                      <td>{doc.admin_signature || '-'}</td>
-                      <td>{doc.inspector_signature || '-'}</td>
-                      <td>{doc.purchasing_signature || '-'}</td>
-                      <td>{doc.recipient_signature || '-'}</td>
-                      {isSuperAdmin && (
+                  {pagedDocs.map((doc: any) => {
+                    const pending = daysPending(doc);
+                    return (
+                      <tr
+                        key={doc.id}
+                        tabIndex={0}
+                        role="button"
+                        aria-label={`ดูรายละเอียดเอกสาร ${doc.running_no} ${doc.subject}`}
+                        onClick={() => setSelectedDoc(doc)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setSelectedDoc(doc);
+                          }
+                        }}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <td className="code-cell">{doc.running_no}</td>
+                        <td>{doc.received_date}</td>
+                        <td>{doc.sender}</td>
+                        <td>{doc.doc_number || '-'}</td>
+                        <td>{doc.subject}</td>
+                        <td>{doc.recipient_dept_name}</td>
                         <td>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleDeleteDoc(doc); }}
-                            style={{ background: 'var(--danger)', color: 'white', border: 'none', padding: '4px 10px', borderRadius: 6, cursor: 'pointer', fontSize: '0.8rem' }}
-                          >
-                            🗑
-                          </button>
+                          <span className={`status-badge${STATUS_COLORS[doc.status] || ''}`}>
+                            {STATUS_LABELS[doc.status] || doc.status}
+                          </span>
                         </td>
-                      )}
-                    </tr>
-                  ))}
+                        <td>{formatDate(doc.admin_signed_at)}</td>
+                        <td>{pending === null ? '-' : `${pending} วัน`}</td>
+                        <td>{doc.admin_signature || '-'}</td>
+                        <td>{doc.inspector_signature || '-'}</td>
+                        <td>{doc.purchasing_signature || '-'}</td>
+                        <td>{doc.recipient_signature || '-'}</td>
+                        {isSuperAdmin && (
+                          <td>
+                            <button
+                              className="table-action-button danger"
+                              onClick={(e) => { e.stopPropagation(); handleDeleteDoc(doc); }}
+                            >
+                              🗑
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
             <div style={{ marginTop: 8, color: 'var(--muted)', fontSize: '0.85rem', fontWeight: 700 }}>
-              พบทั้งหมด {visibleDocs.length} รายการ
+              พบทั้งหมด {visibleDocs.length} รายการ{visibleDocs.length > pagedDocs.length ? ` (แสดง ${pagedDocs.length} รายการแรก)` : ''}
             </div>
+            {visibleDocs.length > pagedDocs.length && (
+              <button
+                className="ghost-button"
+                style={{ marginTop: 12 }}
+                onClick={() => setVisibleCount((current) => current + PAGE_SIZE)}
+              >
+                แสดงเพิ่ม (เหลืออีก {visibleDocs.length - pagedDocs.length} รายการ)
+              </button>
+            )}
           </>
         )}
       </div>
 
       {/* Modal */}
       {selectedDoc && (
-        <div className="scan-popup-overlay" onClick={() => setSelectedDoc(null)}>
-          <div className="scan-popup-sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520, margin: '0 auto' }}>
+        <div className="scan-popup-overlay" role="presentation" onClick={() => setSelectedDoc(null)}>
+          <div
+            className="scan-popup-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tracking-detail-title"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 520, margin: '0 auto' }}
+          >
             <div className="scan-popup-handle" />
-            <h3 style={{ marginBottom: 12 }}>📄 รายละเอียดเอกสาร #{selectedDoc.running_no}</h3>
+            <h3 id="tracking-detail-title" style={{ marginBottom: 12 }}>📄 รายละเอียดเอกสาร #{selectedDoc.running_no}</h3>
             <div style={{ display: 'grid', gap: 8 }}>
               <div><strong>วันที่รับ:</strong> {selectedDoc.received_date}</div>
               <div><strong>เลขที่เอกสาร:</strong> {selectedDoc.doc_number || '-'}</div>
@@ -307,31 +427,28 @@ export default function TrackingPage() {
               <div><strong>สถานะ:</strong> <span className={`status-badge${STATUS_COLORS[selectedDoc.status] || ''}`}>{STATUS_LABELS[selectedDoc.status] || selectedDoc.status}</span></div>
               <div><strong>ผู้บันทึก:</strong> {selectedDoc.recorded_by_name || '-'}</div>
               {selectedDoc.admin_signature && <div><strong>ลายเซ็นส่งมอบ (Admin):</strong> {selectedDoc.admin_signature}</div>}
+              {selectedDoc.admin_signed_at && <div><strong>ส่งมอบเมื่อ:</strong> {formatDate(selectedDoc.admin_signed_at)}</div>}
               {selectedDoc.inspector_signature && <div><strong>ผู้ตรวจสอบ:</strong> {selectedDoc.inspector_signature}</div>}
               {selectedDoc.purchasing_signature && <div><strong>จัดซื้อ:</strong> {selectedDoc.purchasing_signature}</div>}
               {selectedDoc.recipient_signature && <div><strong>ลายเซ็นผู้รับ:</strong> {selectedDoc.recipient_signature}</div>}
+              {selectedDoc.status === 'rejected' && (
+                <div className="toast error" style={{ position: 'static' }}>
+                  <strong>เหตุผลที่แจ้งปัญหา:</strong> {selectedDoc.recipient_verification_note || 'ผู้รับไม่ได้ระบุเหตุผล'}
+                </div>
+              )}
               {selectedDoc.note && <div><strong>หมายเหตุ:</strong> {selectedDoc.note}</div>}
               {isAdmin && selectedDoc.status === 'rejected' && (
-                <button
-                  onClick={() => handleRedeliver(selectedDoc)}
-                  style={{ marginTop: 8, background: 'var(--warning)', color: 'white', border: 'none', padding: '10px', borderRadius: 8, cursor: 'pointer' }}
-                >
+                <button className="ghost-button warning" style={{ marginTop: 8 }} onClick={() => handleRedeliver(selectedDoc)}>
                   📮 ส่งเซ็นใหม่
                 </button>
               )}
               {isAdmin && selectedDoc.status === 'signed' && selectedDoc.delivery_log_id && (
-                <button
-                  onClick={() => handleCloseTask(selectedDoc)}
-                  style={{ marginTop: 8, background: 'var(--success)', color: 'white', border: 'none', padding: '10px', borderRadius: 8, cursor: 'pointer' }}
-                >
+                <button className="ghost-button success" style={{ marginTop: 8 }} onClick={() => handleCloseTask(selectedDoc)}>
                   🔒 ปิดงานเลย
                 </button>
               )}
               {isSuperAdmin && (
-                <button
-                  onClick={() => handleDeleteDoc(selectedDoc)}
-                  style={{ marginTop: 8, background: 'var(--danger)', color: 'white', border: 'none', padding: '10px', borderRadius: 8, cursor: 'pointer' }}
-                >
+                <button className="ghost-button danger" style={{ marginTop: 8 }} onClick={() => handleDeleteDoc(selectedDoc)}>
                   🗑 ลบเอกสารนี้
                 </button>
               )}
