@@ -4,6 +4,35 @@ import { appendRow } from '@/lib/google-sheets';
 import { requireRoles } from '@/lib/supabase/auth-helpers';
 import { accountingDestinationFor, canViewGoodsReceiptWorkflow, GOODS_RECEIPT_SUBJECT, isGoodsReceipt } from '@/lib/document-workflow';
 
+// PostgREST คืนแถวได้จำกัดต่อคำขอ (ค่าเริ่มต้น 1000) การ select เฉย ๆ จึงตัดแถว
+// ทิ้งเงียบ ๆ เมื่อเอกสารสะสมมากขึ้น และไม่มีทางรู้ว่าใบไหนหาย จึงต้องไล่ดึงเป็นหน้า
+const PAGE_SIZE = 1000;
+async function fetchAllRows(buildQuery: (from: number, to: number) => any): Promise<any[]> {
+  const all: any[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await buildQuery(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    const batch = data || [];
+    all.push(...batch);
+    if (batch.length < PAGE_SIZE) return all;
+  }
+}
+
+// รายการ id ที่ยาวเกินไปจะทำให้ URL ของ PostgREST ยาวเกินขีดจำกัดของเซิร์ฟเวอร์
+// (414) จึงต้องหั่นเป็นก้อนก่อนยิง .in()
+const ID_CHUNK = 200;
+function chunk<T>(items: T[]): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += ID_CHUNK) out.push(items.slice(i, i + ID_CHUNK));
+  return out;
+}
+
+// or() ใช้ลูกน้ำแยกเงื่อนไข คำค้นที่มีลูกน้ำหรือวงเล็บจึงทำให้ query พังทั้งก้อน
+// (ผู้ใช้เห็นเป็น "ค้นแล้วไม่เจอ") — ครอบด้วยอัญประกาศเพื่อให้ถูกอ่านเป็นข้อความล้วน
+function ilikePattern(keyword: string) {
+  return `"%${keyword.replace(/[\\"]/g, (c) => `\\${c}`)}%"`;
+}
+
 // A "document" returned to the client is a document_recipients row flattened
 // with its parent document's shared fields (see migration 006). A document
 // linked to N departments therefore appears as N separate rows here, one per
@@ -24,35 +53,40 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '0', 10);
 
     // Phase 1: filter on shared document-level fields.
-    let docQuery = supabase.from('documents').select('*');
-    if (keyword) {
-      docQuery = docQuery.or(`sender.ilike.%${keyword}%,subject.ilike.%${keyword}%,doc_number.ilike.%${keyword}%,tax_invoice_no.ilike.%${keyword}%`);
-    }
-    if (date_from) docQuery = docQuery.gte('received_date', date_from);
-    if (date_to) docQuery = docQuery.lte('received_date', date_to);
-
-    const { data: docs, error: docsError } = await docQuery;
-    if (docsError) throw docsError;
-    const docMap = new Map((docs || []).map((d: any) => [d.id, d]));
+    const docs = await fetchAllRows((from, to) => {
+      let q = supabase.from('documents').select('*').order('running_no', { ascending: false }).order('id').range(from, to);
+      if (keyword) {
+        const pattern = ilikePattern(keyword);
+        q = q.or(`sender.ilike.${pattern},subject.ilike.${pattern},doc_number.ilike.${pattern},tax_invoice_no.ilike.${pattern}`);
+      }
+      if (date_from) q = q.gte('received_date', date_from);
+      if (date_to) q = q.lte('received_date', date_to);
+      return q;
+    });
+    const docMap = new Map(docs.map((d: any) => [d.id, d]));
     if (docMap.size === 0) return NextResponse.json({ success: true, data: [] });
-
-    // Phase 2: filter per-department recipient rows, scoped to the matched documents.
-    let recQuery = supabase
-      .from('document_recipients')
-      .select('*')
-      .in('document_id', Array.from(docMap.keys()));
 
     // scope=mine (used by the delivery page) shows documents the user themself
     // registered, across all departments — not the usual own-department filter.
     const isMineScope = scope === 'mine' && auth.context?.profile.role === 'user';
-    if (statuses.length === 1) recQuery = recQuery.eq('status', statuses[0]);
-    else if (statuses.length > 1) recQuery = recQuery.in('status', statuses);
-    if (dept_id) recQuery = recQuery.eq('department_id', dept_id);
 
-    const { data: recipientsData, error: recError } = await recQuery;
-    if (recError) throw recError;
+    // Phase 2: filter per-department recipient rows, scoped to the matched documents.
+    const recipientsData = (
+      await Promise.all(
+        chunk(Array.from(docMap.keys())).map((ids) =>
+          fetchAllRows((from, to) => {
+            // ต้องเรียงคงที่เสมอ ไม่งั้นการไล่ range() ทีละหน้าจะได้แถวซ้ำหรือตกหล่น
+            let q = supabase.from('document_recipients').select('*').in('document_id', ids).order('id').range(from, to);
+            if (statuses.length === 1) q = q.eq('status', statuses[0]);
+            else if (statuses.length > 1) q = q.in('status', statuses);
+            if (dept_id) q = q.eq('department_id', dept_id);
+            return q;
+          })
+        )
+      )
+    ).flat();
 
-    let rows = recipientsData || [];
+    let rows = recipientsData;
     if (isMineScope) {
       rows = rows.filter((r: any) => docMap.get(r.document_id)?.recorded_by === auth.context!.user.id);
     } else if (auth.context?.profile.role === 'user') {
@@ -76,21 +110,34 @@ export async function GET(request: NextRequest) {
     const profileIds = [...new Set(rows.map((r: any) => docMap.get(r.document_id)?.recorded_by).filter(Boolean))];
     const recIds = rows.map((r: any) => r.id);
 
-    const [{ data: departments }, { data: profiles }, { data: deliveries }] = await Promise.all([
-      supabase.from('departments').select('id, name').in('id', deptIds.length ? deptIds : ['none']),
-      supabase.from('profiles').select('id, full_name').in('id', profileIds.length ? profileIds : ['none']),
-      supabase
-        .from('delivery_logs')
-        .select('id, document_recipient_id, recipient_signature, recipient_signed_at, is_verified, verified_by_admin')
-        .in('document_recipient_id', recIds.length ? recIds : ['none'])
-        .order('created_at', { ascending: false }),
+    const fetchByIds = (table: string, columns: string, column: string, ids: string[], newestFirst = false) =>
+      Promise.all(
+        chunk(ids).map((part) =>
+          fetchAllRows((from, to) => {
+            const q = supabase.from(table).select(columns).in(column, part).range(from, to);
+            // newestFirst ต้องตามด้วย id เพื่อให้ลำดับคงที่ตอนไล่หน้า (created_at ซ้ำกันได้)
+            return newestFirst ? q.order('created_at', { ascending: false }).order('id') : q.order('id');
+          })
+        )
+      ).then((batches) => batches.flat());
+
+    const [departments, profiles, deliveries] = await Promise.all([
+      fetchByIds('departments', 'id, name', 'id', deptIds as string[]),
+      fetchByIds('profiles', 'id, full_name', 'id', profileIds as string[]),
+      fetchByIds(
+        'delivery_logs',
+        'id, document_recipient_id, recipient_signature, recipient_signed_at, is_verified, verified_by_admin, verification_note',
+        'document_recipient_id',
+        recIds as string[],
+        true
+      ),
     ]);
 
-    const deptMap = new Map((departments || []).map((d: any) => [d.id, d.name]));
-    const profileMap = new Map((profiles || []).map((p: any) => [p.id, p.full_name]));
+    const deptMap = new Map(departments.map((d: any) => [d.id, d.name]));
+    const profileMap = new Map(profiles.map((p: any) => [p.id, p.full_name]));
     // delivery_logs is ordered newest-first, so the first entry per recipient row wins (latest attempt).
-    const recipientSignatureMap = new Map<string, { id: string; signature: string; signedAt: string; isVerified: boolean; verifiedByAdmin: boolean }>();
-    for (const log of deliveries || []) {
+    const recipientSignatureMap = new Map<string, { id: string; signature: string; signedAt: string; isVerified: boolean; verifiedByAdmin: boolean; note: string | null }>();
+    for (const log of deliveries as any[]) {
       if (!recipientSignatureMap.has(log.document_recipient_id)) {
         recipientSignatureMap.set(log.document_recipient_id, {
           id: log.id,
@@ -98,6 +145,7 @@ export async function GET(request: NextRequest) {
           signedAt: log.recipient_signed_at,
           isVerified: log.is_verified,
           verifiedByAdmin: log.verified_by_admin,
+          note: log.verification_note ?? null,
         });
       }
     }
@@ -126,6 +174,7 @@ export async function GET(request: NextRequest) {
         delivery_log_id: sig?.id || null,
         recipient_verified: sig?.isVerified ?? null,
         recipient_verified_by_admin: sig?.verifiedByAdmin ?? null,
+        recipient_verification_note: sig?.note ?? null,
       };
     });
 
