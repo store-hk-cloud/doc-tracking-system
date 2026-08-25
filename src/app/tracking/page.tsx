@@ -285,7 +285,7 @@ export default function TrackingPage() {
       </div>
 
       {/* Filters */}
-      <div className="search-panel tracking-filters">
+      <div className="search-panel filter-panel">
         <div className="search-form">
           <div className="filter-row">
             <span className="eyebrow">ค้นหา</span>

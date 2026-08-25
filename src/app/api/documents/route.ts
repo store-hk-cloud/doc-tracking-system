@@ -104,6 +104,11 @@ export async function GET(request: NextRequest) {
         // ผู้บันทึกคือคนที่เซ็นส่งมอบเอกสารนั้นเอง ต้องตามงานของตัวเองต่อได้
         // แม้ปลายทางจะเป็นหน่วยงานอื่น (ซึ่งเป็นกรณีปกติของการส่งมอบ)
         if (doc?.recorded_by === auth.context!.user.id) return true;
+        // คนที่เซ็นด่านตรวจสอบ/จัดซื้อไปแล้วต้องตามดูต่อได้ว่างานเดินไปถึงไหน
+        // ไม่ใช่หลุดจากสายตาทันทีที่ส่งต่อด่านถัดไป (สิทธิ์ตามขั้นด้านล่างเปิดให้
+        // เห็นเฉพาะช่วงที่ยังอยู่ในคิวของหน่วยงานตัวเองเท่านั้น)
+        if (r.inspector_signed_by === auth.context!.user.id) return true;
+        if (r.purchasing_signed_by === auth.context!.user.id) return true;
         if (isGoodsReceipt(doc?.subject)) {
           return canViewGoodsReceiptWorkflow(auth.context!.profile.department_code, r.status);
         }
@@ -133,7 +138,7 @@ export async function GET(request: NextRequest) {
       fetchByIds('profiles', 'id, full_name', 'id', profileIds as string[]),
       fetchByIds(
         'delivery_logs',
-        'id, document_recipient_id, recipient_signature, recipient_signed_at, is_verified, verified_by_admin, verification_note',
+        'id, document_recipient_id, recipient_signature, recipient_signed_at, is_verified, verified_by_admin, verified_by_admin_at, verification_note',
         'document_recipient_id',
         recIds as string[],
         true
@@ -143,7 +148,7 @@ export async function GET(request: NextRequest) {
     const deptMap = new Map(departments.map((d: any) => [d.id, d.name]));
     const profileMap = new Map(profiles.map((p: any) => [p.id, p.full_name]));
     // delivery_logs is ordered newest-first, so the first entry per recipient row wins (latest attempt).
-    const recipientSignatureMap = new Map<string, { id: string; signature: string; signedAt: string; isVerified: boolean; verifiedByAdmin: boolean; note: string | null }>();
+    const recipientSignatureMap = new Map<string, { id: string; signature: string; signedAt: string; isVerified: boolean; verifiedByAdmin: boolean; verifiedAt: string | null; note: string | null }>();
     for (const log of deliveries as any[]) {
       if (!recipientSignatureMap.has(log.document_recipient_id)) {
         recipientSignatureMap.set(log.document_recipient_id, {
@@ -152,6 +157,7 @@ export async function GET(request: NextRequest) {
           signedAt: log.recipient_signed_at,
           isVerified: log.is_verified,
           verifiedByAdmin: log.verified_by_admin,
+          verifiedAt: log.verified_by_admin_at ?? null,
           note: log.verification_note ?? null,
         });
       }
@@ -181,6 +187,7 @@ export async function GET(request: NextRequest) {
         delivery_log_id: sig?.id || null,
         recipient_verified: sig?.isVerified ?? null,
         recipient_verified_by_admin: sig?.verifiedByAdmin ?? null,
+        closed_at: sig?.verifiedAt ?? null,
         recipient_verification_note: sig?.note ?? null,
       };
     });

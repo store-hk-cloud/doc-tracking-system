@@ -422,33 +422,55 @@ body {
 
 /* ตัวกรองหน้าติดตามจัดเป็นแถวป้ายซ้าย-ตัวควบคุมขวา ป้ายกว้างเท่ากันทุกแถวเพื่อให้
    ขอบซ้ายของตัวควบคุมตรงกันเป็นเส้นเดียว */
-.tracking-filters .filter-row {
+.filter-panel .filter-row {
   display: grid;
   grid-template-columns: 92px minmax(0, 1fr);
   align-items: center;
   gap: 12px;
 }
 
-.tracking-filters .filter-row > .eyebrow {
+.filter-panel .filter-row > .eyebrow {
   margin: 0;
 }
 
 /* .secondary-button เป็น width:100% ซึ่งใน flex row ที่ห้ามหดจะกินพื้นที่ทั้งแถว
    จนช่องค้นหาเหลือนิดเดียว — ปุ่มในแถวนี้จึงต้องกว้างตามเนื้อหา */
-.tracking-filters .search-top-row button {
+.filter-panel .search-top-row button {
   width: auto;
   min-height: 42px;
   padding: 0 20px;
 }
 
 /* 9 สถานะ: 3 คอลัมน์ลงตัวพอดี 3 แถว ไม่เหลือช่องว่างแหว่งเหมือน 6+3 */
-.tracking-filters .search-status-row {
+.filter-panel .search-status-row {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.tracking-filters .scope-control {
+.filter-panel .scope-control {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   max-width: 340px;
+}
+
+.filter-panel .search-top-row select {
+  min-height: 42px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+/* .segmented-control เป็น grid 3 คอลัมน์ตายตัว กลุ่มที่มีสองปุ่มจึงเหลือช่องว่าง
+   ค้างไว้ทางขวา ต้องบอกจำนวนคอลัมน์จริงเสมอ */
+.segmented-control.segmented-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.tracking-date-row .segmented-control.segmented-2 {
+  min-width: 200px;
 }
 
 .tracking-date-row {
@@ -606,7 +628,7 @@ body {
 .tracking-table .col-delete { width: 56px; }
 
 @media (max-width: 720px) {
-  .tracking-filters .filter-row {
+  .filter-panel .filter-row {
     grid-template-columns: 1fr;
     gap: 6px;
   }
@@ -633,12 +655,12 @@ body {
     margin-left: 0;
   }
 
-  .tracking-filters .search-status-row button {
+  .filter-panel .search-status-row button {
     padding: 0 4px;
     font-size: 0.78rem;
   }
 
-  .tracking-filters .scope-control {
+  .filter-panel .scope-control {
     max-width: none;
   }
 }

@@ -4,7 +4,25 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { getGoodsReceiptWorkflowAction, isGoodsReceipt } from '@/lib/document-workflow';
 
-const todayStr = () => new Date().toISOString().split('T')[0];
+const pad = (n: number) => String(n).padStart(2, '0');
+const dateInput = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const todayStr = () => dateInput(new Date());
+const monthStartStr = () => {
+  const now = new Date();
+  return dateInput(new Date(now.getFullYear(), now.getMonth(), 1));
+};
+
+// ใบที่ปิดงานแล้วเรียงด้วยเวลาปิดงาน ส่วนใบที่ผู้รับเซ็นแล้วแต่ยังไม่ถูกปิด
+// ใช้เวลาที่เซ็นแทน จะได้ไม่ตกไปท้ายรายการทั้งที่เพิ่งเกิดขึ้น
+const closedRank = (doc: any) => {
+  const stamp = doc.closed_at || doc.recipient_signed_at;
+  return stamp ? new Date(stamp).getTime() : 0;
+};
+
+const formatDateTime = (value: string | null) => {
+  if (!value) return '-';
+  return new Date(value).toLocaleString('th-TH', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+};
 const PENDING_STATUSES = ['delivered', 'awaiting_inspector', 'awaiting_purchasing', 'awaiting_recipient'];
 const ACTION_LABELS: Record<string, string> = {
   inspector: 'เซ็นผู้ตรวจสอบ',
@@ -81,17 +99,24 @@ export default function RecipientListPage() {
     setPendingLoading(false);
   };
 
-  const loadClosed = async () => {
+  const loadClosed = async (override?: Partial<typeof closedFilter>) => {
+    const active = { ...closedFilter, ...override };
     setClosedLoading(true);
     try {
       let url = '/api/documents?status=closed&status=signed';
-      if (closedFilter.keyword) url += `&keyword=${encodeURIComponent(closedFilter.keyword)}`;
-      if (closedFilter.dept_id) url += `&dept_id=${closedFilter.dept_id}`;
-      if (closedFilter.date_from) url += `&date_from=${closedFilter.date_from}`;
-      if (closedFilter.date_to) url += `&date_to=${closedFilter.date_to}`;
+      if (active.keyword) url += `&keyword=${encodeURIComponent(active.keyword)}`;
+      if (active.dept_id) url += `&dept_id=${active.dept_id}`;
+      if (active.date_from) url += `&date_from=${active.date_from}`;
+      if (active.date_to) url += `&date_to=${active.date_to}`;
       const res = await window.fetch(url);
       const data = await res.json();
-      if (data.success) setClosedDocs(data.data.filter((d: any) => ['closed', 'signed'].includes(d.status)));
+      // เรียงตามเวลาที่ปิดงานจริง ไม่ใช่เลขที่เอกสาร เพราะใบเก่าที่เพิ่งปิดวันนี้
+      // คือสิ่งที่คนเปิดแท็บนี้อยากเห็นก่อน
+      if (data.success) setClosedDocs(
+        data.data
+          .filter((d: any) => ['closed', 'signed'].includes(d.status))
+          .sort((a: any, b: any) => closedRank(b) - closedRank(a))
+      );
     } catch (e) {
       console.error('fetch closed docs error:', e);
     }
@@ -330,7 +355,7 @@ export default function RecipientListPage() {
         <div className="title-accent" />
       </div>
 
-      <div className="segmented-control" style={{ marginBottom: 16 }}>
+      <div className="segmented-control segmented-2" style={{ marginBottom: 16 }}>
         <button className={tab === 'pending' ? 'active' : ''} onClick={() => setTab('pending')}>
           รอดำเนินการ
         </button>
@@ -341,47 +366,43 @@ export default function RecipientListPage() {
 
       {tab === 'pending' ? (
         <div className="scan-panel">
-          <div className="search-panel" style={{ marginBottom: 16 }}>
+          <div className="search-panel filter-panel" style={{ marginBottom: 16 }}>
             <div className="search-form">
-              <div className="search-top-row">
-                <div className="search-input-row">
-                  <input
-                    placeholder="ค้นหา ผู้ส่ง, เรื่อง, เลขที่เอกสาร..."
-                    value={pendingKeyword}
-                    onChange={(e) => setPendingKeyword(e.target.value)}
-                  />
+              <div className="filter-row">
+                <span className="eyebrow">ค้นหา</span>
+                <div className="search-top-row">
+                  <div className="search-input-row">
+                    <input
+                      placeholder="ค้นหา ผู้ส่ง, เรื่อง, เลขที่เอกสาร..."
+                      value={pendingKeyword}
+                      onChange={(e) => setPendingKeyword(e.target.value)}
+                    />
+                  </div>
+                  <select value={pendingStage} onChange={(e) => setPendingStage(e.target.value)}>
+                    <option value="">ทุกขั้นตอน</option>
+                    {Object.entries(STAGE_LABELS).map(([status, label]) => (
+                      <option key={status} value={status}>{label}</option>
+                    ))}
+                  </select>
                 </div>
-                <select
-                  value={pendingStage}
-                  onChange={(e) => setPendingStage(e.target.value)}
-                  style={{ minHeight: 42, borderRadius: 8, border: '1px solid var(--line-strong)', padding: '0 10px' }}
-                >
-                  <option value="">ทุกขั้นตอน</option>
-                  {Object.entries(STAGE_LABELS).map(([status, label]) => (
-                    <option key={status} value={status}>{label}</option>
-                  ))}
-                </select>
+              </div>
+
+              <div className="filter-row">
+                <span className="eyebrow">วันที่ส่งมอบ</span>
+                <div className="tracking-date-row">
+                  <input type="date" value={pendingDate} onChange={(e) => setPendingDate(e.target.value)} aria-label="วันที่ส่งมอบ" />
+                  <div className="segmented-control segmented-2">
+                    <button className={pendingDate === '' ? 'active' : ''} onClick={() => setPendingDate('')}>ทุกวัน</button>
+                    <button className={pendingDate === todayStr() ? 'active' : ''} onClick={() => setPendingDate(todayStr())}>วันนี้</button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}>
-              วันที่ส่งมอบ:
-              <input type="date" value={pendingDate} onChange={(e) => setPendingDate(e.target.value)} />
-            </label>
-            {pendingDate !== '' && (
-              <button className="ghost-button" style={{ width: 'auto', padding: '0 12px' }} onClick={() => setPendingDate('')}>
-                แสดงทุกวัน
-              </button>
-            )}
-            {pendingDate !== todayStr() && (
-              <button className="ghost-button" style={{ width: 'auto', padding: '0 12px' }} onClick={() => setPendingDate(todayStr())}>
-                เฉพาะวันนี้
-              </button>
-            )}
-            <span style={{ color: 'var(--muted)', fontSize: '0.82rem' }}>
-              {pendingDate ? `แสดงเฉพาะวันที่ ${pendingDate}` : `งานค้างทุกวัน ${visiblePending.length} รายการ`}
+          <div className="table-toolbar">
+            <span className="table-toolbar-count">
+              {pendingDate ? `งานค้างวันที่ ${pendingDate} ${visiblePending.length} รายการ` : `งานค้างทุกวัน ${visiblePending.length} รายการ`}
             </span>
           </div>
 
@@ -533,44 +554,72 @@ export default function RecipientListPage() {
         </div>
       ) : (
         <div className="scan-panel">
-          <div className="search-panel" style={{ marginBottom: 16 }}>
+          <div className="search-panel filter-panel" style={{ marginBottom: 16 }}>
             <div className="search-form">
-              <div className="search-top-row">
-                <div className="search-input-row">
-                  <input
-                    placeholder="ค้นหา ผู้ส่ง, เรื่อง, เลขที่เอกสาร..."
-                    value={closedFilter.keyword}
-                    onChange={(e) => setClosedFilter({ ...closedFilter, keyword: e.target.value })}
-                    onKeyDown={(e) => e.key === 'Enter' && loadClosed()}
-                  />
+              <div className="filter-row">
+                <span className="eyebrow">ค้นหา</span>
+                <div className="search-top-row">
+                  <div className="search-input-row">
+                    <input
+                      placeholder="ค้นหา ผู้ส่ง, เรื่อง, เลขที่เอกสาร..."
+                      value={closedFilter.keyword}
+                      onChange={(e) => setClosedFilter({ ...closedFilter, keyword: e.target.value })}
+                      onKeyDown={(e) => e.key === 'Enter' && loadClosed()}
+                    />
+                  </div>
+                  <select
+                    value={closedFilter.dept_id}
+                    onChange={(e) => setClosedFilter({ ...closedFilter, dept_id: e.target.value })}
+                  >
+                    <option value="">ทุกหน่วยงาน</option>
+                    {departments.map((d: any) => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                  </select>
+                  <button className="secondary-button" onClick={loadClosed}>🔍 ค้นหา</button>
                 </div>
-                <select
-                  value={closedFilter.dept_id}
-                  onChange={(e) => setClosedFilter({ ...closedFilter, dept_id: e.target.value })}
-                  style={{ minHeight: 42, borderRadius: 8, border: '1px solid var(--line-strong)', padding: '0 10px' }}
-                >
-                  <option value="">ทุกหน่วยงาน</option>
-                  {departments.map((d: any) => (
-                    <option key={d.id} value={d.id}>{d.name}</option>
-                  ))}
-                </select>
-                <input
-                  type="date"
-                  value={closedFilter.date_from}
-                  onChange={(e) => setClosedFilter({ ...closedFilter, date_from: e.target.value })}
-                  style={{ minHeight: 42 }}
-                />
-                <input
-                  type="date"
-                  value={closedFilter.date_to}
-                  onChange={(e) => setClosedFilter({ ...closedFilter, date_to: e.target.value })}
-                  style={{ minHeight: 42 }}
-                />
-                <button className="secondary-button" onClick={loadClosed} style={{ minHeight: 44 }}>
-                  🔍 ค้นหา
-                </button>
+              </div>
+
+              <div className="filter-row">
+                <span className="eyebrow">วันที่รับ</span>
+                <div className="tracking-date-row">
+                  <input
+                    type="date"
+                    value={closedFilter.date_from}
+                    max={closedFilter.date_to || undefined}
+                    onChange={(e) => setClosedFilter({ ...closedFilter, date_from: e.target.value })}
+                    aria-label="ตั้งแต่วันที่"
+                  />
+                  <span className="tracking-date-sep">ถึง</span>
+                  <input
+                    type="date"
+                    value={closedFilter.date_to}
+                    min={closedFilter.date_from || undefined}
+                    onChange={(e) => setClosedFilter({ ...closedFilter, date_to: e.target.value })}
+                    aria-label="ถึงวันที่"
+                  />
+                  <div className="segmented-control segmented-2">
+                    <button
+                      className={!closedFilter.date_from && !closedFilter.date_to ? 'active' : ''}
+                      onClick={() => { const next = { ...closedFilter, date_from: '', date_to: '' }; setClosedFilter(next); loadClosed(next); }}
+                    >
+                      ทั้งหมด
+                    </button>
+                    <button
+                      onClick={() => { const next = { ...closedFilter, date_from: monthStartStr(), date_to: todayStr() }; setClosedFilter(next); loadClosed(next); }}
+                    >
+                      เดือนนี้
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
+          </div>
+
+          <div className="table-toolbar">
+            <span className="table-toolbar-count">
+              ปิดงานล่าสุดอยู่บนสุด · {closedDocs.length} รายการ
+            </span>
           </div>
 
           {closedLoading ? (
@@ -583,6 +632,7 @@ export default function RecipientListPage() {
                 <thead>
                   <tr>
                     <th>No.</th>
+                    <th>ปิดงานเมื่อ</th>
                     <th>วันที่รับ</th>
                     <th>เลขที่เอกสาร</th>
                     <th>ผู้ส่ง</th>
@@ -598,6 +648,7 @@ export default function RecipientListPage() {
                   {closedDocs.map((doc: any) => (
                     <tr key={doc.id}>
                       <td className="code-cell">{doc.running_no}</td>
+                      <td>{formatDateTime(doc.closed_at || doc.recipient_signed_at)}</td>
                       <td>{doc.received_date}</td>
                       <td>{doc.doc_number || '-'}</td>
                       <td>{doc.sender}</td>
@@ -607,7 +658,9 @@ export default function RecipientListPage() {
                       <td>{doc.purchasing_signature || '-'}</td>
                       <td>{doc.recipient_dept_name}</td>
                       <td>
-                        <span className="status-badge success">ปิดงานแล้ว</span>
+                        <span className={`status-badge${doc.status === 'closed' ? ' success' : ''}`}>
+                          {doc.status === 'closed' ? 'ปิดงานแล้ว' : 'ลงนามแล้ว'}
+                        </span>
                       </td>
                     </tr>
                   ))}
