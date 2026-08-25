@@ -287,7 +287,7 @@ export default function RegisterPage() {
           <span className="eyebrow">📋 รายการเอกสาร ({rows.length} แถว)</span>
         </div>
 
-        <div className="table-wrap">
+        <div className="table-wrap no-scroll-box">
           <table>
             <thead>
               <tr>

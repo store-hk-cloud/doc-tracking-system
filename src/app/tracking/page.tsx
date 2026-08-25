@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { isGoodsReceipt } from '@/lib/document-workflow';
 
 const STATUS_OPTIONS = ['ทั้งหมด', 'registered', 'delivered', 'awaiting_inspector', 'awaiting_purchasing', 'awaiting_recipient', 'signed', 'closed', 'rejected'];
 const STATUS_LABELS: Record<string, string> = {
@@ -37,6 +38,26 @@ function daysPending(doc: any): number | null {
 function formatDate(value: string | null) {
   if (!value) return '-';
   return new Date(value).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' });
+}
+
+// ช่องลายเซ็นสี่ด่านคงที่ทุกแถวเพื่อให้กวาดสายตาลงคอลัมน์เดียวกันได้ แต่ด่าน
+// ผู้ตรวจสอบ/จัดซื้อมีเฉพาะใบรับสินค้า ใบอื่นจึงต้องบอกว่า "ไม่ใช้" ไม่ใช่ "รอเซ็น"
+// ซึ่งจะอ่านเป็นงานค้างทั้งที่ไม่มีใครต้องเซ็น
+function signatureCells(doc: any) {
+  const goodsReceipt = isGoodsReceipt(doc.subject);
+  return [
+    { label: 'ส่งมอบ', signature: doc.admin_signature, used: true },
+    { label: 'ผู้ตรวจสอบ', signature: doc.inspector_signature, used: goodsReceipt },
+    { label: 'จัดซื้อ', signature: doc.purchasing_signature, used: goodsReceipt },
+    { label: 'ผู้รับ', signature: doc.recipient_signature, used: true },
+  ].map((stage) => ({
+    ...stage,
+    title: stage.signature
+      ? `${stage.label}: ${stage.signature}`
+      : stage.used
+        ? `${stage.label}: ยังไม่เซ็น`
+        : `${stage.label}: ไม่ใช้กับเอกสารประเภทนี้`,
+  }));
 }
 
 // ประกอบ y-m-d เองตามเวลาเครื่อง ไม่ใช้ toISOString() ที่แปลงเป็น UTC ก่อน
@@ -394,27 +415,42 @@ export default function TrackingPage() {
               <>
             <div className="table-wrap tracking-table">
               <table>
+                <colgroup>
+                  <col className="col-no" />
+                  <col className="col-date" />
+                  <col className="col-sender" />
+                  <col className="col-docno" />
+                  <col className="col-subject" />
+                  <col className="col-dept" />
+                  <col className="col-status" />
+                  <col className="col-pending" />
+                  <col className="col-sign" />
+                  <col className="col-sign" />
+                  <col className="col-sign" />
+                  <col className="col-sign" />
+                  {isSuperAdmin && <col className="col-delete" />}
+                </colgroup>
                 <thead>
                   <tr>
                     <th>No.</th>
-                    <th>วันที่รับ</th>
+                    <th>วันที่รับ / ส่งมอบ</th>
                     <th>ผู้ส่ง</th>
                     <th>เลขที่เอกสาร</th>
                     <th>เรื่อง</th>
                     <th>หน่วยงาน</th>
                     <th>สถานะ</th>
-                    <th>ส่งมอบเมื่อ</th>
                     <th>ค้าง</th>
-                    <th>ลายเซ็น Admin</th>
+                    <th>ส่งมอบ</th>
                     <th>ผู้ตรวจสอบ</th>
                     <th>จัดซื้อ</th>
-                    <th>ลายเซ็นผู้รับ</th>
+                    <th>ผู้รับ</th>
                     {isSuperAdmin && <th>ลบ</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {pagedDocs.map((doc: any) => {
                     const pending = daysPending(doc);
+                    const stageCells = signatureCells(doc);
                     return (
                       <tr
                         key={doc.id}
@@ -431,22 +467,31 @@ export default function TrackingPage() {
                         style={{ cursor: 'pointer' }}
                       >
                         <td className="code-cell">{doc.running_no}</td>
-                        <td>{formatDate(doc.received_date)}</td>
-                        <td className="clip-cell" title={doc.sender}>{doc.sender}</td>
-                        <td>{doc.doc_number || '-'}</td>
-                        <td className="clip-cell" title={doc.subject}>{doc.subject}</td>
-                        <td className="clip-cell" title={doc.recipient_dept_name || ''}>{doc.recipient_dept_name}</td>
+                        <td className="stack-cell">
+                          <span>{formatDate(doc.received_date)}</span>
+                          <span className="stack-sub">
+                            {doc.admin_signed_at ? `ส่ง ${formatDate(doc.admin_signed_at)}` : 'ยังไม่ส่งมอบ'}
+                          </span>
+                        </td>
+                        <td className="clip-cell" title={doc.sender}><span>{doc.sender}</span></td>
+                        <td className="clip-cell" title={doc.doc_number || ''}><span>{doc.doc_number || '-'}</span></td>
+                        <td className="clip-cell" title={doc.subject}><span>{doc.subject}</span></td>
+                        <td className="clip-cell" title={doc.recipient_dept_name || ''}><span>{doc.recipient_dept_name}</span></td>
                         <td>
                           <span className={`status-badge${STATUS_COLORS[doc.status] || ''}`}>
                             {STATUS_LABELS[doc.status] || doc.status}
                           </span>
                         </td>
-                        <td>{formatDate(doc.admin_signed_at)}</td>
                         <td className="num-cell">{pending === null ? '-' : `${pending} วัน`}</td>
-                        <td>{doc.admin_signature || '-'}</td>
-                        <td>{doc.inspector_signature || '-'}</td>
-                        <td>{doc.purchasing_signature || '-'}</td>
-                        <td>{doc.recipient_signature || '-'}</td>
+                        {stageCells.map((cell) => (
+                          <td key={cell.label} className="clip-cell" title={cell.title}>
+                            {cell.signature ? (
+                              <span>{cell.signature}</span>
+                            ) : (
+                              <span className={cell.used ? 'sign-waiting' : 'sign-na'}>{cell.used ? 'รอเซ็น' : '—'}</span>
+                            )}
+                          </td>
+                        ))}
                         {isSuperAdmin && (
                           <td>
                             <button

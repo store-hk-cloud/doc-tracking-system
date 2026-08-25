@@ -157,10 +157,21 @@ body {
   font-size: 0.72rem;
 }
 
+/* รายการยาวเลื่อนอยู่ในกล่องของตัวเอง หน้าเว็บจึงไม่ยืดไปเรื่อย ๆ และหัวข้อ/ตัวกรอง
+   ด้านบนยังอยู่ในสายตา — ตารางที่แถวน้อยจะสูงตามเนื้อหาเอง ไม่มีสกรอลล์มาให้รก
+   ตารางที่เป็นฟอร์มกรอกข้อมูล (หน้าลงทะเบียน) ใช้ .table-wrap.no-scroll-box เพื่อ
+   ไม่ให้ต้องเลื่อนสองชั้นระหว่างพิมพ์ */
 .table-wrap {
   width: 100%;
+  max-height: clamp(320px, 62vh, 720px);
   overflow-x: auto;
+  overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+.table-wrap.no-scroll-box {
+  max-height: none;
+  overflow-y: visible;
 }
 
 .table-wrap table {
@@ -509,24 +520,90 @@ body {
   padding: 0 16px;
 }
 
-/* ตารางติดตามกว้างเกินจอเสมอ ให้เลื่อนแนวนอนแทนการบีบจนตัดบรรทัด */
-.tracking-table td,
-.tracking-table th {
+/* ตารางแบ่งคอลัมน์เป็นสัดส่วนคงที่แทนการกว้างตามเนื้อหา จึงพอดีจอโดยไม่ต้อง
+   เลื่อนแนวนอน — เหลือ min-width ไว้กันบีบจนอ่านไม่ออกบนจอเล็กเท่านั้น */
+.tracking-table table {
+  width: 100%;
+  min-width: 860px;
+  table-layout: fixed;
+}
+
+.tracking-table td {
   white-space: nowrap;
 }
 
-/* คอลัมน์ข้อความยาว (ผู้ส่ง/เรื่อง/หน่วยงาน) ตัดด้วย ellipsis แทนการดันตารางยาว
-   ไม่จำกัด — ข้อความเต็มดูได้จาก title และใน popup รายละเอียด */
+/* หัวตารางต้องตัดบรรทัดได้ ไม่งั้นชื่อคอลัมน์ยาวจะล้นออกไปทับคอลัมน์ข้าง ๆ */
+.tracking-table th {
+  white-space: normal;
+  line-height: 1.3;
+}
+
+/* border-collapse ทำให้เส้นใต้ของหัวตารางหายตอน sticky จึงวาดด้วย inset shadow แทน */
+.table-wrap thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  box-shadow: inset 0 -1px 0 var(--line);
+}
+
+/* แถวสูงสองบรรทัดอยู่แล้วจากช่องวันที่ ข้อความยาวจึงตัดลงบรรทัดที่สองได้ฟรี
+   เกินสองบรรทัดค่อยตัดด้วย ellipsis (ข้อความเต็มอยู่ใน title และ popup) */
 .tracking-table .clip-cell {
-  max-width: 220px;
+  white-space: normal;
+}
+
+/* clamp ต้องอยู่ที่ span ชั้นใน: ใส่ display:-webkit-box ที่ td โดยตรงจะทำให้
+   ช่องหลุดจาก table-cell แล้วความสูงแถวพองเป็นสองเท่า */
+.tracking-table .clip-cell > span {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
+  word-break: break-word;
 }
 
 .tracking-table .num-cell {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+
+/* สองบรรทัดในช่องเดียว: บรรทัดบนคือค่าหลัก บรรทัดล่างคือค่าประกอบ */
+.tracking-table .stack-cell {
+  line-height: 1.35;
+}
+
+.tracking-table .stack-sub {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+}
+
+/* ด่านที่ยังไม่มีใครเซ็น กับด่านที่เอกสารประเภทนี้ไม่ใช้ ต้องอ่านต่างกัน */
+.tracking-table .sign-waiting,
+.tracking-table .sign-na {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.tracking-table .sign-na {
+  opacity: 0.55;
+}
+
+.tracking-table .col-no { width: 4%; }
+.tracking-table .col-date { width: 9%; }
+.tracking-table .col-sender { width: 10%; }
+.tracking-table .col-docno { width: 9%; }
+.tracking-table .col-subject { width: 14%; }
+.tracking-table .col-dept { width: 11%; }
+.tracking-table .col-status { width: 9%; }
+.tracking-table .col-pending { width: 6%; }
+.tracking-table .col-sign { width: 7%; }
+.tracking-table .col-delete { width: 56px; }
 
 @media (max-width: 720px) {
   .tracking-filters .filter-row {
