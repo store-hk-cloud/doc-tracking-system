@@ -433,7 +433,7 @@ export default function TrackingPage() {
                 </colgroup>
                 <thead>
                   <tr>
-                    <th>No.</th>
+                    <th>เลขที่รับเข้า</th>
                     <th>วันที่รับ / ส่งมอบ</th>
                     <th>ผู้ส่ง</th>
                     <th>เลขที่เอกสาร</th>

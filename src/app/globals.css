@@ -616,16 +616,24 @@ body {
   opacity: 0.55;
 }
 
-.tracking-table .col-no { width: 4%; }
+/* เลขที่แบบ 2026-08/321 ยาวกว่าเลขรันเดิมมาก คอลัมน์แรกจึงต้องกว้างพอ ไม่งั้น
+   ข้อความล้นไปทับคอลัมน์วันที่ (td เป็น nowrap) */
+.tracking-table .col-no { width: 12%; }
 .tracking-table .col-date { width: 9%; }
-.tracking-table .col-sender { width: 10%; }
+.tracking-table .col-sender { width: 9%; }
 .tracking-table .col-docno { width: 9%; }
-.tracking-table .col-subject { width: 14%; }
-.tracking-table .col-dept { width: 11%; }
-.tracking-table .col-status { width: 9%; }
-.tracking-table .col-pending { width: 6%; }
-.tracking-table .col-sign { width: 7%; }
+.tracking-table .col-subject { width: 12%; }
+.tracking-table .col-dept { width: 9%; }
+.tracking-table .col-status { width: 8%; }
+.tracking-table .col-pending { width: 5%; }
+.tracking-table .col-sign { width: 6%; }
 .tracking-table .col-delete { width: 56px; }
+
+/* กันเลขที่ล้นออกนอกช่องถ้าฟอร์แมตยาวกว่าที่คาด (เช่นเดือนที่เกิน 999 ใบ) */
+.tracking-table .code-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 @media (max-width: 720px) {
   .filter-panel .filter-row {
