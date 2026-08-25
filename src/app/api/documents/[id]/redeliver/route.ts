@@ -3,6 +3,7 @@ import { getServiceSupabase } from '@/lib/supabase/admin';
 import { updateRowInSheet, findRowLocation } from '@/lib/google-sheets';
 import { requireRoles } from '@/lib/supabase/auth-helpers';
 import { isGoodsReceipt as isGoodsReceiptSubject } from '@/lib/document-workflow';
+import { documentNo } from '@/lib/document-no';
 
 // [id] here is a document_recipients.id. A rejected goods receipt starts its
 // inspection workflow again; other document types return straight to receiving.
@@ -93,7 +94,7 @@ export async function PUT(_request: NextRequest, { params }: { params: Promise<{
     const location = await findRowLocation(21, recipient.id);
     if (location) {
       await updateRowInSheet(location.sheet, location.row, [
-        String(data.running_no), data.received_date, data.doc_number || '',
+        documentNo(data), data.received_date, data.doc_number || '',
         data.sender, data.subject, deptName,
         status, recipient.admin_signature || '', recipient.admin_signed_at || '',
         '', '', '', '', '',

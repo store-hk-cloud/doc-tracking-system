@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
 import { isRealEmail, sendEmail } from '@/lib/email';
+import { documentNo } from '@/lib/document-no';
 
 /**
  * GET /api/cron/overdue-documents — แจ้งเตือนต้นทางเมื่อเอกสารค้างไม่มีผู้กดรับ
@@ -121,9 +122,9 @@ export async function GET(request: NextRequest) {
         const deptName = deptMap.get(r.department_id) || 'ไม่ระบุหน่วยงาน';
         const waited = Math.floor((Date.now() - new Date(r.admin_signed_at).getTime()) / 3_600_000);
         return {
-          text: `- เลขที่ ${d.running_no} | ${d.subject} | จาก ${d.sender} | ปลายทาง ${deptName} | ค้าง ${waited} ชม.`,
+          text: `- เลขที่ ${documentNo(d)} | ${d.subject} | จาก ${d.sender} | ปลายทาง ${deptName} | ค้าง ${waited} ชม.`,
           html: `<tr>
-            <td style="padding:6px 10px;border:1px solid #ddd">${d.running_no}</td>
+            <td style="padding:6px 10px;border:1px solid #ddd">${documentNo(d)}</td>
             <td style="padding:6px 10px;border:1px solid #ddd">${escapeHtml(d.subject)}</td>
             <td style="padding:6px 10px;border:1px solid #ddd">${escapeHtml(d.sender)}</td>
             <td style="padding:6px 10px;border:1px solid #ddd">${escapeHtml(deptName)}</td>

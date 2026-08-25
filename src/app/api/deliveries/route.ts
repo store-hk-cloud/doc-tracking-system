@@ -3,6 +3,7 @@ import { getServiceSupabase } from '@/lib/supabase/admin';
 import { updateRowInSheet, findRowLocation } from '@/lib/google-sheets';
 import { canAccessDepartment, forbiddenResponse, requireRoles } from '@/lib/supabase/auth-helpers';
 import { ACCOUNTING_DEPARTMENT_CODE, isGoodsReceipt } from '@/lib/document-workflow';
+import { documentNo } from '@/lib/document-no';
 
 export async function GET(request: NextRequest) {
   try {
@@ -173,7 +174,7 @@ export async function POST(request: NextRequest) {
       const location = await findRowLocation(21, recipient.id);
       if (location) {
         await updateRowInSheet(location.sheet, location.row, [
-          String(doc.running_no),           // A: Running No.
+          documentNo(doc),           // A: Running No.
           doc.received_date,                // B: วันที่รับ
           doc.doc_number || '',             // C: เลขที่เอกสาร
           doc.sender,                       // D: ผู้ส่ง

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { isGoodsReceipt } from '@/lib/document-workflow';
+import { documentNo } from '@/lib/document-no';
 
 const STATUS_OPTIONS = ['ทั้งหมด', 'registered', 'delivered', 'awaiting_inspector', 'awaiting_purchasing', 'awaiting_recipient', 'signed', 'closed', 'rejected'];
 const STATUS_LABELS: Record<string, string> = {
@@ -167,7 +168,7 @@ export default function TrackingPage() {
   };
 
   const handleDeleteDoc = async (doc: any) => {
-    if (!window.confirm(`⚠️ ลบเอกสาร #${doc.running_no} "${doc.subject}"?`)) return;
+    if (!window.confirm(`⚠️ ลบเอกสาร ${documentNo(doc)} "${doc.subject}"?`)) return;
     try {
       const res = await window.fetch(`/api/documents/${doc.id}`, { method: 'DELETE' });
       const data = await res.json();
@@ -185,7 +186,7 @@ export default function TrackingPage() {
 
   const handleCloseTask = async (doc: any) => {
     if (!doc.delivery_log_id) return;
-    if (!window.confirm(`ปิดงานเอกสาร #${doc.running_no} "${doc.subject}"?`)) return;
+    if (!window.confirm(`ปิดงานเอกสาร ${documentNo(doc)} "${doc.subject}"?`)) return;
     try {
       const res = await window.fetch(`/api/deliveries/${doc.delivery_log_id}/verify`, { method: 'PUT' });
       const data = await res.json();
@@ -247,7 +248,7 @@ export default function TrackingPage() {
   };
 
   const handleRedeliver = async (doc: any) => {
-    if (!window.confirm(`ส่งเอกสาร #${doc.running_no} ให้ผู้รับเซ็นใหม่?`)) return;
+    if (!window.confirm(`ส่งเอกสาร ${documentNo(doc)} ให้ผู้รับเซ็นใหม่?`)) return;
     try {
       const res = await window.fetch(`/api/documents/${doc.id}/redeliver`, { method: 'PUT' });
       const data = await res.json();
@@ -456,7 +457,7 @@ export default function TrackingPage() {
                         key={doc.id}
                         tabIndex={0}
                         role="button"
-                        aria-label={`ดูรายละเอียดเอกสาร ${doc.running_no} ${doc.subject}`}
+                        aria-label={`ดูรายละเอียดเอกสาร ${documentNo(doc)} ${doc.subject}`}
                         onClick={() => setSelectedDoc(doc)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
@@ -466,7 +467,7 @@ export default function TrackingPage() {
                         }}
                         style={{ cursor: 'pointer' }}
                       >
-                        <td className="code-cell">{doc.running_no}</td>
+                        <td className="code-cell">{documentNo(doc)}</td>
                         <td className="stack-cell">
                           <span>{formatDate(doc.received_date)}</span>
                           <span className="stack-sub">
@@ -535,7 +536,7 @@ export default function TrackingPage() {
             style={{ maxWidth: 520, margin: '0 auto' }}
           >
             <div className="scan-popup-handle" />
-            <h3 id="tracking-detail-title" style={{ marginBottom: 12 }}>📄 รายละเอียดเอกสาร #{selectedDoc.running_no}</h3>
+            <h3 id="tracking-detail-title" style={{ marginBottom: 12 }}>📄 รายละเอียดเอกสาร {documentNo(selectedDoc)}</h3>
             <div style={{ display: 'grid', gap: 8 }}>
               <div><strong>วันที่รับ:</strong> {selectedDoc.received_date}</div>
               <div><strong>เลขที่เอกสาร:</strong> {selectedDoc.doc_number || '-'}</div>

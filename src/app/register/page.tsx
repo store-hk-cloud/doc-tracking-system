@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { createClient } from '@/lib/supabase/client';
 import { ACCOUNTING_DESTINATION_CODES, accountingDestinationFor, isGoodsReceipt } from '@/lib/document-workflow';
+import { documentNo } from '@/lib/document-no';
 
 const DOCUMENT_TYPES = [
   'จดหมาย', 'ใบกำกับภาษี', 'ใบวางบิล', 'พัสดุ', 'ใบเสร็จ', 'บิลต่างๆ',
@@ -205,7 +206,7 @@ export default function RegisterPage() {
     });
     const data = await res.json();
     return data.success
-      ? { success: true, running_no: data.data.running_no }
+      ? { success: true, display_no: documentNo(data.data) }
       : { success: false, error: data.error || 'เกิดข้อผิดพลาด' };
   };
 
@@ -234,12 +235,12 @@ export default function RegisterPage() {
       validRows.map((row) => submitRow(row).catch(() => ({ success: false, error: 'เกิดข้อผิดพลาด' })))
     );
 
-    const succeededRunningNos: number[] = [];
+    const succeededNos: string[] = [];
     const failedIds = new Map<string, string>();
     validRows.forEach((row, i) => {
       const result = results[i];
       if (result.success) {
-        succeededRunningNos.push(result.running_no!);
+        succeededNos.push(result.display_no!);
         if (row.photoPreview) URL.revokeObjectURL(row.photoPreview);
       } else {
         failedIds.set(row.id, result.error || 'เกิดข้อผิดพลาด');
@@ -253,8 +254,8 @@ export default function RegisterPage() {
       return remaining.length > 0 ? remaining : [emptyRow()];
     });
 
-    if (succeededRunningNos.length > 0) {
-      setSuccess(`✅ บันทึกสำเร็จ ${succeededRunningNos.length} รายการ (Running No. ${succeededRunningNos.map((n) => `#${n}`).join(', ')})`);
+    if (succeededNos.length > 0) {
+      setSuccess(`✅ บันทึกสำเร็จ ${succeededNos.length} รายการ (เลขที่ ${succeededNos.join(', ')})`);
     }
     if (failedIds.size > 0 || invalidIds.size > 0) {
       setError(`❌ บันทึกไม่สำเร็จ ${failedIds.size + invalidIds.size} รายการ — ดูรายละเอียดในตารางแล้วลองใหม่`);

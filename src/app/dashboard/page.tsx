@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { documentNo } from '@/lib/document-no';
 
 export default function DashboardPage() {
   const { profile } = useAuth();
@@ -129,7 +130,7 @@ export default function DashboardPage() {
                 const s = statusMap[doc.status] || { label: doc.status, color: '' };
                 return (
                   <tr key={doc.id}>
-                    <td className="code-cell">{doc.running_no}</td>
+                    <td className="code-cell">{documentNo(doc)}</td>
                     <td>{doc.received_date}</td>
                     <td>{doc.sender}</td>
                     <td>{doc.subject}</td>

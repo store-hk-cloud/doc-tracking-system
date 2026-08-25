@@ -11,7 +11,7 @@ const PINNED_SPREADSHEET_ID = '1qremvBM2GKrh5IXV9JH9KNZ6W-M8TFXgOi5_ReitEWI';
  * document info + admin sign + recipient sign + delivery result
  */
 export const HEADERS = [
-  'Running No.',       // A
+  'เลขที่รับเข้า',      // A (รูปแบบ 2026-08/001 นับใหม่ทุกเดือน)
   'วันที่รับ',          // B
   'เลขที่เอกสาร',       // C
   'ผู้ส่ง',             // D

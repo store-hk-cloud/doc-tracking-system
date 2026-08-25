@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
 import { updateRowInSheet, findRowLocation } from '@/lib/google-sheets';
 import { requireRoles } from '@/lib/supabase/auth-helpers';
+import { documentNo } from '@/lib/document-no';
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -69,7 +70,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         const location = await findRowLocation(21, recipient.id);
         if (location) {
           await updateRowInSheet(location.sheet, location.row, [
-            String(doc.running_no), doc.received_date, doc.doc_number || '',
+            documentNo(doc), doc.received_date, doc.doc_number || '',
             doc.sender, doc.subject, deptName,
             'closed', recipient.admin_signature || '', recipient.admin_signed_at || '',
             delivery.recipient_signature, delivery.recipient_signature, delivery.recipient_signed_at,

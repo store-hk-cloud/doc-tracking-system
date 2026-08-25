@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { documentNo } from '@/lib/document-no';
 
 export default function ReportsPage() {
   const { profile } = useAuth();
@@ -46,9 +47,9 @@ export default function ReportsPage() {
   };
 
   const exportCSV = () => {
-    const headers = ['Running No.', 'วันที่รับ', 'เลขที่เอกสาร', 'เลขใบกำกับภาษี', 'ผู้ส่ง', 'เรื่อง', 'หน่วยงาน', 'สถานะ'];
+    const headers = ['เลขที่รับเข้า', 'วันที่รับ', 'เลขที่เอกสาร', 'เลขใบกำกับภาษี', 'ผู้ส่ง', 'เรื่อง', 'หน่วยงาน', 'สถานะ'];
     const rows = docs.map((d: any) => [
-      d.running_no, d.received_date, d.doc_number || '', d.tax_invoice_no || '', d.sender, d.subject,
+      documentNo(d), d.received_date, d.doc_number || '', d.tax_invoice_no || '', d.sender, d.subject,
       d.recipient_dept_name, d.status,
     ]);
     const csv = [headers, ...rows].map((row) => row.map(escapeCsvCell).join(',')).join('\n');
@@ -144,7 +145,7 @@ export default function ReportsPage() {
                 <tbody>
                   {docs.map((doc: any) => (
                     <tr key={doc.id}>
-                      <td className="code-cell">{doc.running_no}</td>
+                      <td className="code-cell">{documentNo(doc)}</td>
                       <td>{doc.received_date}</td>
                       <td>{doc.doc_number || '-'}</td>
                       <td>{doc.sender}</td>

@@ -4,6 +4,7 @@ import { updateRowInSheet, findRowLocation } from '@/lib/google-sheets';
 import { notifyDepartment } from '@/lib/upstash';
 import { forbiddenResponse, requireRoles } from '@/lib/supabase/auth-helpers';
 import { getGoodsReceiptWorkflowAction, isGoodsReceipt } from '@/lib/document-workflow';
+import { documentNo } from '@/lib/document-no';
 
 // [id] here is a document_recipients.id. ใบรับสินค้าใช้ recipient ของบัญชี
 // เป็นตัวเก็บสถานะกลาง แต่สิทธิ์แต่ละขั้นตัดสินจาก department code โดยตรง.
@@ -124,7 +125,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       const location = await findRowLocation(21, recipient.id);
       if (location && doc) {
         await updateRowInSheet(location.sheet, location.row, [
-          String(doc.running_no), doc.received_date, doc.doc_number || '',
+          documentNo(doc), doc.received_date, doc.doc_number || '',
           doc.sender, doc.subject, dept?.name || '',
           recipient.status, recipient.admin_signature || '', recipient.admin_signed_at || '',
           '', '', '', '', '',
@@ -184,7 +185,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     if (isDelivering) {
       await notifyDepartment(recipient.department_id, {
         title: '📦 เอกสารใหม่ถึงหน่วยงาน',
-        body: `เอกสาร #${doc.running_no}: ${doc.subject} จาก ${doc.sender}`,
+        body: `เอกสาร ${documentNo(doc)}: ${doc.subject} จาก ${doc.sender}`,
         docId: recipient.id,
         runningNo: doc.running_no,
       });
@@ -194,7 +195,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const location = await findRowLocation(21, recipient.id);
     if (location) {
       await updateRowInSheet(location.sheet, location.row, [
-        String(doc.running_no), doc.received_date, doc.doc_number || '',
+        documentNo(doc), doc.received_date, doc.doc_number || '',
         doc.sender, doc.subject, deptName,
         recipient.status, recipient.admin_signature || '', recipient.admin_signed_at || '',
         '', '', '', '', '',

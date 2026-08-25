@@ -3,6 +3,7 @@ import { getServiceSupabase } from '@/lib/supabase/admin';
 import { appendRow } from '@/lib/google-sheets';
 import { requireRoles } from '@/lib/supabase/auth-helpers';
 import { accountingDestinationFor, canViewGoodsReceiptWorkflow, GOODS_RECEIPT_SUBJECT, isGoodsReceipt } from '@/lib/document-workflow';
+import { documentNo } from '@/lib/document-no';
 
 // PostgREST คืนแถวได้จำกัดต่อคำขอ (ค่าเริ่มต้น 1000) การ select เฉย ๆ จึงตัดแถว
 // ทิ้งเงียบ ๆ เมื่อเอกสารสะสมมากขึ้น และไม่มีทางรู้ว่าใบไหนหาย จึงต้องไล่ดึงเป็นหน้า
@@ -60,7 +61,7 @@ export async function GET(request: NextRequest) {
       let q = supabase.from('documents').select('*').order('running_no', { ascending: false }).order('id').range(from, to);
       if (keyword) {
         const pattern = ilikePattern(keyword);
-        q = q.or(`sender.ilike.${pattern},subject.ilike.${pattern},doc_number.ilike.${pattern},tax_invoice_no.ilike.${pattern}`);
+        q = q.or(`sender.ilike.${pattern},subject.ilike.${pattern},doc_number.ilike.${pattern},tax_invoice_no.ilike.${pattern},display_no.ilike.${pattern}`);
       }
       if (!byDeliveredDate && date_from) q = q.gte('received_date', date_from);
       if (!byDeliveredDate && date_to) q = q.lte('received_date', date_to);
@@ -246,10 +247,20 @@ export async function POST(request: NextRequest) {
       ? deptIds.slice(0, 1)
       : deptIds;
 
+    const receivedDate = body.received_date || new Date().toISOString().split('T')[0];
+    // เลขที่แสดงผลนับใหม่ทุกเดือน จองผ่านฟังก์ชันฝั่งฐานข้อมูลเพื่อให้การลงทะเบียน
+    // พร้อมกันหลายเครื่องไม่ได้เลขชนกัน (ดู migration 020)
+    // ถ้า migration 020 ยังไม่ถูกรันบนฐานข้อมูลนั้น ให้ลงทะเบียนต่อได้โดยไม่มีเลข
+    // เดือน (หน้าเว็บจะ fallback ไปแสดง running_no) ดีกว่าปล่อยให้บันทึกไม่ได้ทั้งหน้า
+    const { data: displayNo, error: displayNoError } = await supabase
+      .rpc('next_document_display_no', { p_received_date: receivedDate });
+    if (displayNoError) console.error('next_document_display_no failed:', displayNoError.message);
+
     const { data: doc, error: docError } = await supabase
       .from('documents')
       .insert({
-        received_date: body.received_date || new Date().toISOString().split('T')[0],
+        display_no: displayNo ?? null,
+        received_date: receivedDate,
         doc_number: body.doc_number || null,
         tax_invoice_no: body.tax_invoice_no || null,
         sender: body.sender,
@@ -290,7 +301,7 @@ export async function POST(request: NextRequest) {
     // Sync to Google Sheets: one row per recipient department.
     for (const r of recipients || []) {
       await appendRow('เอกสารเข้า', [
-        String(doc.running_no),            // A: Running No.
+        documentNo(doc),            // A: Running No.
         doc.received_date,                 // B: วันที่รับ
         doc.doc_number || '',              // C: เลขที่เอกสาร
         doc.sender,                        // D: ผู้ส่ง

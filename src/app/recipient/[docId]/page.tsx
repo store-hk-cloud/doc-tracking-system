@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useParams } from 'next/navigation';
 import { getGoodsReceiptWorkflowAction, isGoodsReceipt } from '@/lib/document-workflow';
+import { documentNo } from '@/lib/document-no';
 
 export default function RecipientPage() {
   const { profile } = useAuth();
@@ -151,7 +152,7 @@ export default function RecipientPage() {
         <div style={{ display: 'grid', gap: 10, marginBottom: 20 }}>
           <div className="field-control">
             <span>Running No.</span>
-            <div style={{ fontWeight: 800, fontSize: '1.2rem' }}>#{doc.running_no}</div>
+            <div style={{ fontWeight: 800, fontSize: '1.2rem' }}>{documentNo(doc)}</div>
           </div>
           <div className="form-row">
             <div className="field-control">

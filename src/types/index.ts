@@ -87,7 +87,10 @@ export const DOCUMENT_STATUS_COLORS: Record<DocumentStatus, string> = {
 export interface Document {
   id: string;
   document_id: string;
+  /** ลำดับภายในที่ไม่ซ้ำทั้งระบบ ใช้เรียงเวลา ไม่ใช่เลขที่ที่แสดงให้ผู้ใช้ */
   running_no: number;
+  /** เลขที่เอกสารที่แสดงให้ผู้ใช้ รูปแบบ 2026-08/001 นับใหม่ทุกเดือน */
+  display_no: string | null;
   received_date: string;
   doc_number: string | null;
   tax_invoice_no: string | null;

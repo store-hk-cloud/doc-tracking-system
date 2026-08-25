@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
 import { requireRoles } from '@/lib/supabase/auth-helpers';
 import { listSheetTabs, getSheetValues, batchUpdateRowsOrThrow, appendRowsOrThrow, getSpreadsheetUrl } from '@/lib/google-sheets';
+import { documentNo } from '@/lib/document-no';
 
 // One-time/repeatable maintenance endpoint covering two kinds of drift between
 // Supabase and Google Sheets:
@@ -69,7 +70,7 @@ export async function GET() {
       const delivery = deliveryByRecipient.get(r.id);
       const profName = profileMap.get(doc.recorded_by) || '';
       return [
-        String(doc.running_no), doc.received_date, doc.doc_number || '',
+        documentNo(doc), doc.received_date, doc.doc_number || '',
         doc.sender, doc.subject, deptMap.get(r.department_id) || '',
         r.status, r.admin_signature || '', r.admin_signed_at || '',
         delivery?.recipient_signature || '', delivery?.recipient_signature || '', delivery?.recipient_signed_at || '',

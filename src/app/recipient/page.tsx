@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { getGoodsReceiptWorkflowAction, isGoodsReceipt } from '@/lib/document-workflow';
+import { documentNo } from '@/lib/document-no';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const dateInput = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -145,7 +146,7 @@ export default function RecipientListPage() {
     if (pendingStage && d.status !== pendingStage) return false;
     if (pendingKeyword) {
       const keyword = pendingKeyword.toLowerCase();
-      const haystack = [d.sender, d.subject, d.doc_number, d.running_no].join(' ').toLowerCase();
+      const haystack = [d.sender, d.subject, d.doc_number, documentNo(d)].join(' ').toLowerCase();
       if (!haystack.includes(keyword)) return false;
     }
     return true;
@@ -266,8 +267,8 @@ export default function RecipientListPage() {
       setBulkFailures([]);
       setBulkMessage(
         signAction === 'recipient'
-          ? (signVerified ? `✅ ลงชื่อรับเลขที่ ${signTarget.running_no} เรียบร้อย` : `⚠️ แจ้งปัญหาเลขที่ ${signTarget.running_no} เรียบร้อย`)
-          : `✅ บันทึก${ACTION_SIGNATURE_LABELS[signAction]}เลขที่ ${signTarget.running_no} แล้ว`
+          ? (signVerified ? `✅ ลงชื่อรับเลขที่ ${documentNo(signTarget)} เรียบร้อย` : `⚠️ แจ้งปัญหาเลขที่ ${documentNo(signTarget)} เรียบร้อย`)
+          : `✅ บันทึก${ACTION_SIGNATURE_LABELS[signAction]}เลขที่ ${documentNo(signTarget)} แล้ว`
       );
       // ปิด popup แล้วกลับมาที่คิวงานทันที พร้อมโหลดรายการใหม่ให้สถานะตรงกับ DB
       setSignTarget(null);
@@ -305,7 +306,7 @@ export default function RecipientListPage() {
     // แบบหลายรายการลงนามว่า "ถูกต้อง" เท่านั้น การแจ้งปัญหาต้องระบุสาเหตุรายใบ
     // จึงเปิดเป็น popup รายการเดียวแทน
     const receiveOne = async (doc: any) => {
-      const label = `เลขที่ ${doc.running_no} (${ACTION_LABELS[workflowAction(doc) as string] || 'ดำเนินการ'})`;
+      const label = `เลขที่ ${documentNo(doc)} (${ACTION_LABELS[workflowAction(doc) as string] || 'ดำเนินการ'})`;
       try {
         const res = await submitSignature(doc, workflowAction(doc) as string, recipientSignature, { verified: true, note: '' });
         const data = await res.json().catch(() => ({}));
@@ -510,14 +511,14 @@ export default function RecipientListPage() {
                           {isPendingOwnStage(doc) && (
                             <input
                               type="checkbox"
-                              aria-label={`เลือกเอกสารเลขที่ ${doc.running_no}`}
+                              aria-label={`เลือกเอกสารเลขที่ ${documentNo(doc)}`}
                               checked={selectedIds.has(doc.id)}
                               onChange={() => toggleSelect(doc.id)}
                               disabled={bulkSigning}
                             />
                           )}
                         </td>
-                        <td className="code-cell">{doc.running_no}</td>
+                        <td className="code-cell">{documentNo(doc)}</td>
                         <td>{doc.received_date}</td>
                         <td>{doc.doc_number || '-'}</td>
                         <td>{doc.sender}</td>
@@ -647,7 +648,7 @@ export default function RecipientListPage() {
                 <tbody>
                   {closedDocs.map((doc: any) => (
                     <tr key={doc.id}>
-                      <td className="code-cell">{doc.running_no}</td>
+                      <td className="code-cell">{documentNo(doc)}</td>
                       <td>{formatDateTime(doc.closed_at || doc.recipient_signed_at)}</td>
                       <td>{doc.received_date}</td>
                       <td>{doc.doc_number || '-'}</td>
@@ -743,7 +744,7 @@ export default function RecipientListPage() {
             <h3 id="single-sign-title" style={{ marginBottom: 12 }}>
               {signEditing
                 ? `✏️ แก้ไข${signAction === 'inspector' ? 'ชื่อผู้ตรวจสอบ' : 'ชื่อจัดซื้อ'}`
-                : `✍️ ${ACTION_LABELS[signAction] || 'ดำเนินการ'}`} — เลขที่ {signTarget.running_no}
+                : `✍️ ${ACTION_LABELS[signAction] || 'ดำเนินการ'}`} — เลขที่ {documentNo(signTarget)}
             </h3>
             {signEditing && (
               <div className="toast warning" style={{ position: 'static', marginBottom: 12 }}>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { documentNo } from '@/lib/document-no';
 
 export default function DeliveryPage() {
   const [docs, setDocs] = useState<any[]>([]);
@@ -122,7 +123,7 @@ export default function DeliveryPage() {
               <tbody>{docs.map((doc: any) => (
                 <tr key={doc.id}>
                   <td><input type="checkbox" checked={selectedIds.has(doc.id)} onChange={() => toggleSelect(doc.id)} /></td>
-                  <td className="code-cell">{doc.running_no}</td><td>{doc.received_date}</td><td>{doc.sender}</td><td>{doc.doc_number || '-'}</td><td>{doc.subject}</td><td>{doc.recipient_dept_name}</td>
+                  <td className="code-cell">{documentNo(doc)}</td><td>{doc.received_date}</td><td>{doc.sender}</td><td>{doc.doc_number || '-'}</td><td>{doc.subject}</td><td>{doc.recipient_dept_name}</td>
                   <td><button className="table-action-button" onClick={() => { setSelectedDoc(doc); setShowModal(true); setSignature(''); setError(''); }}>✍️ ส่งมอบ</button></td>
                 </tr>
               ))}</tbody>
@@ -135,7 +136,7 @@ export default function DeliveryPage() {
         <div className="scan-popup-overlay" onClick={() => setShowModal(false)}>
           <div className="scan-popup-sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 500, margin: '0 auto' }}>
             <div className="scan-popup-handle" />
-            <h3 style={{ marginBottom: 12 }}>✍️ ส่งมอบเอกสาร #{selectedDoc.running_no}</h3>
+            <h3 style={{ marginBottom: 12 }}>✍️ ส่งมอบเอกสาร {documentNo(selectedDoc)}</h3>
             <div style={{ display: 'grid', gap: 8, marginBottom: 16, fontSize: '0.9rem' }}>
               <div><strong>ผู้ส่ง:</strong> {selectedDoc.sender}</div><div><strong>เรื่อง:</strong> {selectedDoc.subject}</div><div><strong>เลขที่เอกสาร:</strong> {selectedDoc.doc_number || '-'}</div><div><strong>เลขใบกำกับภาษี:</strong> {selectedDoc.tax_invoice_no || '-'}</div><div><strong>หน่วยงาน:</strong> {selectedDoc.recipient_dept_name}</div><div><strong>วันที่รับ:</strong> {selectedDoc.received_date}</div>
             </div>

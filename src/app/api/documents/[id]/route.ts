@@ -3,6 +3,7 @@ import { getServiceSupabase } from '@/lib/supabase/admin';
 import { updateRowInSheet, findRowLocation } from '@/lib/google-sheets';
 import { canAccessDepartment, forbiddenResponse, requireRoles } from '@/lib/supabase/auth-helpers';
 import { canViewGoodsReceiptWorkflow, isGoodsReceipt } from '@/lib/document-workflow';
+import { documentNo } from '@/lib/document-no';
 
 // [id] here is a document_recipients.id — a specific department's copy of a document.
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -127,7 +128,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       const location = await findRowLocation(21, r.id);
       if (location) {
         await updateRowInSheet(location.sheet, location.row, [
-          String(data.running_no), data.received_date, data.doc_number || '',
+          documentNo(data), data.received_date, data.doc_number || '',
           data.sender, data.subject, deptNameMap.get(r.department_id) || '',
           r.status, r.admin_signature || '', r.admin_signed_at || '',
           '', '', '', '', '',
