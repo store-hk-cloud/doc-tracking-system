@@ -4,7 +4,7 @@ import { forbiddenResponse, requireCapability } from '@/lib/supabase/auth-helper
 import { getCashCapabilities } from '@/lib/permissions';
 import { getActorName } from '@/lib/messenger-audit';
 import { MoneyParseError, parseBahtToSatang } from '@/lib/money';
-import { financeDepartmentIds } from '@/lib/messenger-data';
+import { financeDepartmentIds, messengerDepartmentIds } from '@/lib/messenger-data';
 import { notifyDepartment } from '@/lib/upstash';
 
 /**
@@ -156,11 +156,11 @@ export async function POST(request: NextRequest) {
     if (error) throw error;
 
     // แจ้งแมสเซนเจอร์ว่ามีซองรออยู่ + ให้บัญชีเห็นตั้งแต่ต้นทาง
-    const [financeDepts, { data: msgDept }] = await Promise.all([
+    const [financeDepts, messengerDepts] = await Promise.all([
       financeDepartmentIds(),
-      supabase.from('departments').select('id').eq('code', 'MSG').maybeSingle(),
+      messengerDepartmentIds(),
     ]);
-    const targets = [...new Set([msgDept?.id, ...financeDepts].filter(Boolean) as string[])];
+    const targets = [...new Set([...messengerDepts, ...financeDepts].filter(Boolean) as string[])];
     await Promise.all(
       targets.map((deptId) =>
         notifyDepartment(deptId, {

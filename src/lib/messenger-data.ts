@@ -1,4 +1,5 @@
 import { getServiceSupabase } from '@/lib/supabase/admin';
+import { getCashDeptCodes } from '@/lib/cash-settings';
 
 /**
  * ตัวช่วยอ่านข้อมูลที่หลาย route ของโมดูลเงินสดใช้ร่วมกัน
@@ -135,11 +136,38 @@ export async function enrichRunBundle(bundle: NonNullable<Awaited<ReturnType<typ
   };
 }
 
-/** แผนกที่ควรได้รับ notification เรื่องเงิน: FIN + ACC (+ แผนกเจ้าของสาขา) */
+/**
+ * แผนกที่ควรได้รับ notification เรื่องเงิน = แผนกเดียวกับที่มีสิทธิ์ดูข้อมูลเงิน
+ *
+ * ต้องอ่านจาก app_settings ผ่าน getCashDeptCodes() ไม่ใช่ hardcode รหัส:
+ * เดิมค้นด้วย `['FIN', 'ACC']` ซึ่งไม่มีอยู่จริงในตาราง departments เลย
+ * (บัญชีจริงคือ 0-ADM03 ส่วน "ACC" เป็นแค่คำในชื่อแผนก ไม่ใช่รหัส) ฟังก์ชันนี้
+ * จึงคืนอาเรย์ว่างเสมอ แล้ว `financeDepts.map(notifyDepartment)` ที่ทุก call site
+ * ก็วนศูนย์รอบอย่างเงียบ ๆ — แจ้งเตือนเงินขาด/เงินเกิน ซึ่งเป็นสัญญาณทุจริต
+ * ไม่เคยถึงใครเลยตั้งแต่แรก และไม่มี error ให้เห็นด้วย
+ *
+ * นี่คือกรณีที่ cash-settings.ts เขียนเตือนไว้ตรง ๆ ว่าห้าม hardcode รหัสแผนก
+ */
 export async function financeDepartmentIds(): Promise<string[]> {
+  return departmentIdsForCodes((await getCashDeptCodes()).cash_viewer_dept_codes);
+}
+
+/**
+ * แผนกแมสเซนเจอร์ — อ่านจาก app_settings ชุดเดียวกับที่ใช้ตัดสินสิทธิ์ isMessenger
+ * เดิม api/cashier/handovers เขียน .eq('code', 'MSG') ไว้ตรง ๆ ซึ่งบังเอิญตรงกับ
+ * ค่าเริ่มต้น แต่หลุดจาก app_settings: ถ้าองค์กรเปลี่ยนรหัสแผนกแมสเซนเจอร์
+ * สิทธิ์จะย้ายตามค่าตั้ง ขณะที่การแจ้งเตือนจะเงียบหายไปแบบไม่มี error
+ */
+export async function messengerDepartmentIds(): Promise<string[]> {
+  return departmentIdsForCodes((await getCashDeptCodes()).messenger_dept_codes);
+}
+
+async function departmentIdsForCodes(codes: string[]): Promise<string[]> {
+  if (codes.length === 0) return [];
+
   const { data } = await getServiceSupabase()
     .from('departments')
     .select('id, code')
-    .in('code', ['FIN', 'ACC']);
+    .in('code', codes);
   return (data || []).map((d: any) => d.id);
 }

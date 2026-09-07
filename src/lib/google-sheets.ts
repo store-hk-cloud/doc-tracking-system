@@ -73,15 +73,25 @@ async function callWithRetry<T>(fn: () => Promise<T>, attempts = 4): Promise<T> 
 
 /** ปล่อยคำขอออกไปได้ไม่เกิน SHEETS_MAX_CONCURRENT ตัวพร้อมกัน ที่เหลือเข้าคิว */
 async function withSheetsSlot<T>(fn: () => Promise<T>): Promise<T> {
+  // ตอนปล่อยต้อง "ส่งต่อ slot" ให้คนที่รออยู่ ไม่ใช่ลดตัวนับแล้วปลุก
+  //
+  // เดิมลดตัวนับก่อนแล้วค่อย resolve คนที่รอ ซึ่งเปิดช่องให้คำขอใหม่ที่แทรกเข้ามา
+  // ระหว่างนั้นเห็นตัวนับต่ำกว่าเพดานแล้วผ่านไปได้ ทำให้วิ่งเกินเพดานพร้อมกัน
+  // ช่องนี้ปิดอยู่เองด้วยลำดับ microtask (คนที่รอกลับมาก่อนคำขอใหม่ที่มาจาก I/O
+  // เสมอ) จึงยังไม่เคยหลุดจริง — แก้ให้ค่าคงที่ถูกบังคับด้วยโครงสร้างแทนการ
+  // พึ่งลำดับ scheduler ซึ่งไม่ใช่สิ่งที่โค้ดนี้ควรต้องรู้
   if (activeSheetsCalls >= SHEETS_MAX_CONCURRENT) {
+    // ได้ slot ที่ถูกส่งต่อมาแล้ว ตัวนับถูกถือไว้ให้ จึงไม่บวกซ้ำ
     await new Promise<void>((resolve) => sheetsQueue.push(resolve));
+  } else {
+    activeSheetsCalls += 1;
   }
-  activeSheetsCalls += 1;
   try {
     return await callWithRetry(fn);
   } finally {
-    activeSheetsCalls -= 1;
-    sheetsQueue.shift()?.();
+    const next = sheetsQueue.shift();
+    if (next) next();
+    else activeSheetsCalls -= 1;
   }
 }
 
@@ -105,13 +115,15 @@ async function getOrCreateDailySheet(): Promise<string> {
   if (dailySheetEnsuredFor === today) return today;
 
   // Get existing sheets
-  const { data: sheetInfo } = await sheets.spreadsheets.get({ spreadsheetId });
+  const { data: sheetInfo } = await withSheetsSlot<any>(() =>
+    sheets.spreadsheets.get({ spreadsheetId })
+  );
   const existingSheets = sheetInfo?.sheets || [];
   const hasToday = existingSheets.some((s: any) => s.properties?.title === today);
 
   if (!hasToday) {
     // Insert today's sheet at index 0 (leftmost)
-    await sheets.spreadsheets.batchUpdate({
+    await withSheetsSlot(() => sheets.spreadsheets.batchUpdate({
       spreadsheetId,
       requestBody: {
         requests: [{
@@ -120,14 +132,14 @@ async function getOrCreateDailySheet(): Promise<string> {
           },
         }],
       },
-    });
+    }));
     // Write headers
-    await sheets.spreadsheets.values.update({
+    await withSheetsSlot(() => sheets.spreadsheets.values.update({
       spreadsheetId,
       range: `${today}!A1:U1`,
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: [HEADERS] },
-    });
+    }));
     console.log(`[Google Sheets] Created daily sheet: ${today}`);
   }
 
@@ -149,7 +161,9 @@ export async function getSpreadsheetId(): Promise<string> {
 export async function listSheetTabs(): Promise<string[]> {
   const spreadsheetId = await getSpreadsheetId();
   const sheets = getSheetsClient();
-  const { data: info } = await sheets.spreadsheets.get({ spreadsheetId });
+  const { data: info } = await withSheetsSlot<any>(() =>
+    sheets.spreadsheets.get({ spreadsheetId })
+  );
   return (info?.sheets || []).map((s: any) => s.properties?.title).filter(Boolean);
 }
 
@@ -157,7 +171,12 @@ export async function listSheetTabs(): Promise<string[]> {
 export async function getSheetValues(sheet: string): Promise<string[][]> {
   const spreadsheetId = await getSpreadsheetId();
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${sheet}!A:U` });
+  // ต้องผ่าน withSheetsSlot ด้วย: api/admin/backfill-sheets วนเรียกฟังก์ชันนี้
+  // ทีละแท็บ (แท็บละวัน = หลายร้อยแท็บ) ถ้าไม่ผ่านชั้นกันโควตา เจอ 429 ครั้งเดียว
+  // ก็ throw แล้ว backfill ล้มทั้งงาน ทั้งที่ไฟล์นี้มี retry ไว้แล้ว
+  const res = await withSheetsSlot<any>(() =>
+    sheets.spreadsheets.values.get({ spreadsheetId, range: `${sheet}!A:U` })
+  );
   return res.data.values || [];
 }
 
