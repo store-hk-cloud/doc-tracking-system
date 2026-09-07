@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServiceSupabase } from '@/lib/supabase/admin';
+import { getServiceSupabase, escapeLikePattern } from '@/lib/supabase/admin';
 import { requireRoles } from '@/lib/supabase/auth-helpers';
 
 export async function GET() {
@@ -69,12 +69,16 @@ export async function POST(request: NextRequest) {
       : `${username!.toLowerCase()}@msg.hillkoff.local`;
 
     if (username) {
-      const { data: taken } = await supabase
+      // ใช้ limit(1) ไม่ใช่ maybeSingle(): maybeSingle จะคืน error (ไม่ใช่ data)
+      // เมื่อเจอหลายแถว ซึ่งเดิมถูกกลืนหายเพราะโค้ดอ่านแค่ data → เจอชื่อซ้ำ
+      // หลายแถวแล้วกลับ "ผ่าน" การตรวจไปเฉย ๆ
+      const { data: taken, error: takenError } = await supabase
         .from('profiles')
         .select('id')
-        .ilike('username', username)
-        .maybeSingle();
-      if (taken) {
+        .ilike('username', escapeLikePattern(username))
+        .limit(1);
+      if (takenError) throw takenError;
+      if (taken && taken.length > 0) {
         return NextResponse.json(
           { success: false, error: 'ชื่อผู้ใช้นี้ถูกใช้แล้ว' },
           { status: 409 }

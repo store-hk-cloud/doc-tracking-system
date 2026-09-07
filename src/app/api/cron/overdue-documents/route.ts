@@ -22,15 +22,25 @@ import { documentNo } from '@/lib/document-no';
  * แล้วเปลี่ยน schedule ใน vercel.json เป็นรายชั่วโมง
  *
  * ความปลอดภัย: Vercel Cron ส่ง header Authorization: Bearer $CRON_SECRET
- * ถ้าตั้ง CRON_SECRET ไว้ route นี้จะรับเฉพาะคำขอที่มี secret ตรงกัน
+ * route นี้ต้องมี CRON_SECRET ตั้งไว้เสมอ ถ้าไม่ตั้งจะตอบ 503 ไม่ใช่เปิดให้ทุกคน
+ *
+ * middleware ยกเว้น /api/cron/ ออกจากการตรวจ session (ดู src/middleware.ts)
+ * ด่านนี้จึงเป็นด่านเดียวที่กั้น route อยู่ เดิมเขียนเป็น `if (secret)` ซึ่งแปลว่า
+ * ถ้าลืมตั้ง CRON_SECRET (และ .env.example ก็ไม่ได้บอกให้ตั้ง) ใครบนอินเทอร์เน็ต
+ * ก็ยิงได้ แล้วได้ทั้งรายการเอกสารค้างพร้อมอีเมลภายในองค์กร และสั่งให้ระบบส่งเมล
+ * จริงซ้ำ ๆ ได้ — ต้อง fail closed
  */
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
-  if (secret) {
-    const header = request.headers.get('authorization');
-    if (header !== `Bearer ${secret}`) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
-    }
+  if (!secret) {
+    console.error('[Cron overdue-documents] ไม่ได้ตั้ง CRON_SECRET — ปฏิเสธคำขอทั้งหมด');
+    return NextResponse.json(
+      { success: false, error: 'Cron endpoint is not configured' },
+      { status: 503 }
+    );
+  }
+  if (request.headers.get('authorization') !== `Bearer ${secret}`) {
+    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   }
 
   try {

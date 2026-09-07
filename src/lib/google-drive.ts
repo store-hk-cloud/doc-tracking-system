@@ -10,7 +10,9 @@ async function getOrCreateSubfolder(name: string, parentId: string): Promise<str
   if (cached) return cached;
 
   const drive = getDriveClient();
-  const escapedName = name.replace(/'/g, "\\'");
+  // ต้อง escape backslash ก่อน single quote ไม่งั้นชื่อที่ลงท้ายด้วย \ จะไป
+  // escape อัญประกาศปิดของ query เสียเอง แล้วค่าที่เหลือหลุดเข้าไปใน q
+  const escapedName = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const { data: existing } = await drive.files.list({
     q: `mimeType='application/vnd.google-apps.folder' and name='${escapedName}' and '${parentId}' in parents and trashed=false`,
     fields: 'files(id, name)',

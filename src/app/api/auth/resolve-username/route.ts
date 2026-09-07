@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServiceSupabase } from '@/lib/supabase/admin';
+import { escapeLikePattern, getServiceSupabase } from '@/lib/supabase/admin';
 
 /**
  * POST /api/auth/resolve-username — แปลงชื่อผู้ใช้เป็นอีเมลสำหรับล็อกอิน
@@ -10,7 +10,7 @@ import { getServiceSupabase } from '@/lib/supabase/admin';
  * ข้อควรระวังด้านความปลอดภัย: endpoint นี้ไม่ตรวจรหัสผ่าน จึงบอกได้แค่ว่า
  * "ชื่อผู้ใช้นี้ผูกกับอีเมลอะไร" ซึ่งเปิดช่องให้ไล่เดาว่ามีชื่อผู้ใช้ไหนอยู่บ้าง
  * (user enumeration) เราจึง:
- *   - ไม่คืนอีเมลจริงให้ browser เห็น แต่คืนเฉพาะสิ่งที่ต้องใช้ล็อกอิน
+ *   - รับเฉพาะชื่อผู้ใช้ที่ตรงเป๊ะ (escape wildcard ของ ILIKE ก่อนค้น)
  *   - ตอบข้อความเดียวกันทั้งกรณีไม่พบและกรณีถูกปิดใช้งาน
  *   - หน่วงเวลาเล็กน้อยให้เวลาตอบใกล้เคียงกันทุกกรณี
  * ตัวรหัสผ่านยังถูกตรวจโดย Supabase Auth ตามปกติ ไม่ได้อ่อนลง
@@ -27,10 +27,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: GENERIC_ERROR }, { status: 400 });
     }
 
+    // `_` เป็น wildcard ของ ILIKE และ regex ข้างบนก็อนุญาต `_` ในชื่อผู้ใช้
+    // ผลคือ "_______" แมตช์ชื่อผู้ใช้ยาว 7 ตัวอักษรใด ๆ แล้วคืนอีเมลจริงออกมา
+    // ซึ่งพัง user enumeration ที่ไฟล์นี้ตั้งใจกันไว้ทั้งหมด — ต้อง escape ก่อน
+    // (ยัง ilike อยู่เพื่อคงพฤติกรรมเดิมที่ชื่อผู้ใช้ไม่สนตัวพิมพ์เล็กใหญ่)
+    const escaped = escapeLikePattern(username);
+
     const { data } = await getServiceSupabase()
       .from('profiles')
       .select('email, is_active')
-      .ilike('username', username)
+      .ilike('username', escaped)
       .maybeSingle();
 
     // หน่วงให้เวลาตอบใกล้เคียงกันไม่ว่าจะเจอหรือไม่เจอ

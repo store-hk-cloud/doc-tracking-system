@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServiceSupabase } from '@/lib/supabase/admin';
+import { escapeLikePattern, getServiceSupabase } from '@/lib/supabase/admin';
 import { requireCapability, forbiddenResponse } from '@/lib/supabase/auth-helpers';
 import { appendAudit, getActorName } from '@/lib/messenger-audit';
 import { MoneyParseError, classifyVariance, formatSatangToBaht, parseBahtToSatang } from '@/lib/money';
@@ -133,7 +133,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         .from('bank_branches')
         .select('id, name')
         .eq('bank_id', bank.id)
-        .ilike('name', bankBranchName)
+        .ilike('name', escapeLikePattern(bankBranchName))
         .maybeSingle();
       if (existing) {
         bankBranchId = existing.id;
