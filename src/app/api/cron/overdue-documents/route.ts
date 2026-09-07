@@ -172,23 +172,42 @@ export async function GET(request: NextRequest) {
 
       const result = await sendEmail({ to, cc, subject, html, text });
 
-      // บันทึกกันส่งซ้ำ **เฉพาะเมื่อได้ลองส่งจริงแล้ว** เท่านั้น
+      // บันทึกกันส่งซ้ำ **เฉพาะเมื่อส่งสำเร็จจริง** เท่านั้น
       //
-      // สำคัญ: ถ้าบันทึกตอนที่ยังไม่ได้ตั้งค่าอีเมล เอกสารชุดนั้นจะถูกทำเครื่องหมาย
-      // ว่า "เตือนแล้ว" ตลอดกาล พอตั้งคีย์จริงในภายหลังก็จะไม่มีใครได้รับเมลเลย
-      // ซึ่งเป็นความล้มเหลวแบบเงียบที่แย่กว่าการส่งซ้ำ
-      const attempted = result.ok || !('skipped' in result && result.skipped);
-      if (attempted) {
+      // unique index (document_recipient_id, threshold_hours) ทำให้แถวที่บันทึกไป
+      // ปิดการเตือนซ้ำของเอกสารนั้นอย่างถาวร ดังนั้นการบันทึกตอนที่ส่งไม่สำเร็จ
+      // เท่ากับทิ้งการเตือนนั้นไปเลย ไม่มีรอบไหนหยิบขึ้นมาอีก
+      //
+      // เดิมเงื่อนไขคือ "ได้ลองส่งแล้ว" ซึ่งกันไว้แค่กรณียังไม่ได้ตั้งคีย์อีเมล
+      // แต่กรณีที่ตั้งคีย์แล้วและถูกปฏิเสธ (โดเมนยังไม่ verify, from ไม่ถูกต้อง,
+      // Resend ล่ม, เน็ตขาดตอนนั้น) ยังถูกบันทึกอยู่ — เป็นความล้มเหลวแบบเงียบ
+      // ที่คอมเมนต์เดิมบอกเองว่าแย่กว่าการส่งซ้ำ
+      //
+      // ผลที่ตามมา: ถ้าส่งไม่สำเร็จ รอบถัดไปจะลองใหม่ทั้งชุด ซึ่งเป็นสิ่งที่ต้องการ
+      // ส่วนความล้มเหลวยังเห็นได้จาก server log และ results ที่ตอบกลับไป
+      if (result.ok) {
         const rowsToInsert = items.map((r) => ({
           document_recipient_id: r.id,
           threshold_hours: hours,
           sent_to: to.join(',') || '(ไม่มีอีเมลผู้รับ)',
-          delivered: result.ok,
-          error: result.ok ? null : (result as any).error,
+          delivered: true,
+          error: null,
         }));
-        await supabase.from('document_overdue_alerts').insert(rowsToInsert);
+        const { error: alertError } = await supabase
+          .from('document_overdue_alerts')
+          .insert(rowsToInsert);
+        // ส่งเมลออกไปแล้วแต่บันทึกไม่ได้ = รอบหน้าจะส่งซ้ำ ยอมรับได้แต่ต้องเห็นใน log
+        if (alertError) {
+          console.error('[Cron overdue-documents] บันทึกกันส่งซ้ำไม่สำเร็จ:', alertError.message);
+        }
+      } else {
+        console.error(
+          `[Cron overdue-documents] ส่งเมลไม่สำเร็จ (${items.length} รายการ ถึง ${to.join(',') || '-'}):`,
+          'skipped' in result && result.skipped ? result.reason : (result as any).error
+        );
       }
 
+      const attempted = result.ok || !('skipped' in result && result.skipped);
       if (result.ok) sent += items.length;
       else skipped += items.length;
       if (!attempted) notConfigured = true;
