@@ -10,6 +10,8 @@
     "db:migrate:receipt-signatures": "node --env-file=.env.local scripts/run-receipt-signatures.mjs",
     "db:migrate:document-no-over-999": "node --env-file=.env.local scripts/run-document-no-over-999.mjs",
     "db:migrate:can-view-cash": "node --env-file=.env.local scripts/run-can-view-cash-settings.mjs",
+    "db:migrate:document-rls": "node --env-file=.env.local scripts/run-document-rls-lockdown.mjs",
+    "db:migrate:atomic-writes": "node --env-file=.env.local scripts/run-atomic-document-writes.mjs",
     "test:money": "node scripts/test-money.mjs",
     "verify:cash": "node scripts/verify-cash-triggers.mjs"
   },

@@ -265,43 +265,44 @@ export async function POST(request: NextRequest) {
     // พร้อมกันหลายเครื่องไม่ได้เลขชนกัน (ดู migration 020)
     // ถ้า migration 020 ยังไม่ถูกรันบนฐานข้อมูลนั้น ให้ลงทะเบียนต่อได้โดยไม่มีเลข
     // เดือน (หน้าเว็บจะ fallback ไปแสดง running_no) ดีกว่าปล่อยให้บันทึกไม่ได้ทั้งหน้า
-    const { data: displayNo, error: displayNoError } = await supabase
-      .rpc('next_document_display_no', { p_received_date: receivedDate });
-    if (displayNoError) console.error('next_document_display_no failed:', displayNoError.message);
+    // ลงทะเบียนทั้งชุดใน transaction เดียวผ่านฟังก์ชันฝั่ง DB (migration 024)
+    //
+    // เดิมยิงสามคำสั่งแยกกัน (จองเลขที่ -> documents -> document_recipients ->
+    // document_department_tags) ซึ่ง commit ทีละก้อนเพราะ supabase-js ไม่มี
+    // transaction ข้าม HTTP ถ้าก้อนหลังล้ม (เช่น department_id ที่ client ส่งมา
+    // ไม่มีอยู่จริงแล้ว FK พัง) แถว documents ที่สร้างไปแล้วยังค้างอยู่ ผู้ใช้กด
+    // บันทึกซ้ำก็ได้เอกสารอีกใบ และเลขที่ของเดือนก็ถูกจองทิ้งไปหนึ่งเลข
+    const { data: registered, error: registerError } = await supabase.rpc('register_document', {
+      p_received_date: receivedDate,
+      p_doc_number: body.doc_number || null,
+      p_tax_invoice_no: body.tax_invoice_no || null,
+      p_sender: body.sender,
+      p_subject: subject,
+      p_note: body.note || null,
+      p_is_damaged: body.is_damaged || false,
+      p_damage_image_url: body.damage_image_url || null,
+      p_recorded_by: auth.context!.user.id,
+      // document_recipients เป็นแหล่งความจริงของสถานะ/ปลายทาง/ลายเซ็น
+      // ส่วน documents.recipient_dept_id เก็บปลายทางหลักไว้เพื่อความเข้ากันได้เดิม
+      p_workflow_dept_ids: workflowRecipientDeptIds,
+      p_tag_dept_ids: subject === GOODS_RECEIPT_SUBJECT && deptIds.length > 0 ? deptIds : null,
+    } as any);
 
-    const { data: doc, error: docError } = await supabase
-      .from('documents')
-      .insert({
-        display_no: displayNo ?? null,
-        received_date: receivedDate,
-        doc_number: body.doc_number || null,
-        tax_invoice_no: body.tax_invoice_no || null,
-        sender: body.sender,
-        subject,
-        note: body.note || null,
-        is_damaged: body.is_damaged || false,
-        damage_image_url: body.damage_image_url || null,
-        recorded_by: auth.context!.user.id,
-        // Legacy single-recipient columns are left unset going forward;
-        // document_recipients is now the source of truth for status/dept/signatures.
-        recipient_dept_id: workflowRecipientDeptIds[0],
-      })
-      .select()
-      .single();
-    if (docError) throw docError;
-
-    const { data: recipients, error: recError } = await supabase
-      .from('document_recipients')
-      .insert(workflowRecipientDeptIds.map((department_id) => ({ document_id: doc.id, department_id, status: 'registered' })))
-      .select();
-    if (recError) throw recError;
-
-    if (subject === GOODS_RECEIPT_SUBJECT && deptIds.length > 0) {
-      const { error: tagsError } = await supabase
-        .from('document_department_tags')
-        .insert(deptIds.map((department_id) => ({ document_id: doc.id, department_id })));
-      if (tagsError) throw tagsError;
+    if (registerError) {
+      const unknownDept = /unknown_department/.test(registerError.message || '');
+      return NextResponse.json(
+        {
+          success: false,
+          error: unknownDept
+            ? 'มีหน่วยงานปลายทางที่ไม่มีอยู่ในระบบ กรุณาเลือกใหม่'
+            : registerError.message,
+        },
+        { status: unknownDept ? 422 : 500 }
+      );
     }
+
+    const doc = (registered as any).document;
+    const recipients = (registered as any).recipients as any[];
 
     let profName = '';
     if (doc.recorded_by) {

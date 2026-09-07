@@ -73,51 +73,43 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         return NextResponse.json({ success: false, error: `Cannot sign ${stage} at this stage` }, { status: 409 });
       }
 
-      const previousSignature = stage === 'inspector'
-        ? existingRecipient.inspector_signature
-        : existingRecipient.purchasing_signature;
       const actorProfile = await supabase
         .from('profiles')
         .select('full_name')
         .eq('id', auth.context!.user.id)
         .single();
       const actorName = actorProfile.data?.full_name || auth.context!.user.email || 'ผู้ใช้ระบบ';
-      const now = new Date().toISOString();
-      const updates = stage === 'inspector'
-        ? {
-            inspector_signature: signature,
-            inspector_signed_by: auth.context!.user.id,
-            inspector_signed_at: now,
-            status: 'awaiting_purchasing',
-          }
-        : {
-            purchasing_signature: signature,
-            purchasing_signed_by: auth.context!.user.id,
-            purchasing_signed_at: now,
-            status: 'awaiting_recipient',
-          };
 
-      const { data: recipient, error } = await supabase
-        .from('document_recipients')
-        .update(updates)
-        .eq('id', id)
-        .in('status', allowedStatuses)
-        .select()
-        .single();
-      if (error || !recipient) {
-        return NextResponse.json({ success: false, error: 'The approval stage has changed; refresh and try again' }, { status: 409 });
+      // อัปเดตสถานะ + บันทึก audit ใน transaction เดียวผ่านฟังก์ชันฝั่ง DB
+      // (migration 024) เดิมอัปเดตสถานะก่อนแล้วค่อย insert audit ถ้า audit ล้ม
+      // route ตอบ 500 ทั้งที่เอกสารเดินไปขั้นถัดไปแล้ว หลักฐานการเซ็นครั้งนั้น
+      // หายไป และการลองใหม่จะถูกบันทึกเป็น 'updated' แทน 'signed' เพราะลายเซ็น
+      // ถูกเขียนลงไปแล้วในรอบที่ล้ม
+      //
+      // ฟังก์ชันตัดสิน signed/updated จากลายเซ็นเดิมที่อ่านใต้ FOR UPDATE เอง
+      // จึงไม่ต้องส่ง previousSignature ที่อ่านมาก่อนหน้าเข้าไป (อาจเก่าไปแล้ว)
+      const { data: signed, error } = await supabase.rpc('sign_goods_receipt_stage', {
+        p_recipient_id: id,
+        p_stage: stage,
+        p_signature: signature,
+        p_actor_id: auth.context!.user.id,
+        p_actor_name: actorName,
+        p_allowed_status: allowedStatuses,
+      } as any);
+
+      if (error) {
+        const stale = /stage_changed|document_recipient_not_found/.test(error.message || '');
+        return NextResponse.json(
+          {
+            success: false,
+            error: stale
+              ? 'The approval stage has changed; refresh and try again'
+              : error.message,
+          },
+          { status: stale ? 409 : 500 }
+        );
       }
-
-      const { error: auditError } = await supabase.from('document_approval_audit').insert({
-        document_recipient_id: id,
-        stage,
-        action: previousSignature ? 'updated' : 'signed',
-        signature,
-        previous_signature: previousSignature || null,
-        actor_id: auth.context!.user.id,
-        actor_name: actorName,
-      });
-      if (auditError) throw auditError;
+      const recipient = signed as any;
 
       const { data: doc } = await supabase.from('documents').select('*').eq('id', recipient.document_id).single();
       const { data: dept } = await supabase.from('departments').select('name').eq('id', recipient.department_id).single();
