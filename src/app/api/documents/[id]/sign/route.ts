@@ -62,9 +62,13 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         return NextResponse.json({ success: false, error: 'Signature is required' }, { status: 400 });
       }
 
+      // แต่ละด่านเซ็นได้ที่สถานะของคิวตัวเอง และย้อนแก้ชื่อได้ที่สถานะถัดไป
+      // (ยังไม่ถูกปิดงาน) — ต้องตรงกับ getGoodsReceiptWorkflowAction ไม่งั้นปุ่ม
+      // "แก้ไข" ที่หน้าเว็บแสดงตามฟังก์ชันนั้นจะกดแล้วได้ 409 ทุกครั้ง
+      // เดิมจัดซื้อขาด 'awaiting_recipient' ไป ปุ่มแก้ไขจัดซื้อจึงใช้ไม่ได้เลย
       const allowedStatuses = stage === 'inspector'
         ? ['awaiting_inspector', 'awaiting_purchasing']
-        : ['awaiting_purchasing'];
+        : ['awaiting_purchasing', 'awaiting_recipient'];
       if (!allowedStatuses.includes(existingRecipient.status)) {
         return NextResponse.json({ success: false, error: `Cannot sign ${stage} at this stage` }, { status: 409 });
       }

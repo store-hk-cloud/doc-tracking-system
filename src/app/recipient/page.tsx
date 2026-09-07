@@ -62,7 +62,7 @@ export default function RecipientListPage() {
   const [bulkSigning, setBulkSigning] = useState(false);
   const [bulkProgress, setBulkProgress] = useState({ done: 0, total: 0 });
   const [bulkMessage, setBulkMessage] = useState('');
-  const [bulkFailures, setBulkFailures] = useState<{ label: string; error: string }[]>([]);
+  const [bulkFailures, setBulkFailures] = useState<{ id: string; label: string; error: string }[]>([]);
   const [showBulkSignModal, setShowBulkSignModal] = useState(false);
   const [bulkSignature, setBulkSignature] = useState('');
   const [bulkSignError, setBulkSignError] = useState('');
@@ -166,8 +166,18 @@ export default function RecipientListPage() {
   // มีทั้งใบที่รอเซ็นผู้ตรวจสอบและใบที่รอลงชื่อรับค้างอยู่พร้อมกันได้
   const signablePending = visiblePending.filter(isPendingOwnStage);
   const allSignableSelected = signablePending.length > 0 && signablePending.every((d: any) => selectedIds.has(d.id));
-  const selectedByAction = signablePending
-    .filter((d: any) => selectedIds.has(d.id))
+
+  // แหล่งความจริงเดียวของ "จะลงนามกี่ใบ" — ใบที่เลือกไว้ ∩ ใบที่ยังมองเห็นและเป็น
+  // คิวของตัวเอง เพราะนี่คือชุดเดียวกับที่ handleBulkSign ส่งขึ้น API จริง
+  //
+  // เดิมตัวเลขบนปุ่มและหัวข้อ popup ใช้ selectedIds.size แต่ตัวที่ส่งจริงกรองด้วย
+  // signablePending ด้วย ผลคือถ้าเลือกไว้แล้วพิมพ์คำค้น/เปลี่ยนวันที่ ตัวเลขจะยัง
+  // นับใบที่มองไม่เห็นอยู่ ("ลงนาม 7 รายการ") แต่ระบบบันทึกแค่ใบที่ยังอยู่ในตาราง
+  // ("ลงชื่อรับ 1 รายการ") — ผู้ใช้เห็นเลข 7 แล้วได้ 1 โดยไม่มีอะไรบอกว่าหายไปไหน
+  const selectedSignable = signablePending.filter((d: any) => selectedIds.has(d.id));
+  const selectedCount = selectedSignable.length;
+
+  const selectedByAction = selectedSignable
     .reduce((acc: Record<string, number>, d: any) => {
       const action = workflowAction(d) as string;
       acc[action] = (acc[action] || 0) + 1;
@@ -182,6 +192,18 @@ export default function RecipientListPage() {
     ? (selectedActionKeys[0] === 'recipient' ? '✅ ยืนยันรับเอกสาร'
       : selectedActionKeys[0] === 'inspector' ? '✅ ยืนยันผู้ตรวจสอบ' : '✅ ยืนยันจัดซื้อ')
     : '✅ ยืนยันลงนามทั้งหมด';
+
+  // ทิ้ง id ที่หลุดออกจากตารางไปแล้ว (เปลี่ยนคำค้น/วันที่/ขั้นตอน หรือโหลดคิวใหม่
+  // หลังลงนาม) เพื่อให้ช่องติ๊กที่ค้างอยู่ไม่กลายเป็นการเลือกที่มองไม่เห็น
+  // คืน current ตัวเดิมเมื่อไม่มีอะไรต้องตัด ไม่งั้น setState จะวน render ไม่จบ
+  const signableIdsKey = signablePending.map((d: any) => d.id).join(',');
+  useEffect(() => {
+    const visible = new Set(signablePending.map((d: any) => d.id));
+    setSelectedIds((current) => {
+      const next = new Set([...current].filter((id) => visible.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [signableIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleSelect = (id: string) => {
     setSelectedIds((current) => {
@@ -283,7 +305,7 @@ export default function RecipientListPage() {
   };
 
   const openBulkSignModal = () => {
-    if (selectedIds.size === 0) return;
+    if (selectedCount === 0) return;
     setBulkSignature(profile?.full_name || '');
     setBulkSignError('');
     setShowBulkSignModal(true);
@@ -295,7 +317,7 @@ export default function RecipientListPage() {
       setBulkSignError(`กรุณาระบุ${bulkSignatureLabel}`);
       return;
     }
-    const targets = signablePending.filter((d: any) => selectedIds.has(d.id));
+    const targets = selectedSignable;
     setBulkSigning(true);
     setBulkSignError('');
     setBulkMessage('');
@@ -305,17 +327,19 @@ export default function RecipientListPage() {
 
     // แบบหลายรายการลงนามว่า "ถูกต้อง" เท่านั้น การแจ้งปัญหาต้องระบุสาเหตุรายใบ
     // จึงเปิดเป็น popup รายการเดียวแทน
+    // เอกสารหนึ่งใบกระจายเป็นหลายแถวตามหน่วยงานปลายทาง เลขที่เอกสารจึงซ้ำกันได้
+    // ต้องพา id ของแถวไปด้วยเพื่อใช้เป็น key ไม่งั้นรายการที่ล้มเหลวจะซ้อนกันหายไป
     const receiveOne = async (doc: any) => {
       const label = `เลขที่ ${documentNo(doc)} (${ACTION_LABELS[workflowAction(doc) as string] || 'ดำเนินการ'})`;
       try {
         const res = await submitSignature(doc, workflowAction(doc) as string, recipientSignature, { verified: true, note: '' });
         const data = await res.json().catch(() => ({}));
         if (!data?.success) {
-          return { ok: false, label, error: data?.error || `HTTP ${res.status}` };
+          return { ok: false, id: doc.id, label, error: data?.error || `HTTP ${res.status}` };
         }
         return { ok: true };
       } catch (e: any) {
-        return { ok: false, label, error: e?.message || 'ส่งคำขอไม่สำเร็จ' };
+        return { ok: false, id: doc.id, label, error: e?.message || 'ส่งคำขอไม่สำเร็จ' };
       }
     };
 
@@ -326,12 +350,12 @@ export default function RecipientListPage() {
     // sync Sheets เป็น best-effort แล้ว (api/deliveries/route.ts) ถ้าชนโควตาเอกสารยัง
     // ถูกรับสำเร็จ เสียแค่แถวใน Sheets ไม่ถูกอัปเดต ความเสียหายจึงจำกัดอยู่ที่กระจก
     // ไม่ใช่ฐานข้อมูล — ส่วนใบที่ไม่สำเร็จจริงยังถูกรายงานรายใบด้านล่าง
-    const failures: { label: string; error: string }[] = [];
+    const failures: { id: string; label: string; error: string }[] = [];
     let okCount = 0;
     await Promise.all(targets.map(async (doc: any) => {
       const result = await receiveOne(doc);
       if (result.ok) okCount += 1;
-      else failures.push({ label: result.label!, error: result.error! });
+      else failures.push({ id: result.id!, label: result.label!, error: result.error! });
       setBulkProgress((current) => ({ ...current, done: current.done + 1 }));
     }));
 
@@ -431,9 +455,9 @@ export default function RecipientListPage() {
                 {allSignableSelected ? 'ไม่เลือกเลย' : `เลือกทั้งหมด (${signablePending.length})`}
               </button>
               <span style={{ fontWeight: 700 }}>
-                {selectedIds.size > 0 ? `เลือกแล้ว ${selectedIds.size} รายการ` : `งานของคุณ ${signablePending.length} รายการ`}
+                {selectedCount > 0 ? `เลือกแล้ว ${selectedCount} รายการ` : `งานของคุณ ${signablePending.length} รายการ`}
               </span>
-              {selectedIds.size > 0 && selectedActionKeys.length > 0 && (
+              {selectedCount > 0 && selectedActionKeys.length > 0 && (
                 <span style={{ color: 'var(--muted)', fontSize: '0.82rem' }}>
                   {selectedActionKeys.map((action) => `${ACTION_LABELS[action]} ${selectedByAction[action]}`).join(' · ')}
                 </span>
@@ -442,11 +466,11 @@ export default function RecipientListPage() {
                 className="secondary-button"
                 style={{ width: 'auto', padding: '0 16px' }}
                 onClick={openBulkSignModal}
-                disabled={bulkSigning || selectedIds.size === 0}
+                disabled={bulkSigning || selectedCount === 0}
               >
                 {bulkSigning
                   ? `กำลังดำเนินการ ${bulkProgress.done}/${bulkProgress.total}`
-                  : selectedIds.size > 0 ? `✅ ลงนาม ${selectedIds.size} รายการ` : '✅ ลงนามที่เลือก'}
+                  : selectedCount > 0 ? `✅ ลงนาม ${selectedCount} รายการ` : '✅ ลงนามที่เลือก'}
               </button>
             </div>
           )}
@@ -460,7 +484,7 @@ export default function RecipientListPage() {
               {bulkFailures.length > 0 && (
                 <ul style={{ margin: '8px 0 0', paddingLeft: 20, fontSize: '0.82rem', fontWeight: 400 }}>
                   {bulkFailures.map((failure) => (
-                    <li key={failure.label}>
+                    <li key={failure.id}>
                       {failure.label} — {failure.error}
                     </li>
                   ))}
@@ -577,7 +601,7 @@ export default function RecipientListPage() {
                       <option key={d.id} value={d.id}>{d.name}</option>
                     ))}
                   </select>
-                  <button className="secondary-button" onClick={loadClosed}>🔍 ค้นหา</button>
+                  <button className="secondary-button" onClick={() => loadClosed()}>🔍 ค้นหา</button>
                 </div>
               </div>
 
@@ -688,7 +712,7 @@ export default function RecipientListPage() {
           >
             <div className="scan-popup-handle" />
             <h3 id="bulk-recipient-signature-title" style={{ marginBottom: 12 }}>
-              ✍️ ลงนาม {selectedIds.size} รายการ
+              ✍️ ลงนาม {selectedCount} รายการ
             </h3>
             {selectedActionKeys.length > 0 && (
               <div style={{ marginBottom: 12, color: 'var(--muted)', fontSize: '0.85rem' }}>
