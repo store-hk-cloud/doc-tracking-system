@@ -27,10 +27,13 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="app-layout">
+      {/* ต้องเป็น focusable ตัวแรกของหน้า ไม่งั้นคนใช้คีย์บอร์ดต้องไล่ผ่านเมนู
+          ทั้งแถบก่อนถึงเนื้อหาทุกครั้งที่เปลี่ยนหน้า (WCAG 2.4.1 ระดับ A) */}
+      <a href="#main" className="skip-link">ข้ามไปที่เนื้อหาหลัก</a>
       <Sidebar />
       <div className="app-content">
         <Topbar />
-        <main className="app-shell">{children}</main>
+        <main className="app-shell" id="main" tabIndex={-1}>{children}</main>
       </div>
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
         {primary.map((item) => {

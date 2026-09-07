@@ -218,6 +218,37 @@ h3 {
   padding: 14px 0 24px;
 }
 
+/* ซ่อนไว้จนโฟกัสถึง — ใช้ตำแหน่ง fixed แทน clip เพื่อให้ตอนโฟกัสแล้วเห็นทับ
+   sidebar/topbar ได้จริงไม่ว่าหน้าไหน ห้ามใช้ display:none เพราะจะโฟกัสไม่ได้ */
+.skip-link {
+  position: fixed;
+  top: -100px;
+  left: 8px;
+  z-index: 1000;
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--primary-button-bg);
+  color: #ffffff;
+  font-weight: 600;
+  text-decoration: none;
+  transition: top 0.12s ease;
+}
+
+/* ต้องเป็น :focus ไม่ใช่ :focus-visible — ลิงก์ที่ถูกโฟกัสด้วยวิธีอื่นนอกจาก
+   กด Tab (เช่น .focus() หรือ AT บางตัว) ไม่เข้าเงื่อนไข :focus-visible แล้วจะ
+   ยังซ่อนอยู่ที่ top -100px คือโฟกัสไปอยู่ที่ของที่มองไม่เห็น */
+.skip-link:focus {
+  top: 8px;
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+/* main ถูกตั้ง tabindex="-1" ให้ skip link โฟกัสได้ แต่มันไม่ใช่ control
+   จึงไม่ควรมีกรอบโฟกัสขึ้นรอบเนื้อหาทั้งหน้า */
+.app-shell:focus {
+  outline: none;
+}
+
 .topbar,
 .workspace-grid,
 .scan-header,

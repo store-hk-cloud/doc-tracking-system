@@ -805,6 +805,10 @@ body {
 .policy-search { display: flex; align-items: center; gap: 7px; height: 42px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); }
 .policy-search span { color: var(--primary-strong); font-size: 1.25rem; }
 .policy-search input { min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; font-size: 0.78rem; }
+/* ช่องกรอกข้างในถอด outline ทิ้ง ตัวกรอบที่คนมองเห็นคือ wrapper จึงต้องย้าย
+   ring มาไว้ที่ wrapper แทน ไม่งั้นโฟกัสช่องนี้แล้วไม่มีสัญญาณอะไรเลย
+   (ใช้ค่าเดียวกับ .search-input-row:focus-within ใน ui-kit.css) */
+.policy-search:focus-within { box-shadow: 0 0 0 2px rgba(var(--primary-rgb),0.16); border-color: var(--primary); }
 .policy-category-list { display: grid; gap: 4px; margin-top: 14px; }
 .policy-category-list button { display: flex; align-items: center; justify-content: space-between; min-height: 36px; padding: 0 9px; border: 0; border-radius: 7px; color: var(--muted); background: transparent; text-align: left; font: inherit; font-size: 0.8rem; font-weight: 700; cursor: pointer; }
 .policy-category-list button span { min-width: 20px; padding: 2px 5px; border-radius: 999px; background: var(--surface-raised); text-align: center; font-size: 0.68rem; }
