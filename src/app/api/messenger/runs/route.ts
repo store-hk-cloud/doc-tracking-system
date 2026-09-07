@@ -42,8 +42,14 @@ export async function GET(request: NextRequest) {
       const jobIds = [...new Set((hits || []).map((h: any) => h.job_id))];
       query = query.in('id', jobIds.length ? jobIds : ['00000000-0000-0000-0000-000000000000']);
     }
-    if (dateFrom) query = query.gte('created_at', dateFrom);
-    if (dateTo) query = query.lte('created_at', `${dateTo}T23:59:59.999Z`);
+    // created_at เป็น timestamptz แต่ผู้ใช้เลือกเป็น "วัน" ตามเวลาไทย ต้องระบุ
+    // +07:00 ทั้งสองขอบ (กฎเดียวกับ api/documents/route.ts)
+    //
+    // เดิม date_from ส่งวันที่เปล่าไป Postgres อ่านเป็นเที่ยงคืน UTC = ไทย 07:00
+    // งานที่สร้างช่วงไทย 00:00-06:59 ของวันนั้นจึงหลุดออกจากผลลัพธ์ ขณะที่
+    // date_to ใช้ Z ทำให้ครอบเช้าของวันถัดไปเข้ามาแทน
+    if (dateFrom) query = query.gte('created_at', `${dateFrom}T00:00:00.000+07:00`);
+    if (dateTo) query = query.lte('created_at', `${dateTo}T23:59:59.999+07:00`);
 
     const { data, error } = await query;
     if (error) throw error;

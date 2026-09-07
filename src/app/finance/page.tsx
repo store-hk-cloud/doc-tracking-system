@@ -5,7 +5,13 @@ import Link from 'next/link';
 import { formatSatangToBaht } from '@/lib/money';
 import type { CashDailySummary } from '@/types';
 
-const todayStr = () => new Date().toISOString().split('T')[0];
+// วันที่ของเครื่องผู้ใช้ (อยู่ไทย) ไม่ใช่ UTC — toISOString() จะให้เมื่อวาน
+// ตลอดช่วง 00:00-06:59 ตามแบบเดียวกับ recipient/tracking
+const pad = (n: number) => String(n).padStart(2, '0');
+const todayStr = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
 
 // รายงานสรุปยอดผ่านประจำวัน + ตัวชี้วัดที่ฝ่ายการเงินต้องเห็นทุกเย็น
 export default function FinanceOverviewPage() {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
 import { requireCapability, forbiddenResponse } from '@/lib/supabase/auth-helpers';
 import { canViewCash } from '@/lib/permissions';
+import { bangkokDate } from '@/lib/thai-date';
 
 /**
  * GET /api/messenger/reports/daily — รายงานสรุปยอดผ่านประจำวัน
@@ -19,9 +20,15 @@ export async function GET(request: NextRequest) {
 
     const supabase = getServiceSupabase();
     const { searchParams } = new URL(request.url);
-    const date = searchParams.get('date') || new Date().toISOString().slice(0, 10);
-    const dayStart = `${date}T00:00:00.000Z`;
-    const dayEnd = `${date}T23:59:59.999Z`;
+    // "วัน" ของรายงานนี้คือวันตามเวลาไทย ไม่ใช่ UTC
+    //
+    // ขอบวันต้องระบุ +07:00 ตรง ๆ เหมือนที่ api/documents/route.ts ทำ ไม่งั้น
+    // หน้าต่างจะเลื่อนไป 7 ชั่วโมง (ครอบไทย 07:00 ของวันนี้ ถึง 07:00 ของวันถัดไป)
+    // เงินที่รับ/ฝากช่วงไทย 00:00-06:59 จะไปตกอยู่ในรายงานของเมื่อวาน
+    // ซึ่งทำให้ยอด in_hand ที่ฝ่ายการเงินดูทุกเย็นไม่ตรงกับความจริง
+    const date = searchParams.get('date') || bangkokDate();
+    const dayStart = `${date}T00:00:00.000+07:00`;
+    const dayEnd = `${date}T23:59:59.999+07:00`;
 
     const [
       { data: pickupsToday },

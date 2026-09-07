@@ -4,6 +4,7 @@ import { appendRow } from '@/lib/google-sheets';
 import { requireRoles } from '@/lib/supabase/auth-helpers';
 import { accountingDestinationFor, canViewGoodsReceiptWorkflow, GOODS_RECEIPT_SUBJECT, isGoodsReceipt } from '@/lib/document-workflow';
 import { documentNo } from '@/lib/document-no';
+import { bangkokDate } from '@/lib/thai-date';
 
 // PostgREST คืนแถวได้จำกัดต่อคำขอ (ค่าเริ่มต้น 1000) การ select เฉย ๆ จึงตัดแถว
 // ทิ้งเงียบ ๆ เมื่อเอกสารสะสมมากขึ้น และไม่มีทางรู้ว่าใบไหนหาย จึงต้องไล่ดึงเป็นหน้า
@@ -164,9 +165,19 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // สถานะที่แปลว่า "ยังไม่มีใครลงชื่อรับใบนี้" ตามนิยาม
+    //
+    // ใบที่ถูกปฏิเสธแล้วส่งมอบใหม่ (api/documents/[id]/redeliver) จะกลับมาอยู่ใน
+    // สถานะเหล่านี้ แต่แถวใน delivery_logs ของการปฏิเสธครั้งก่อนยังอยู่ (ตั้งใจ
+    // เก็บไว้เป็นหลักฐาน) ถ้าหยิบมาแสดงต่อ คอลัมน์ "ผู้รับ" ในหน้าติดตามจะโชว์
+    // ลายเซ็นเก่าเหมือนมีคนเซ็นรับแล้ว ทั้งที่ใบนั้นกำลังรอผู้รับอยู่
+    const AWAITING_RECEIPT = new Set([
+      'registered', 'delivered', 'awaiting_inspector', 'awaiting_purchasing', 'awaiting_recipient',
+    ]);
+
     const mapped = rows.map((r: any) => {
       const doc = docMap.get(r.document_id) || {};
-      const sig = recipientSignatureMap.get(r.id);
+      const sig = AWAITING_RECEIPT.has(r.status) ? undefined : recipientSignatureMap.get(r.id);
       return {
         ...doc,
         id: r.id,
@@ -247,7 +258,9 @@ export async function POST(request: NextRequest) {
       ? deptIds.slice(0, 1)
       : deptIds;
 
-    const receivedDate = body.received_date || new Date().toISOString().split('T')[0];
+    // ค่าเริ่มต้นต้องเป็นวันที่ไทย เพราะค่านี้ถูกส่งต่อให้
+    // next_document_display_no() ซึ่งออกเลขที่ตามเดือนของวันนั้น
+    const receivedDate = body.received_date || bangkokDate();
     // เลขที่แสดงผลนับใหม่ทุกเดือน จองผ่านฟังก์ชันฝั่งฐานข้อมูลเพื่อให้การลงทะเบียน
     // พร้อมกันหลายเครื่องไม่ได้เลขชนกัน (ดู migration 020)
     // ถ้า migration 020 ยังไม่ถูกรันบนฐานข้อมูลนั้น ให้ลงทะเบียนต่อได้โดยไม่มีเลข

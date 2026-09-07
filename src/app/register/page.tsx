@@ -21,10 +21,22 @@ function isGoodsReceiptDocument(subject: string) {
   return isGoodsReceipt(subject.trim());
 }
 
+// วันที่ของเครื่องผู้ใช้ (อยู่ไทย) ไม่ใช่ UTC
+//
+// toISOString() ให้วันที่ UTC ซึ่งเป็น "เมื่อวาน" ตลอดช่วง 00:00-06:59 ตามเวลาไทย
+// ค่านี้ไม่ใช่แค่แสดงผล แต่ถูกส่งเป็น received_date ไปออกเลขที่เอกสารตามเดือน
+// ของวันนั้น ใบที่ลงทะเบียน 00:10 ของวันที่ 1 จึงได้เลขของเดือนก่อน
+// (ใช้แบบเดียวกับ recipient/tracking ที่ทำถูกอยู่แล้ว)
+const pad = (n: number) => String(n).padStart(2, '0');
+function todayLocal() {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 function emptyRow() {
   return {
     id: crypto.randomUUID(),
-    received_date: new Date().toISOString().split('T')[0],
+    received_date: todayLocal(),
     doc_number: '',
     tax_invoice_no: '',
     sender: '',
@@ -214,16 +226,23 @@ export default function RegisterPage() {
     setError('');
     setSuccess('');
 
-    const validRows: Row[] = [];
-    const invalidIds = new Set<string>();
-    setRows((current) => current.map((r) => {
-      if (!r.sender || !r.subject || (!isAccountingOnlyDocument(r.subject) && r.recipient_dept_ids.length === 0)) {
-        invalidIds.add(r.id);
-        return { ...r, error: 'กรุณากรอกผู้ส่ง, เรื่อง และเลือกหน่วยงานอย่างน้อย 1 หน่วยงาน' };
-      }
-      return { ...r, error: undefined };
-    }));
-    rows.forEach((r) => { if (!invalidIds.has(r.id)) validRows.push(r); });
+    // ต้องตัดสินว่าแถวไหนกรอกครบ "ก่อน" เรียก setRows แล้วค่อยเอาผลไปทาสี error
+    //
+    // เดิมเก็บ invalidIds จากใน updater ของ setRows แล้วอ่านค่าทันทีบรรทัดถัดมา
+    // ซึ่งได้ค่าครบเพราะ React เผอิญเรียก updater แบบ eager ตอนคิวว่างเท่านั้น
+    // ถ้ามี state update ค้างอยู่ก่อน updater จะถูกเลื่อนไปตอน render → invalidIds
+    // ว่างเปล่า แถวที่กรอกไม่ครบจะถูกส่งขึ้น API ทั้งหมด
+    const isRowValid = (r: Row) =>
+      !!r.sender && !!r.subject && (isAccountingOnlyDocument(r.subject) || r.recipient_dept_ids.length > 0);
+
+    const invalidIds = new Set(rows.filter((r) => !isRowValid(r)).map((r) => r.id));
+    const validRows: Row[] = rows.filter((r) => !invalidIds.has(r.id));
+
+    setRows((current) => current.map((r) => (
+      invalidIds.has(r.id)
+        ? { ...r, error: 'กรุณากรอกผู้ส่ง, เรื่อง และเลือกหน่วยงานอย่างน้อย 1 หน่วยงาน' }
+        : { ...r, error: undefined }
+    )));
 
     if (validRows.length === 0) {
       setError('กรุณากรอกข้อมูลที่จำเป็นให้ครบอย่างน้อย 1 แถวก่อนบันทึก');
