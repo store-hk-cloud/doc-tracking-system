@@ -4,11 +4,21 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { documentNo } from '@/lib/document-no';
 
+// วันที่ของเครื่องผู้ใช้ (อยู่ไทย) — toISOString() ให้วันที่ UTC ซึ่งเป็น "เมื่อวาน"
+// ตลอดช่วง 00:00-06:59 ตามเวลาไทย ทำให้ชื่อไฟล์รายงานลงวันที่ผิด
+const pad = (n: number) => String(n).padStart(2, '0');
+const todayLocal = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
 export default function ReportsPage() {
   const { profile } = useAuth();
   const [departments, setDepartments] = useState<any[]>([]);
   const [docs, setDocs] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searched, setSearched] = useState(false);
+  const [error, setError] = useState('');
   const isAdmin = profile?.role === 'super_admin' || profile?.role === 'admin';
 
   const [filters, setFilters] = useState({
@@ -27,6 +37,7 @@ export default function ReportsPage() {
 
   const handleSearch = async () => {
     setLoading(true);
+    setSearched(true);
     let url = '/api/documents?';
     if (filters.date_from) url += `date_from=${filters.date_from}&`;
     if (filters.date_to) url += `date_to=${filters.date_to}&`;
@@ -35,9 +46,22 @@ export default function ReportsPage() {
     if (filters.status) url += `status=${filters.status}&`;
     // API กรองสิทธิ์ตาม workflow กลางของใบรับสินค้าอยู่แล้ว.
 
-    const res = await fetch(url);
-    const data = await res.json();
-    if (data.success) setDocs(data.data);
+    // ล้างผลเดิมและรายงาน error เสมอ — เดิมถ้าค้นไม่สำเร็จจะไม่แตะ docs
+    // ผู้ใช้จึงเห็นผลของการค้นครั้งก่อนค้างอยู่เหมือนเป็นผลของเงื่อนไขใหม่
+    try {
+      const res = await fetch(url);
+      const data = await res.json().catch(() => ({}));
+      if (data?.success) {
+        setDocs(data.data);
+        setError('');
+      } else {
+        setDocs([]);
+        setError(data?.error || `ค้นหาไม่สำเร็จ (HTTP ${res.status})`);
+      }
+    } catch (e: any) {
+      setDocs([]);
+      setError(e?.message || 'ค้นหาไม่สำเร็จ');
+    }
     setLoading(false);
   };
 
@@ -54,10 +78,14 @@ export default function ReportsPage() {
     ]);
     const csv = [headers, ...rows].map((row) => row.map(escapeCsvCell).join(',')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    // ต้อง revoke ทุกครั้ง ไม่งั้น blob ค้างในหน่วยความจำตลอดอายุของหน้า
+    // กด export หลายรอบก็สะสมไปเรื่อย ๆ
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `report_${new Date().toISOString().split('T')[0]}.csv`;
+    link.href = url;
+    link.download = `report_${todayLocal()}.csv`;
     link.click();
+    URL.revokeObjectURL(url);
   };
 
   const statusLabels: Record<string, string> = {
@@ -161,9 +189,23 @@ export default function ReportsPage() {
         </>
       )}
 
-      {!loading && docs.length === 0 && (
+      {error && (
+        <div className="toast error" style={{ position: 'static', marginTop: 16 }}>
+          {error}
+        </div>
+      )}
+
+      {loading && (
         <div className="empty-search" style={{ marginTop: 16 }}>
-          กรุณากด "ค้นหา" เพื่อแสดงผลลัพธ์
+          กำลังค้นหา...
+        </div>
+      )}
+
+      {/* แยกสองกรณีให้ชัด เดิมค้นแล้วไม่เจอก็ยังขึ้นว่า "กรุณากดค้นหา"
+          ซึ่งบอกให้ผู้ใช้ทำสิ่งที่เพิ่งทำไปแล้ว */}
+      {!loading && !error && docs.length === 0 && (
+        <div className="empty-search" style={{ marginTop: 16 }}>
+          {searched ? 'ไม่พบเอกสารที่ตรงกับเงื่อนไขที่เลือก' : 'กรุณากด "ค้นหา" เพื่อแสดงผลลัพธ์'}
         </div>
       )}
     </div>

@@ -73,20 +73,27 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const supabase = getServiceSupabase();
     const body = await request.json();
 
-    const { data: existing, error: existingError } = await supabase
-      .from('documents')
+    // สถานะจริงอยู่ที่ document_recipients ตั้งแต่ migration 006 แล้ว
+    //
+    // ห้ามอ่าน documents.status มาตัดสินอะไร: คอลัมน์นั้นถูกแช่ค่าไว้ตั้งแต่ 006
+    // ไม่มีโค้ดไหนเขียนมันอีก (ตรวจข้อมูลจริง: 587 แถวยังเป็น 'registered'
+    // ทั้งที่ปลายทางของมันปิดงานไปแล้ว) เงื่อนไขที่เคยกันการย้ายปลายทางจึงเปิด
+    // ให้ย้ายได้เกือบทุกใบ
+    const { data: existingRecipients, error: existingError } = await supabase
+      .from('document_recipients')
       .select('status')
-      .eq('id', id)
-      .single();
-    if (existingError || !existing) {
+      .eq('document_id', id);
+    if (existingError) throw existingError;
+    if (!existingRecipients || existingRecipients.length === 0) {
       return NextResponse.json({ success: false, error: 'Document not found' }, { status: 404 });
     }
+    const allStillRegistered = existingRecipients.every((r: any) => r.status === 'registered');
 
     const allowedFields = [
       'received_date', 'doc_number', 'tax_invoice_no', 'sender', 'subject',
       'recipient_dept_id', 'note', 'is_damaged', 'damage_image_url',
     ] as const;
-    if (Object.prototype.hasOwnProperty.call(body, 'recipient_dept_id') && existing.status !== 'registered') {
+    if (Object.prototype.hasOwnProperty.call(body, 'recipient_dept_id') && !allStillRegistered) {
       return NextResponse.json(
         { success: false, error: 'recipient_dept_id can only be changed while the document is still registered' },
         { status: 409 }
