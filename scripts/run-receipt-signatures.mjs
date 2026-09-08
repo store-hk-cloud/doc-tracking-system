@@ -9,7 +9,7 @@ if (!connectionString) {
 }
 
 const sql = readFileSync(new URL('../supabase/migrations/005_add_receipt_signatures.sql', import.meta.url), 'utf8');
-const client = new Client({ connectionString, ssl: { rejectUnauthorized: false } });
+const client = new Client({ connectionString, ssl: { rejectUnauthorized: true } });
 
 try {
   await client.connect();

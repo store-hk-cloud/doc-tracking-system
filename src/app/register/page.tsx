@@ -1,5 +1,7 @@
 'use client';
 
+import Image from 'next/image';
+
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { createClient } from '@/lib/supabase/client';
@@ -54,7 +56,7 @@ type Row = ReturnType<typeof emptyRow>;
 
 export default function RegisterPage() {
   const { user } = useAuth();
-  const supabase = createClient();
+  const [supabase] = useState(createClient);
   const [departments, setDepartments] = useState<any[]>([]);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
@@ -69,7 +71,7 @@ export default function RegisterPage() {
     supabase.from('departments').select('*').order('name').then(({ data }) => {
       if (data) setDepartments(data);
     });
-  }, []);
+  }, [supabase]);
 
   /** หน่วยงานบัญชีที่ต้องเป็นปลายทางของเรื่องนี้ — undefined ถ้าเรื่องนี้เลือกได้อิสระ */
   const accountingDepartmentFor = (subject: string) => {
@@ -474,10 +476,10 @@ export default function RegisterPage() {
                   </label>
                 ) : (
                   <div style={{ display: 'grid', gap: 10 }}>
-                    <img
+                    <Image unoptimized width={1000} height={1000}
                       src={detailsPopupRow.photoPreview}
                       alt="รูปความเสียหาย"
-                      style={{ maxWidth: 220, borderRadius: 8, border: '1px solid var(--line)' }}
+                      style={{ width: '100%', height: 'auto', maxWidth: 220, borderRadius: 'var(--radius-sm)', border: '1px solid var(--line)' }}
                     />
                     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                       <button

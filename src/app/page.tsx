@@ -1,5 +1,7 @@
 'use client';
 
+import Image from 'next/image';
+
 import { useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 
@@ -53,7 +55,7 @@ export default function LoginPage() {
     <div className="auth-page">
       <div className="scan-panel auth-card">
         <div className="app-title" style={{ marginBottom: 24, textAlign: 'center' }}>
-          <img src="/icons/hillkoff-emblem.png" alt="Hillkoff" width={64} height={64} style={{ marginBottom: 12 }} />
+          <Image src="/icons/hillkoff-emblem.png" alt="Hillkoff" width={64} height={64} style={{ marginBottom: 12 }} />
           <h1 style={{ fontSize: '1.5rem' }}>จดหมาย พัสดุ เอกสารภายใน</h1>
           <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginTop: 4 }}>
             เข้าสู่ระบบเพื่อดำเนินการ

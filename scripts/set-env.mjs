@@ -1,39 +1,25 @@
-// Set Vercel Environment Variables via CLI non-interactively
-// Usage: node scripts/set-env.mjs <name> <value>
-import { execSync } from 'child_process';
+import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 
-const name = process.argv[2];
-const value = process.argv[3];
-
-if (!name || !value) {
-  console.error('Usage: node scripts/set-env.mjs <name> <value>');
-  process.exit(1);
+export function setEnvironment(name, value, run = spawnSync, platform = process.platform) {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name || '') || typeof value !== 'string' || !value) {
+    throw new Error('Usage: node scripts/set-env.mjs <name> <value>');
+  }
+  const command = platform === 'win32' ? 'powershell.exe' : 'npx';
+  const args = platform === 'win32'
+    ? ['-NoProfile', '-NonInteractive', '-Command', `& npx.cmd vercel env add ${name} production --yes; exit $LASTEXITCODE`]
+    : ['vercel', 'env', 'add', name, 'production', '--yes'];
+  // ส่งค่าลับทาง stdin เท่านั้น ไม่ประกอบลงในคำสั่งหรือแสดง output ที่อาจสะท้อนค่าเดิม
+  const result = run(command, args, { input: value, encoding: 'utf8', timeout: 30000, windowsHide: true });
+  if (result.error || result.status !== 0) throw new Error(`Failed to set ${name}; check Vercel login and whether the variable already exists.`);
 }
 
-try {
-  const result = execSync(
-    `npx vercel env add ${name} production --yes 2>&1`,
-    { input: `${value}\ny\n`, timeout: 15000, shell: true }
-  );
-  console.log(`✅ ${name} added`);
-} catch (e) {
-  // Fallback: try to write using a temp approach
-  console.log(`Trying alternate method for ${name}...`);
-  const fs = require('fs');
-  const token = process.env.VERCEL_TOKEN || execSync('npx vercel whoami --token 2>&1', { shell: true }).toString().trim();
-  
-  // Use Vercel API directly
-  const res = execSync(
-    `curl -s -X POST "https://api.vercel.com/v10/projects/store-hk-5474s-projects/doc-tracking-system/env" \
-      -H "Authorization: Bearer $(npx vercel whoami --token 2>&1 | tail -1)" \
-      -H "Content-Type: application/json" \
-      -d '{"key":"${name}","value":"${value}","type":"encrypted","target":["production"]}'`,
-    { shell: true, timeout: 15000 }
-  );
-  const data = JSON.parse(res.toString());
-  if (data.error) {
-    console.log(`  ⚠️  ${data.error.message || JSON.stringify(data.error)}`);
-  } else {
-    console.log(`  ✅ ${name} added via API`);
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  try {
+    setEnvironment(process.argv[2], process.argv[3]);
+    console.log(`${process.argv[2]} added`);
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
   }
 }

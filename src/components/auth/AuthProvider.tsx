@@ -1,7 +1,6 @@
 'use client';
 
 import { createClient } from '@/lib/supabase/client';
-import { useRouter } from 'next/navigation';
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import type { Profile } from '@/types';
 
@@ -25,15 +24,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<{ id: string; email: string } | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
-  const router = useRouter();
-  const supabase = createClient();
+  const [supabase] = useState(createClient);
 
   useEffect(() => {
     let mounted = true;
+    let signedOut = false;
 
     // Get initial session - this is the ONLY place we set user/profile
     supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!mounted) return;
+      if (!mounted || signedOut) return;
       if (session?.user) {
         setUser({ id: session.user.id, email: session.user.email! });
         // Load profile via API route (service_role bypasses RLS)
@@ -41,25 +40,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const res = await fetch('/api/profile');
           if (res.ok) {
             const data = await res.json();
-            if (mounted && data.success) setProfile(data.data);
+            if (mounted && !signedOut && data.success) setProfile(data.data);
           }
-        } catch (_) {}
+        } catch {}
       }
+      if (mounted) setLoading(false);
+    }).catch(() => {
       if (mounted) setLoading(false);
     });
 
     // Subscribe only for sign-out events
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (!mounted) return;
       if (event === 'SIGNED_OUT') {
+        signedOut = true;
         setUser(null);
         setProfile(null);
+        setLoading(false);
       }
       // NO setUser on SIGNED_IN - that causes infinite loops
     });
 
     return () => { mounted = false; subscription.unsubscribe(); };
-  }, []);
+  }, [supabase]);
 
   const signIn = async (email: string, password: string): Promise<string | null> => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });

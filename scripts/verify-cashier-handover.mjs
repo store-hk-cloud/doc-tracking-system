@@ -24,7 +24,7 @@ const env = Object.fromEntries(
 
 const url = new URL(env.POSTGRES_URL_NON_POOLING || env.POSTGRES_URL);
 url.searchParams.delete('sslmode');
-const client = new pg.Client({ connectionString: url.toString(), ssl: { rejectUnauthorized: false } });
+const client = new pg.Client({ connectionString: url.toString(), ssl: { rejectUnauthorized: true } });
 
 let pass = 0;
 let fail = 0;

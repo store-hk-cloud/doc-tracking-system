@@ -1,5 +1,7 @@
 'use client';
 
+import Image from 'next/image';
+
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -33,7 +35,6 @@ export default function CashPickupPage() {
   const { jobId } = useParams<{ jobId: string }>();
   const router = useRouter();
 
-  const [job, setJob] = useState<any>(null);
   const [lookup, setLookup] = useState<Lookup | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -71,7 +72,6 @@ export default function CashPickupPage() {
         if (!runRes.success) {
           setError(runRes.error || 'ไม่พบงานนี้');
         } else {
-          setJob(runRes.data.job);
           setPickups(runRes.data.pickups || []);
           // ฝากเงินไปแล้ว = ยอดที่ควรฝากถูก snapshot ไว้ เพิ่มจุดรับอีกไม่ได้
           if (runRes.data.deposit) router.replace(`/messenger/${jobId}/result`);
@@ -444,10 +444,10 @@ export default function CashPickupPage() {
           />
           {photoPreview && (
             <div style={{ marginTop: 10 }}>
-              <img
+              <Image unoptimized width={1000} height={1000}
                 src={photoPreview}
                 alt="ตัวอย่างรูปซองเงิน"
-                style={{ width: '100%', maxWidth: 320, borderRadius: 'var(--radius-sm)', border: '1px solid var(--line)' }}
+                style={{ width: '100%', height: 'auto', maxWidth: 320, borderRadius: 'var(--radius-sm)', border: '1px solid var(--line)' }}
               />
               <button
                 type="button"
@@ -498,7 +498,7 @@ export default function CashPickupPage() {
         <div className="scan-popup-overlay" onClick={() => setShowFullPreview(false)}>
           <div className="scan-popup-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="scan-popup-handle" />
-            <img src={photoPreview} alt="รูปซองเงินเต็มจอ" style={{ width: '100%', borderRadius: 'var(--radius-sm)' }} />
+            <Image unoptimized width={1000} height={1000} src={photoPreview} alt="รูปซองเงินเต็มจอ" style={{ width: '100%', height: 'auto', borderRadius: 'var(--radius-sm)' }} />
             <button type="button" className="scan-popup-close" onClick={() => setShowFullPreview(false)}>
               ปิด
             </button>

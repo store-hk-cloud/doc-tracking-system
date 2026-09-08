@@ -55,3 +55,24 @@ test('failed search clears previous results and shows an error instead of a stal
     assert.match(text(renderer.toJSON()), /โหลดไม่สำเร็จ/);
   } finally { renderer.unmount(); }
 });
+
+test('editing a search draft during initial loading does not submit it before Search is clicked', async () => {
+  let finishInitial;
+  const requests = [];
+  const renderer = await mount((url) => {
+    requests.push(url);
+    return requests.length === 1
+      ? new Promise((resolve) => { finishInitial = resolve; }) : response([]);
+  });
+  try {
+    const search = renderer.root.findAllByType('input').find((input) => input.props.placeholder?.includes('ผู้ส่ง'));
+    await act(async () => { search.props.onChange({ target: { value: 'draft' } }); });
+    assert.equal(requests.length, 1);
+    await act(async () => { finishInitial(response(docs)); });
+    assert.match(text(renderer.toJSON()), /ปิดงานล่าสุดอยู่บนสุด · 6 รายการ/);
+    await act(async () => { button(renderer, 'ค้นหา').props.onClick(); });
+    assert.equal(requests.length, 2);
+    assert.ok(requests[1].includes('keyword=draft'));
+    assert.match(text(renderer.toJSON()), /ปิดงานล่าสุดอยู่บนสุด · 0 รายการ/);
+  } finally { renderer.unmount(); }
+});

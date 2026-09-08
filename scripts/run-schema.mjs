@@ -1,47 +1,31 @@
-import { createClient } from '@supabase/supabase-js';
-import { readFileSync } from 'fs';
+import { readFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+import { Client } from 'pg';
 
-const supabaseUrl = 'https://xebrtqvxmbjidrkvdktn.supabase.co';
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-if (!supabaseServiceKey) throw new Error('SUPABASE_SERVICE_ROLE_KEY is required');
-
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
-const sql = readFileSync('supabase/migrations/001_initial_schema.sql', 'utf8');
-
-async function main() {
+export async function runSchema(connectionString, ClientClass = Client) {
+  if (!connectionString) throw new Error('POSTGRES_URL_NON_POOLING or DATABASE_URL is required');
+  const client = new ClientClass({ connectionString });
   try {
-    // Execute SQL via REST API
-    const res = await fetch(`${supabaseUrl}/rest/v1/`, {
-      method: 'POST',
-      headers: {
-        'apikey': supabaseServiceKey,
-        'Authorization': `Bearer ${supabaseServiceKey}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'params=single-object',
-      },
-      body: JSON.stringify({ query: sql }),
-    });
-
-    // Try direct SQL execution via management API
-    const mgmtRes = await fetch('https://api.supabase.com/v1/projects/xebrtqvxmbjidrkvdktn/sql', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${supabaseServiceKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ query: sql }),
-    });
-
-    if (mgmtRes.ok) {
-      console.log('✅ Schema created successfully!');
-    } else {
-      const err = await mgmtRes.text();
-      console.log('⚠️ Management API:', mgmtRes.status, err.substring(0, 200));
-      // Fallback: try raw SQL via POST to pg
+    await client.connect();
+    await client.query('BEGIN');
+    try {
+      await client.query(readFileSync(new URL('../supabase/migrations/001_initial_schema.sql', import.meta.url), 'utf8'));
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
     }
-  } catch (e) {
-    console.log('Error:', e.message);
+  } finally {
+    await client.end();
   }
 }
 
-main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  try {
+    await runSchema(process.env.POSTGRES_URL_NON_POOLING || process.env.DATABASE_URL);
+    console.log('Schema created successfully');
+  } catch {
+    console.error('Schema initialization failed; check the database connection and migration state.');
+    process.exitCode = 1;
+  }
+}

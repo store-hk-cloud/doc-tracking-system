@@ -3,7 +3,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const sql = readFileSync(join(__dirname, 'fix-rls-recursion.sql'), 'utf8');
+const sql = readFileSync(join(__dirname, '../supabase/migrations/20260908013649_database_security_lockdown.sql'), 'utf8');
 
 // Use Postgres URL from env
 const connectionString = process.env.POSTGRES_URL_NON_POOLING;
@@ -15,29 +15,16 @@ if (!connectionString) {
 async function main() {
   const { default: pg } = await import('pg');
   const client = new pg.Client({
-    connectionString: connectionString.replace('sslmode=require', 'sslmode=disable'),
-    ssl: { rejectUnauthorized: false },
+    connectionString: connectionString,
+    ssl: { rejectUnauthorized: true },
   });
-  await client.connect();
-  
-  const statements = sql
-    .split(';')
-    .map(s => s.trim())
-    .filter(s => s && !s.startsWith('--') && s.length > 10);
-
-  for (const stmt of statements) {
-    const fullSql = stmt + ';';
-    console.log(`▶ ${fullSql.substring(0, 100)}...`);
-    try {
-      await client.query(fullSql);
-      console.log('  ✅');
-    } catch (err) {
-      console.log(`  ⚠️  ${err.message.substring(0, 100)}`);
-    }
+  try {
+    await client.connect();
+    await client.query(sql);
+    console.log('RLS lockdown completed.');
+  } finally {
+    await client.end();
   }
-  
-  await client.end();
-  console.log('\n🎉 Done! RLS policies updated.');
 }
 
 main().catch(err => { console.error(err); process.exit(1); });

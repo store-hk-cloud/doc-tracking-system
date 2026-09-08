@@ -11,7 +11,7 @@ const sql = readFileSync(
   new URL('../supabase/migrations/024_atomic_document_writes.sql', import.meta.url),
   'utf8'
 );
-const client = new Client({ connectionString, ssl: { rejectUnauthorized: false } });
+const client = new Client({ connectionString, ssl: { rejectUnauthorized: true } });
 
 try {
   await client.connect();

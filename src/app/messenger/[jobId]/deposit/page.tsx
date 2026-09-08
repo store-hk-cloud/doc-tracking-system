@@ -1,5 +1,7 @@
 'use client';
 
+import Image from 'next/image';
+
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -137,7 +139,7 @@ export default function BankDepositPage() {
       setStep('กำลังอัปโหลดรูปใบนำฝาก...');
       const photo = await uploadJobPhoto(jobId, photoFile, 'deposit_slip', null, 'ใบนำฝากธนาคาร');
       slipPhotoId = photo.id;
-    } catch (e: any) {
+    } catch {
       // ไม่หยุดที่นี่ เพราะเงินฝากไปแล้วจริง ยอดต้องเข้าระบบให้ได้
       setStep('อัปรูปไม่สำเร็จ — กำลังบันทึกยอดเงินไว้ก่อน');
     }
@@ -319,10 +321,10 @@ export default function BankDepositPage() {
           />
           {photoPreview && (
             <div style={{ marginTop: 10 }}>
-              <img
+              <Image unoptimized width={1000} height={1000}
                 src={photoPreview}
                 alt="ตัวอย่างรูปใบนำฝาก"
-                style={{ width: '100%', maxWidth: 320, borderRadius: 'var(--radius-sm)', border: '1px solid var(--line)' }}
+                style={{ width: '100%', height: 'auto', maxWidth: 320, borderRadius: 'var(--radius-sm)', border: '1px solid var(--line)' }}
               />
               <button
                 type="button"
@@ -389,7 +391,7 @@ export default function BankDepositPage() {
         <div className="scan-popup-overlay" onClick={() => setShowFullPreview(false)}>
           <div className="scan-popup-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="scan-popup-handle" />
-            <img src={photoPreview} alt="รูปใบนำฝากเต็มจอ" style={{ width: '100%', borderRadius: 'var(--radius-sm)' }} />
+            <Image unoptimized width={1000} height={1000} src={photoPreview} alt="รูปใบนำฝากเต็มจอ" style={{ width: '100%', height: 'auto', borderRadius: 'var(--radius-sm)' }} />
             <button type="button" className="scan-popup-close" onClick={() => setShowFullPreview(false)}>
               ปิด
             </button>

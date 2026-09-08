@@ -10,7 +10,7 @@ const url = new URL(rawConnectionString);
 url.searchParams.delete('sslmode');
 
 const sql = readFileSync(new URL('../supabase/migrations/017_goods_receipt_approval_workflow.sql', import.meta.url), 'utf8');
-const client = new Client({ connectionString: url.toString(), ssl: { rejectUnauthorized: false } });
+const client = new Client({ connectionString: url.toString(), ssl: { rejectUnauthorized: true } });
 
 try {
   await client.connect();

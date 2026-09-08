@@ -1,5 +1,7 @@
 'use client';
 
+import Image from 'next/image';
+
 import { useAuth } from '@/components/auth/AuthProvider';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -29,7 +31,7 @@ export function Sidebar() {
       }}
     >
       <div style={{ padding: '20px 16px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
-        <img src="/icons/hillkoff-emblem.png" alt="Hillkoff" width={38} height={38} style={{ flexShrink: 0 }} />
+        <Image src="/icons/hillkoff-emblem.png" alt="Hillkoff" width={38} height={38} style={{ flexShrink: 0 }} />
         <div>
           {/* --primary บนพื้นการ์ดได้ 4.49:1 ตกเกณฑ์ 4.5:1 — --primary-strong พลิกค่า
               ถูกทั้งสองธีมและได้ 6.81:1 */}

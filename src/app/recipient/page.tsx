@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { getGoodsReceiptWorkflowAction, isGoodsReceipt } from '@/lib/document-workflow';
 import { documentNo } from '@/lib/document-no';
@@ -102,7 +102,7 @@ export default function RecipientListPage() {
     setPendingLoading(false);
   };
 
-  const loadClosed = async (override?: Partial<typeof closedFilter>) => {
+  const loadClosed = useCallback(async (override?: Partial<typeof closedFilter>) => {
     const seq = ++closedRequestSeq.current;
     const active = { ...closedFilter, ...override };
     setClosedLoading(true);
@@ -130,11 +130,11 @@ export default function RecipientListPage() {
       setClosedError(e instanceof Error ? e.message : 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่');
     } finally {
       if (seq === closedRequestSeq.current) {
-        setClosedLoading(false);
         setClosedLoaded(true);
+        setClosedLoading(false);
       }
     }
-  };
+  }, [closedFilter]);
 
   useEffect(() => { loadPending(); }, []);
 
@@ -145,8 +145,8 @@ export default function RecipientListPage() {
   }, []);
 
   useEffect(() => {
-    if (tab === 'closed' && !closedLoaded) loadClosed();
-  }, [tab]);
+    if (tab === 'closed' && !closedLoaded && !closedLoading) loadClosed();
+  }, [tab, closedLoaded, closedLoading, loadClosed]);
 
   const workflowAction = (doc: any) => isGoodsReceipt(doc.subject)
     ? getGoodsReceiptWorkflowAction(profile?.department_code, doc.status)

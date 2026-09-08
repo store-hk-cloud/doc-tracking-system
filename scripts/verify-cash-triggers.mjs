@@ -43,14 +43,12 @@ if (!rawConnectionString) {
   process.exit(1);
 }
 
-// ตัด sslmode ออกจาก URL: pg เวอร์ชันใหม่แปลง sslmode=require เป็น verify-full
-// ซึ่งจะ reject ใบรับรองของ Supabase (self-signed chain) และ override ค่า ssl
-// ที่ส่งเข้ามาทาง option ด้วย จึงต้องเอาออกแล้วกำหนด ssl เองข้างล่าง
+// กำหนด TLS พร้อมตรวจใบรับรองเสมอ หากใช้ CA ส่วนตัวให้ตั้ง NODE_EXTRA_CA_CERTS
 const url = new URL(rawConnectionString);
 url.searchParams.delete('sslmode');
 const connectionString = url.toString();
 
-const client = new Client({ connectionString, ssl: { rejectUnauthorized: false } });
+const client = new Client({ connectionString, ssl: { rejectUnauthorized: true } });
 
 let pass = 0;
 let fail = 0;

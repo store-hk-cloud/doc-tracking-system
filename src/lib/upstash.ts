@@ -1,9 +1,15 @@
 import { Redis } from '@upstash/redis';
 
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL || '',
-  token: process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN || '',
-});
+let redis: Redis | undefined;
+
+function getRedis() {
+  // การ import route ระหว่าง build ยังไม่ควรเปิด client ของบริการภายนอก
+  redis ??= new Redis({
+    url: process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL || '',
+    token: process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN || '',
+  });
+  return redis;
+}
 
 const CHANNEL_PREFIX = 'notify:dept:';
 
@@ -12,6 +18,7 @@ export async function notifyDepartment(
   message: { title: string; body: string; docId: string; runningNo: number }
 ) {
   try {
+    const redis = getRedis();
     const key = `${CHANNEL_PREFIX}${departmentId}`;
     await redis.lpush(key, JSON.stringify(message));
     await redis.ltrim(key, 0, 99); // Keep last 100
@@ -24,7 +31,7 @@ export async function notifyDepartment(
 export async function getNotifications(departmentId: string) {
   try {
     const key = `${CHANNEL_PREFIX}${departmentId}`;
-    const data = await redis.lrange(key, 0, 49);
+    const data = await getRedis().lrange(key, 0, 49);
     // SDK แปลง JSON ให้แล้ว การ parse ซ้ำทำให้ทั้งรายการถูกทิ้งใน catch
     return data;
   } catch {
@@ -35,7 +42,7 @@ export async function getNotifications(departmentId: string) {
 export async function clearNotifications(departmentId: string) {
   try {
     const key = `${CHANNEL_PREFIX}${departmentId}`;
-    await redis.del(key);
+    await getRedis().del(key);
   } catch (error) {
     console.error('[Upstash] Clear error:', error);
   }

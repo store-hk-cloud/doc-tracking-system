@@ -21,14 +21,13 @@ const env = Object.fromEntries(
     })
 );
 
-// pg v8 แปลง sslmode=require เป็น verify-full ซึ่ง override ตัวเลือก ssl ที่ส่งมา
-// ต้องถอด sslmode ออกจาก URL ก่อน ไม่งั้นได้ self-signed certificate error
+// กำหนด TLS พร้อมตรวจใบรับรองเสมอ หากใช้ CA ส่วนตัวให้ตั้ง NODE_EXTRA_CA_CERTS
 const url = new URL(env.POSTGRES_URL_NON_POOLING || env.POSTGRES_URL);
 url.searchParams.delete('sslmode');
 
 const client = new pg.Client({
   connectionString: url.toString(),
-  ssl: { rejectUnauthorized: false },
+  ssl: { rejectUnauthorized: true },
 });
 
 let pass = 0;
@@ -120,7 +119,7 @@ try {
   };
 
   console.log('\n2) รับซองได้หลายสาขาในทริปเดียว');
-  const p1 = await expectOk(
+  await expectOk(
     `SELECT 1`, [], `เตรียมรับจุดที่ 1 (${branchRows[0].name})`
   );
   await addPickup(branchRows[0].id, 10000);
