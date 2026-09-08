@@ -2,7 +2,8 @@ import { createClient } from '@supabase/supabase-js';
 import { readFileSync } from 'fs';
 
 const supabaseUrl = 'https://xebrtqvxmbjidrkvdktn.supabase.co';
-const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhlYnJ0cXZ4bWJqaWRya3Zka3RuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4Mjk3NzUwNCwiZXhwIjoyMDk4NTUzNTA0fQ.KMYDTC4RGrX_KseRr9rQHBN_pGROroEf5oJg_7ynojc';
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (!supabaseServiceKey) throw new Error('SUPABASE_SERVICE_ROLE_KEY is required');
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const sql = readFileSync('supabase/migrations/001_initial_schema.sql', 'utf8');

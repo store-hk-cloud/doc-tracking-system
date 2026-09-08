@@ -9,6 +9,8 @@ export async function uploadImage(
     const blob = await put(fileName, fileBuffer, {
       contentType: mimeType,
       access: 'public',
+      // คงพฤติกรรม SDK เดิมเพื่อไม่ให้ไฟล์ชื่อเหมือนกันชนกันหลังอัปเกรด
+      addRandomSuffix: true,
     });
     return blob.url;
   } catch (error) {

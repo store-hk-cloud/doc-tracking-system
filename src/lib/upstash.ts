@@ -25,7 +25,8 @@ export async function getNotifications(departmentId: string) {
   try {
     const key = `${CHANNEL_PREFIX}${departmentId}`;
     const data = await redis.lrange(key, 0, 49);
-    return data.map((item) => JSON.parse(item as string));
+    // SDK แปลง JSON ให้แล้ว การ parse ซ้ำทำให้ทั้งรายการถูกทิ้งใน catch
+    return data;
   } catch {
     return [];
   }

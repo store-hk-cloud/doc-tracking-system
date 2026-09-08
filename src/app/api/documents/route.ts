@@ -220,7 +220,7 @@ export async function POST(request: NextRequest) {
 
     const subject = String(body.subject || '').trim();
     const requestedDeptIds: string[] = Array.isArray(body.recipient_dept_ids)
-      ? [...new Set(body.recipient_dept_ids.filter(Boolean))]
+      ? [...new Set<string>(body.recipient_dept_ids.filter((id: unknown): id is string => typeof id === 'string' && id.length > 0))]
       : [];
     // หน่วยงานบัญชีปลายทางต่างกันตามประเภทเอกสาร (ใบเบิก → 0-ADM03-1,
     // ใบรับสินค้า → 0-ADM03) จึงต้องอ่านจากแผนที่ ไม่ใช่ค่าคงที่ตัวเดียว

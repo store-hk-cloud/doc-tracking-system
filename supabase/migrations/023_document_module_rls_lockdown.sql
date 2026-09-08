@@ -45,6 +45,7 @@ REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON delivery_logs FROM anon, authenticate
 -- ── document_recipients: policy เดิมเป็น FOR ALL ให้ admin ──
 -- แยกเป็น SELECT อย่างเดียว เพื่อคงการอ่านของ admin ไว้แต่ตัดการเขียนออก
 DROP POLICY IF EXISTS doc_recipients_admin_all ON document_recipients;
+DROP POLICY IF EXISTS doc_recipients_admin_select ON document_recipients;
 CREATE POLICY doc_recipients_admin_select ON document_recipients FOR SELECT USING (
   auth.uid() IN (
     SELECT profiles.id FROM profiles

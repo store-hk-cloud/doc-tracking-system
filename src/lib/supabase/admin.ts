@@ -1,7 +1,8 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 // Service role client — bypasses RLS, for server-side API routes only
-let _admin: ReturnType<typeof createClient> | null = null;
+// ReturnType ของ generic factory ทำให้ schema ถูกอนุมานเป็น never ใน SDK รุ่นใหม่
+let _admin: SupabaseClient | null = null;
 
 export function getServiceSupabase() {
   if (_admin) return _admin;

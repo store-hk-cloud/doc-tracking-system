@@ -117,38 +117,25 @@ export async function POST(request: NextRequest) {
     const isVerified = body.is_verified === true;
     const newStatus = isVerified ? 'closed' : 'rejected';
 
-    // Atomically flip the recipient row out of its final receiving stage. If two
-    // requests race, only one update can succeed — the loser gets 409.
-    // instead of both inserting a delivery log for the same recipient row.
-    const { data: recipient, error: recipientUpdateError } = await supabase
-      .from('document_recipients')
-      .update({ status: newStatus })
-      .eq('id', body.document_recipient_id)
-      .eq('status', expectedStatus)
-      .select()
-      .single();
-
-    if (recipientUpdateError || !recipient) {
-      return NextResponse.json({ success: false, error: 'This document has already been processed' }, { status: 409 });
+    // สถานะกับหลักฐานต้องอยู่ในธุรกรรมเดียวกัน มิฉะนั้นบันทึกหลักฐานพลาดแล้วรับซ้ำไม่ได้
+    const { data: received, error: receiveError } = await supabase.rpc('receive_document', {
+      p_recipient_id: body.document_recipient_id,
+      p_expected_status: expectedStatus,
+      p_actor_id: auth.context!.user.id,
+      p_signature: recipientName,
+      p_is_verified: isVerified,
+      p_note: body.verification_note || null,
+    });
+    if (receiveError) {
+      if (receiveError.message === 'recipient_already_processed') {
+        return NextResponse.json({ success: false, error: 'This document has already been processed' }, { status: 409 });
+      }
+      if (receiveError.message === 'document_recipient_not_found') {
+        return NextResponse.json({ success: false, error: 'Document not found' }, { status: 404 });
+      }
+      throw receiveError;
     }
-
-    // Insert delivery log. recipient_signature รับจากช่องที่ผู้ใช้พิมพ์ได้
-    // (คนมารับจริงอาจไม่ใช่เจ้าของบัญชี) แต่ recipient_id มาจาก session เสมอ
-    // จึงยังพิสูจน์ได้ว่าบัญชีใดเป็นผู้กดยืนยัน
-    const { data: delivery, error: deliveryError } = await supabase
-      .from('delivery_logs')
-      .insert({
-        document_recipient_id: body.document_recipient_id,
-        document_id: recipient.document_id,
-        recipient_id: auth.context!.user.id,
-        recipient_signature: recipientName,
-        is_verified: isVerified,
-        verification_note: body.verification_note || null,
-      })
-      .select()
-      .single();
-
-    if (deliveryError) throw deliveryError;
+    const { recipient, delivery } = received;
 
     // Sync to Sheets (update this department's row only)
     //

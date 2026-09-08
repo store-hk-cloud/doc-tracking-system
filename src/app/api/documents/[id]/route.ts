@@ -23,13 +23,16 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     }
     const { data, error } = await supabase.from('documents').select('*').eq('id', recipient.document_id).single();
     if (error) throw error;
-    const canReadGoodsReceipt = auth.context!.profile.role !== 'user'
-      || canViewGoodsReceiptWorkflow(auth.context!.profile.department_code, recipient.status);
-    if (isGoodsReceipt(data.subject)) {
-      if (!canReadGoodsReceipt) return forbiddenResponse();
-    } else if (!canAccessDepartment(auth.context!, recipient.department_id)) {
-      return forbiddenResponse();
-    }
+    // ใช้สิทธิ์อ่านเดียวกับหน้ารายการ ผู้บันทึกและผู้เซ็นก่อนหน้าต้องติดตามงานต่อได้
+    const context = auth.context!;
+    const canRead = context.profile.role !== 'user'
+      || data.recorded_by === context.user.id
+      || recipient.inspector_signed_by === context.user.id
+      || recipient.purchasing_signed_by === context.user.id
+      || (isGoodsReceipt(data.subject)
+        ? canViewGoodsReceiptWorkflow(context.profile.department_code, recipient.status)
+        : canAccessDepartment(context, recipient.department_id));
+    if (!canRead) return forbiddenResponse();
 
     // Get department and profile names separately
     let recipient_dept_name = null;
@@ -174,12 +177,13 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
     const { error: deleteError } = await supabase.from('document_recipients').delete().eq('id', id);
     if (deleteError) throw deleteError;
 
-    const { count } = await supabase
+    const { count, error: countError } = await supabase
       .from('document_recipients')
       .select('id', { count: 'exact', head: true })
       .eq('document_id', recipient.document_id);
 
-    if (!count) {
+    if (countError) throw countError;
+    if (count === 0) {
       const { error: docDeleteError } = await supabase.from('documents').delete().eq('id', recipient.document_id);
       if (docDeleteError) throw docDeleteError;
     }

@@ -258,7 +258,7 @@ export default function RegisterPage() {
     const failedIds = new Map<string, string>();
     validRows.forEach((row, i) => {
       const result = results[i];
-      if (result.success) {
+      if (result.success && 'display_no' in result) {
         succeededNos.push(result.display_no!);
         if (row.photoPreview) URL.revokeObjectURL(row.photoPreview);
       } else {

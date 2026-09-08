@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { getGoodsReceiptWorkflowAction, isGoodsReceipt } from '@/lib/document-workflow';
 import { documentNo } from '@/lib/document-no';
@@ -82,6 +82,8 @@ export default function RecipientListPage() {
   const [closedDocs, setClosedDocs] = useState<any[]>([]);
   const [closedLoading, setClosedLoading] = useState(false);
   const [closedLoaded, setClosedLoaded] = useState(false);
+  const [closedError, setClosedError] = useState('');
+  const closedRequestSeq = useRef(0);
   const [closedFilter, setClosedFilter] = useState({ keyword: '', dept_id: '', date_from: '', date_to: '' });
   const [departments, setDepartments] = useState<any[]>([]);
 
@@ -101,8 +103,10 @@ export default function RecipientListPage() {
   };
 
   const loadClosed = async (override?: Partial<typeof closedFilter>) => {
+    const seq = ++closedRequestSeq.current;
     const active = { ...closedFilter, ...override };
     setClosedLoading(true);
+    setClosedError('');
     try {
       let url = '/api/documents?status=closed&status=signed';
       if (active.keyword) url += `&keyword=${encodeURIComponent(active.keyword)}`;
@@ -111,6 +115,8 @@ export default function RecipientListPage() {
       if (active.date_to) url += `&date_to=${active.date_to}`;
       const res = await window.fetch(url);
       const data = await res.json();
+      if (seq !== closedRequestSeq.current) return;
+      if (!data.success) throw new Error(data.error || 'โหลดเอกสารไม่สำเร็จ');
       // เรียงตามเวลาที่ปิดงานจริง ไม่ใช่เลขที่เอกสาร เพราะใบเก่าที่เพิ่งปิดวันนี้
       // คือสิ่งที่คนเปิดแท็บนี้อยากเห็นก่อน
       if (data.success) setClosedDocs(
@@ -119,10 +125,15 @@ export default function RecipientListPage() {
           .sort((a: any, b: any) => closedRank(b) - closedRank(a))
       );
     } catch (e) {
-      console.error('fetch closed docs error:', e);
+      if (seq !== closedRequestSeq.current) return;
+      setClosedDocs([]);
+      setClosedError(e instanceof Error ? e.message : 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่');
+    } finally {
+      if (seq === closedRequestSeq.current) {
+        setClosedLoading(false);
+        setClosedLoaded(true);
+      }
     }
-    setClosedLoading(false);
-    setClosedLoaded(true);
   };
 
   useEffect(() => { loadPending(); }, []);
@@ -647,6 +658,7 @@ export default function RecipientListPage() {
             </span>
           </div>
 
+          {closedError && <div className="toast error" role="alert" style={{ position: 'static' }}>{closedError}</div>}
           {closedLoading ? (
             <div className="empty-search">กำลังโหลด...</div>
           ) : closedDocs.length === 0 ? (
