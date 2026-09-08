@@ -19,7 +19,7 @@
 9. **แพ็กเกจที่มีประกาศช่องโหว่** — อัปเดต dependency, กำหนด PostCSS 8.5.28 ให้ Next.js และอัปเกรด `@vercel/blob` เป็น 2.8.0 / `googleapis` เป็น 150.0.1 โดยคง Next.js 15 / React 18 ปรับ `addRandomSuffix: true` เพื่อรักษาพฤติกรรมชื่อไฟล์ไม่ซ้ำหลังอัปเกรด Blob
 10. **ปิดงานสำเร็จแต่ตอบล้มเหลวเมื่อ Sheets ขัดข้อง** — แยกข้อผิดพลาดการซิงก์หลัง commit ออกจากผลบันทึกหลัก ป้องกันผู้ใช้กดส่งซ้ำเพราะเข้าใจว่ายังไม่สำเร็จ
 11. **สิทธิ์ฐานข้อมูลกว้างเกินจำเป็น** — ปิดการเขียนโดยตรงผ่าน anon/authenticated, จำกัด RPC ให้ service_role, เปิด RLS ของตาราง archive, ให้ summary view เคารพสิทธิ์ผู้เรียก และกำหนด search_path ของฟังก์ชัน
-12. **service-role key อยู่ในสคริปต์ที่ติดตามด้วย Git** — เปลี่ยนให้รับจาก environment และเริ่มหมุนเวียนคีย์ใหม่ ไม่แก้ประวัติ Git โดยอัตโนมัติ ต้องยืนยันคีย์เก่าใช้ไม่ได้หลัง deployment
+12. **service-role key อยู่ในสคริปต์ที่ติดตามด้วย Git** — เปลี่ยนให้รับจาก environment, หมุนเวียน API key, ปิด legacy keys และเพิกถอนลายเซ็น HS256 เดิมแล้ว ยืนยันคีย์ที่เคยอยู่ใน Git ใช้ไม่ได้ทั้งแบบ apikey และ Bearer token (HTTP 401) ไม่แก้ประวัติ Git โดยอัตโนมัติ
 
 ## หลักฐานทดสอบ
 
@@ -43,7 +43,20 @@
 
 Supabase security advisor เหลือคำเตือน Leaked Password Protection; ทดลองเปิดผ่าน Management API แล้วได้รับ HTTP 402 PaymentRequired จึงไม่เปลี่ยนแพ็กเกจหรือสร้างค่าใช้จ่ายเอง
 
-สร้าง API key คู่ใหม่และทดสอบ Auth/REST แบบอ่านอย่างเดียวแล้ว การอัปเดต environment, deployment และยกเลิก legacy keys ต้องตรวจผลครบก่อนถือว่าการหมุนเวียนคีย์เสร็จ
+สร้าง API key คู่ใหม่ อัปเดต 6 ตัวแปรที่เกี่ยวข้องครบ Production/Preview/Development และอัปเดตเฉพาะตัวแปร Supabase ที่มีอยู่ใน `.env.local` โดยรักษาการตั้งค่าอื่น ตรวจผ่าน Auth และ REST ด้วย SDK จริง
+
+Push โค้ด commit `09ad6cf` ไปยัง master สำเร็จ และ Production deployment `dpl_2cKjWZQsQWWxnF4GQA5xU82UR7cC` สถานะ READY ที่ https://doc-tracking-system-three.vercel.app
+
+หลัง deployment ปิด legacy API keys และเพิกถอน legacy HS256 signing key โดยไม่เปลี่ยน ES256 signing key ปัจจุบัน ตรวจเว็บจริงพบ public key ใหม่ใน client bundle และไม่พบ server secret ในไฟล์ที่โหลดมาตรวจ หน้าแรกตอบ 200; API documents/profile/setup ปฏิเสธผู้ไม่ล็อกอินด้วย 401 การทดสอบนี้ไม่ได้แทนการตรวจทุก workflow ด้วยบัญชีจริง
+
+ผู้ใช้ที่ยังเปิดหน้าเว็บรุ่นเก่าอาจต้องรีเฟรช และ session ที่ลงนามด้วย HS256 เดิมอาจต้องเข้าสู่ระบบใหม่
+
+## บทเรียนการเพิกถอนคีย์
+
+- **Trigger:** ต้องยกเลิก Supabase legacy service-role JWT ที่เคยเปิดเผย
+- **Action:** อัปเดตแอปเป็นคีย์ใหม่ก่อน ปิด legacy API keys และตรวจคำขอทั้ง apikey เดิมกับ publishable key ใหม่ร่วมกับ Bearer เดิม; หากยังผ่าน ต้องตรวจสถานะ legacy signing key และเพิกถอนความเชื่อถือเดิมด้วย
+- **Evidence:** การทดสอบครั้งนี้พบ 401 สำหรับ apikey แต่ยังได้ 200 สำหรับ Bearer จนเพิกถอน HS256 และรอการตั้งค่ามีผล จากนั้นทั้งคู่ตอบ 401 โดย SDK คีย์ใหม่ยังผ่าน
+- **Scope:** local; **Status:** validated; **Reviewed:** 2026-09-08
 
 ให้ทดสอบบน staging เพิ่ม: รับเอกสารปกติ/ใบรับสินค้า, ปฏิเสธและส่งมอบใหม่, ยืนยันปิดงาน, ลงนามหลายรายการ, สิทธิ์แต่ละแผนก, การอัปโหลดไฟล์ และการซิงก์ Google Sheets โดย Blob SDK ใหม่ต้องใช้ Node.js 20 ขึ้นไป; การตรวจครั้งนี้ใช้ Node.js 24.15.0
 
