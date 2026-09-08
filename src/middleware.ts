@@ -1,5 +1,6 @@
 import { createServerClient, type SetAllCookies } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { getSupabasePublicKey, getSupabaseUrl } from '@/lib/supabase/env';
 
 // เส้นทางที่ไม่ผ่านการตรวจ session ของ middleware
 // - /api/cron/*  : Vercel Cron ยิงมาโดยไม่มี cookie ผู้ใช้ จึงตรวจสิทธิ์เองด้วย
@@ -15,8 +16,8 @@ export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    getSupabaseUrl()!,
+    getSupabasePublicKey()!,
     {
       cookies: {
         getAll() {
