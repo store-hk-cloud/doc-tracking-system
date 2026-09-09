@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
-import { updateRowInSheet, findRowLocation } from '@/lib/google-sheets';
+import { syncRowInSheet } from '@/lib/google-sheets';
 import { canAccessDepartment, forbiddenResponse, requireRoles } from '@/lib/supabase/auth-helpers';
 import { ACCOUNTING_DEPARTMENT_CODE, isGoodsReceipt } from '@/lib/document-workflow';
 import { documentNo } from '@/lib/document-no';
@@ -158,9 +158,7 @@ export async function POST(request: NextRequest) {
         profName = prof?.full_name || '';
       }
 
-      const location = await findRowLocation(21, recipient.id);
-      if (location) {
-        await updateRowInSheet(location.sheet, location.row, [
+      await syncRowInSheet(doc.received_date, [
           documentNo(doc),           // A: Running No.
           doc.received_date,                // B: วันที่รับ
           doc.doc_number || '',             // C: เลขที่เอกสาร
@@ -182,8 +180,7 @@ export async function POST(request: NextRequest) {
           recipient.updated_at,             // S: updated_at
           doc.tax_invoice_no || '',         // T: เลขใบกำกับภาษี
           recipient.id,                     // U: รหัสอ้างอิง
-        ]);
-      }
+      ]);
     }
     } catch (sheetsError: any) {
       console.error('[Deliveries] sync Google Sheets ไม่สำเร็จ (เอกสารถูกบันทึกแล้ว):', sheetsError?.message || sheetsError);

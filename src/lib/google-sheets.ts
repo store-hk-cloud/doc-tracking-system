@@ -1,4 +1,5 @@
 import { getSheetsClient } from './google-auth';
+import { bangkokDate } from './thai-date';
 
 // Permanently pinned to this spreadsheet — do not resolve this from a mutable
 // DB row again (a stale app_settings.google_spreadsheet_id value previously
@@ -36,7 +37,7 @@ export const HEADERS = [
 
 /** Get today's date as YYYY-MM-DD */
 function todaySheetName(): string {
-  return new Date().toISOString().split('T')[0];
+  return bangkokDate();
 }
 
 /* ─────────────────────── กันชนโควตาของ Google Sheets ───────────────────────
@@ -105,47 +106,72 @@ async function getOrCreateSpreadsheet(): Promise<string> {
  */
 // Avoids re-checking/re-creating today's tab on every single append within the
 // same warm serverless instance — cuts a metadata read per call down to one.
-let dailySheetEnsuredFor: string | null = null;
+const ensuredDailySheets = new Set<string>();
+const dailySheetBuilds = new Map<string, Promise<string>>();
 
-async function getOrCreateDailySheet(): Promise<string> {
+function deterministicSheetId(date: string): number {
+  return Number(date.replaceAll('-', ''));
+}
+
+async function ensureDailySheet(date: string): Promise<string> {
   const spreadsheetId = await getSpreadsheetId();
   const sheets = getSheetsClient();
-  const today = todaySheetName();
-
-  if (dailySheetEnsuredFor === today) return today;
+  let created = false;
 
   // Get existing sheets
   const { data: sheetInfo } = await withSheetsSlot<any>(() =>
     sheets.spreadsheets.get({ spreadsheetId })
   );
   const existingSheets = sheetInfo?.sheets || [];
-  const hasToday = existingSheets.some((s: any) => s.properties?.title === today);
+  const hasToday = existingSheets.some((s: any) => s.properties?.title === date);
 
   if (!hasToday) {
-    // Insert today's sheet at index 0 (leftmost)
-    await withSheetsSlot(() => sheets.spreadsheets.batchUpdate({
-      spreadsheetId,
-      requestBody: {
-        requests: [{
-          addSheet: {
-            properties: { title: today, index: 0 },
-          },
-        }],
-      },
-    }));
+    try {
+      // sheetId ที่คำนวณจากวันที่ทำให้ serverless หลาย instance ที่สร้างแท็บ
+      // พร้อมกันชนกันด้วย ID เดียว แล้วมีเพียงคำขอแรกที่สำเร็จ แทนที่ Google
+      // จะเปลี่ยนชื่อคำขอถัดไปเป็น `<date>_conflict...` และกระจายข้อมูลคนละแท็บ
+      await withSheetsSlot(() => sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [{
+            addSheet: {
+              properties: { sheetId: deterministicSheetId(date), title: date, index: 0 },
+            },
+          }],
+        },
+      }));
+      created = true;
+    } catch (error) {
+      // อีก instance อาจสร้างแท็บสำเร็จระหว่าง metadata read กับ addSheet
+      // ยอมรับ error ได้เฉพาะเมื่ออ่านซ้ำแล้วพบแท็บหลักจริงเท่านั้น
+      const { data: latest } = await withSheetsSlot<any>(() =>
+        sheets.spreadsheets.get({ spreadsheetId })
+      );
+      const nowExists = (latest?.sheets || []).some((s: any) => s.properties?.title === date);
+      if (!nowExists) throw error;
+    }
     // Write headers
     await withSheetsSlot(() => sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `${today}!A1:U1`,
+      range: `${date}!A1:U1`,
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: [HEADERS] },
     }));
-    console.log(`[Google Sheets] Created daily sheet: ${today}`);
+    if (created) console.log(`[Google Sheets] Created daily sheet: ${date}`);
   }
 
-  dailySheetEnsuredFor = today;
+  ensuredDailySheets.add(date);
+  return date;
+}
 
-  return today;
+async function getOrCreateDailySheet(date = todaySheetName()): Promise<string> {
+  if (ensuredDailySheets.has(date)) return date;
+  const inFlight = dailySheetBuilds.get(date);
+  if (inFlight) return inFlight;
+
+  const build = ensureDailySheet(date).finally(() => dailySheetBuilds.delete(date));
+  dailySheetBuilds.set(date, build);
+  return build;
 }
 
 export async function getSpreadsheetId(): Promise<string> {
@@ -205,6 +231,17 @@ export async function batchUpdateRowsOrThrow(sheet: string, updates: { row: numb
   }));
 }
 
+export async function updateRowInSheetOrThrow(sheet: string, rowIndex: number, values: string[]) {
+  const spreadsheetId = await getSpreadsheetId();
+  const sheets = getSheetsClient();
+  await withSheetsSlot(() => sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${sheet}!A${rowIndex}:U${rowIndex}`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [values] },
+  }));
+}
+
 export async function appendRow(sheetName: string, values: string[]) {
   return appendRows(sheetName, [values]);
 }
@@ -225,10 +262,11 @@ export async function appendRowsOrThrow(sheetName: string, rows: string[][]) {
   if (rows.length === 0) return;
   const spreadsheetId = await getSpreadsheetId();
   const sheets = getSheetsClient();
-  const today = await getOrCreateDailySheet();
+  const preferredDate = /^\d{4}-\d{2}-\d{2}$/.test(sheetName) ? sheetName : todaySheetName();
+  const targetSheet = await getOrCreateDailySheet(preferredDate);
   await withSheetsSlot(() => sheets.spreadsheets.values.append({
     spreadsheetId,
-    range: `${today}!A:U`,
+    range: `${targetSheet}!A:U`,
     valueInputOption: 'USER_ENTERED',
     requestBody: { values: rows },
   }));
@@ -241,14 +279,7 @@ export async function appendRowsOrThrow(sheetName: string, rows: string[][]) {
 // live in an older daily tab, not today's, once its document isn't from today).
 export async function updateRowInSheet(sheet: string, rowIndex: number, values: string[]) {
   try {
-    const spreadsheetId = await getSpreadsheetId();
-    const sheets = getSheetsClient();
-    await withSheetsSlot(() => sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `${sheet}!A${rowIndex}:U${rowIndex}`,
-      valueInputOption: 'USER_ENTERED',
-      requestBody: { values: [values] },
-    }));
+    await updateRowInSheetOrThrow(sheet, rowIndex, values);
   } catch (error) {
     console.error(`[Google Sheets] Update in sheet error:`, error);
   }
@@ -323,6 +354,18 @@ export async function findRowLocation(column: number, value: string): Promise<Ro
   } catch (error) {
     console.error('[Google Sheets] Find error:', error);
     return null;
+  }
+}
+
+/** อัปเดตแถวเดิม หรือเติมแถวที่เคยซิงก์พลาดลงแท็บของวันที่รับเอกสาร */
+export async function syncRowInSheet(preferredSheet: string, values: string[]) {
+  try {
+    const referenceId = values[20];
+    const location = referenceId ? await findRowLocation(21, referenceId) : null;
+    if (location) await updateRowInSheetOrThrow(location.sheet, location.row, values);
+    else await appendRowsOrThrow(preferredSheet, [values]);
+  } catch (error) {
+    console.error('[Google Sheets] Sync row error:', error);
   }
 }
 

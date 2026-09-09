@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
-import { updateRowInSheet, findRowLocation } from '@/lib/google-sheets';
+import { syncRowInSheet } from '@/lib/google-sheets';
 import { notifyDepartment } from '@/lib/upstash';
 import { forbiddenResponse, requireRoles } from '@/lib/supabase/auth-helpers';
 import { getGoodsReceiptWorkflowAction, isGoodsReceipt } from '@/lib/document-workflow';
@@ -118,9 +118,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', doc.recorded_by).single();
         profName = prof?.full_name || '';
       }
-      const location = await findRowLocation(21, recipient.id);
-      if (location && doc) {
-        await updateRowInSheet(location.sheet, location.row, [
+      if (doc) {
+        await syncRowInSheet(doc.received_date, [
           documentNo(doc), doc.received_date, doc.doc_number || '',
           doc.sender, doc.subject, dept?.name || '',
           recipient.status, recipient.admin_signature || '', recipient.admin_signed_at || '',
@@ -188,17 +187,14 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     }
 
     // Sync to Sheets (update this department's row only, wherever its tab actually is)
-    const location = await findRowLocation(21, recipient.id);
-    if (location) {
-      await updateRowInSheet(location.sheet, location.row, [
+    await syncRowInSheet(doc.received_date, [
         documentNo(doc), doc.received_date, doc.doc_number || '',
         doc.sender, doc.subject, deptName,
         recipient.status, recipient.admin_signature || '', recipient.admin_signed_at || '',
         '', '', '', '', '',
         doc.is_damaged ? 'ใช่' : 'ไม่', doc.damage_image_url || '', doc.note || '',
         profName, recipient.updated_at, doc.tax_invoice_no || '', recipient.id,
-      ]);
-    }
+    ]);
 
     return NextResponse.json({
       success: true,

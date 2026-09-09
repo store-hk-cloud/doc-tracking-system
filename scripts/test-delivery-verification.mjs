@@ -52,6 +52,7 @@ async function fixture({ sheetsFailure = false } = {}) {
         async single() {
           if (table === 'documents') return { data: sheetsFailure ? { id: recipientId } : null, error: null };
           if (table === 'departments') return { data: null, error: null };
+          if (table === 'profiles') return { data: { full_name: 'ผู้รับทดสอบ' }, error: null };
           assert.ok(['delivery_logs', 'document_recipients'].includes(table));
           // จำลองเครือข่ายขาดต่อเนื่อง: compensating request ใช้งานไม่ได้
           if (table === 'delivery_logs' && updates?.verified_by_admin === false) {
@@ -80,7 +81,7 @@ async function fixture({ sheetsFailure = false } = {}) {
         assert.deepEqual(Array.from(roles), ['super_admin', 'admin']);
         return { response: null };
       } };
-      if (name === '@/lib/google-sheets') return { findRowLocation: async () => { if (sheetsFailure) throw new Error('Sheets unavailable'); return null; } };
+      if (name === '@/lib/google-sheets') return { syncRowInSheet: async () => { if (sheetsFailure) throw new Error('Sheets unavailable'); } };
       if (name === '@/lib/document-no') return { documentNo: () => '' };
       return require(name);
     },

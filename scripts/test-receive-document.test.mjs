@@ -66,7 +66,7 @@ async function fixture() {
       requireRoles: async () => ({ context: { user: { id: actor }, profile: { department_id: id } }, response: null }),
       canAccessDepartment: () => true,
     },
-    '@/lib/google-sheets': { findRowLocation: async () => null },
+    '@/lib/google-sheets': { syncRowInSheet: async () => {} },
   });
   return { db, call: (body = {}) => route.POST({ json: async () => ({ document_recipient_id: id, is_verified: true, recipient_signature: 'ผู้รับ', ...body }) }) };
 }

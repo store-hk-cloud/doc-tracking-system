@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
-import { updateRowInSheet, findRowLocation } from '@/lib/google-sheets';
+import { syncRowInSheet } from '@/lib/google-sheets';
 import { requireRoles } from '@/lib/supabase/auth-helpers';
 import { documentNo } from '@/lib/document-no';
 
@@ -32,32 +32,34 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     // Sync to Sheets — best-effort เหมือน route อื่น ปิดงานสำเร็จแล้วในฐานข้อมูล
     try {
-    const { data: doc } = await supabase.from('documents').select('*').eq('id', recipient.document_id).single();
-    if (doc) {
-      const { data: dept } = await supabase.from('departments').select('name').eq('id', recipient.department_id).single();
-      const deptName = dept?.name || '';
+      const { data: doc } = await supabase.from('documents').select('*').eq('id', recipient.document_id).single();
+      if (doc) {
+        const { data: dept } = await supabase.from('departments').select('name').eq('id', recipient.department_id).single();
+        const deptName = dept?.name || '';
 
-      let profName = '';
-      if (doc.recorded_by) {
-        const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', doc.recorded_by).single();
-        profName = prof?.full_name || '';
-      }
+        let profName = '';
+        if (doc.recorded_by) {
+          const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', doc.recorded_by).single();
+          profName = prof?.full_name || '';
+        }
+        const { data: recipientProfile } = await supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', delivery.recipient_id)
+          .single();
+        const accountName = recipientProfile?.full_name || '';
 
-      const location = await findRowLocation(21, recipient.id);
-      if (location) {
-        await updateRowInSheet(location.sheet, location.row, [
+        await syncRowInSheet(doc.received_date, [
           documentNo(doc), doc.received_date, doc.doc_number || '',
           doc.sender, doc.subject, deptName,
           'closed', recipient.admin_signature || '', recipient.admin_signed_at || '',
-          delivery.recipient_signature, delivery.recipient_signature, delivery.recipient_signed_at,
+          accountName, delivery.recipient_signature, delivery.recipient_signed_at,
           'ถูกต้อง', delivery.verification_note || '',
           doc.is_damaged ? 'ใช่' : 'ไม่',
           doc.damage_image_url || '', doc.note || '',
           profName, recipient.updated_at, doc.tax_invoice_no || '', recipient.id,
         ]);
       }
-    }
-
     } catch (syncError) {
       console.error('[Deliveries] ซิงก์ Sheets ไม่สำเร็จหลังปิดงานแล้ว:', syncError);
     }

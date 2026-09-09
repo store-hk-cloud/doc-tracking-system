@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
-import { appendRow } from '@/lib/google-sheets';
+import { appendRows } from '@/lib/google-sheets';
 import { requireRoles } from '@/lib/supabase/auth-helpers';
 import { accountingDestinationFor, canViewGoodsReceiptWorkflow, GOODS_RECEIPT_SUBJECT, isGoodsReceipt } from '@/lib/document-workflow';
 import { documentNo } from '@/lib/document-no';
@@ -312,9 +312,9 @@ export async function POST(request: NextRequest) {
     const { data: depts } = await supabase.from('departments').select('id, name').in('id', deptIds);
     const deptNameMap = new Map((depts || []).map((d: any) => [d.id, d.name]));
 
-    // Sync to Google Sheets: one row per recipient department.
-    for (const r of recipients || []) {
-      await appendRow('เอกสารเข้า', [
+    // เขียนทุกปลายทางของเอกสารเดียวกันในคำขอเดียว ลดโอกาสซิงก์สำเร็จเพียงบางแถว
+    // และลดจำนวนคำขอ Google Sheets เมื่อมีหลายหน่วยงานปลายทาง
+    await appendRows('เอกสารเข้า', (recipients || []).map((r) => [
         documentNo(doc),            // A: Running No.
         doc.received_date,                 // B: วันที่รับ
         doc.doc_number || '',              // C: เลขที่เอกสาร
@@ -336,8 +336,7 @@ export async function POST(request: NextRequest) {
         '',                                  // S: updated_at
         doc.tax_invoice_no || '',            // T: เลขใบกำกับภาษี
         r.id,                                // U: รหัสอ้างอิง (document_recipients.id)
-      ]);
-    }
+    ]));
 
     const primary = recipients?.[0];
     return NextResponse.json({
