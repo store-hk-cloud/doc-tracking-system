@@ -4,11 +4,17 @@ import { requireRoles } from '@/lib/supabase/auth-helpers';
 
 const ALLOWED_ROLES = new Set(['user', 'admin', 'super_admin']);
 
+function isLastSuperAdminError(error: any) {
+  return /last_active_super_admin/.test(error?.message || '');
+}
+
 async function remainingSuperAdminCount(supabase: ReturnType<typeof getServiceSupabase>, excludingId?: string) {
   let query = supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'super_admin').eq('is_active', true);
   if (excludingId) query = query.neq('id', excludingId);
-  const { count } = await query;
-  return count || 0;
+  const { count, error } = await query;
+  if (error) throw error;
+  if (count === null) throw new Error('Cannot read active super_admin count');
+  return count;
 }
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -82,7 +88,14 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       .eq('id', id)
       .select()
       .single();
-    if (error) throw error;
+    if (error) {
+      // trigger ใน DB เป็นด่านสุดท้ายสำหรับคำขอพร้อมกัน ไม่ปล่อยให้ race
+      // กลายเป็น 500 ที่ผู้ใช้แก้เองไม่ได้
+      if (isLastSuperAdminError(error)) {
+        return NextResponse.json({ success: false, error: 'Cannot remove the last super_admin' }, { status: 409 });
+      }
+      throw error;
+    }
 
     let department_name = null;
     if (data.department_id) {
@@ -109,7 +122,7 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
     const supabase = getServiceSupabase();
     const { data: target, error: targetError } = await supabase
       .from('profiles')
-      .select('id, role')
+      .select('id, role, is_active')
       .eq('id', id)
       .single();
     if (targetError || !target) {
@@ -120,17 +133,20 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
       return NextResponse.json({ success: false, error: 'Admins can only manage plain user accounts' }, { status: 403 });
     }
 
-    if (target.role === 'super_admin') {
+    if (target.role === 'super_admin' && target.is_active) {
       const remaining = await remainingSuperAdminCount(supabase, id);
       if (remaining === 0) {
         return NextResponse.json({ success: false, error: 'Cannot delete the last super_admin' }, { status: 409 });
       }
     }
 
-    const [{ count: docCount }, { count: deliveryCount }] = await Promise.all([
+    const [{ count: docCount, error: docCountError }, { count: deliveryCount, error: deliveryCountError }] = await Promise.all([
       supabase.from('documents').select('id', { count: 'exact', head: true }).eq('recorded_by', id),
       supabase.from('delivery_logs').select('id', { count: 'exact', head: true }).eq('recipient_id', id),
     ]);
+    if (docCountError) throw docCountError;
+    if (deliveryCountError) throw deliveryCountError;
+    if (docCount === null || deliveryCount === null) throw new Error('Cannot read user history');
     if ((docCount || 0) > 0 || (deliveryCount || 0) > 0) {
       return NextResponse.json(
         {
@@ -142,7 +158,12 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
     }
 
     const { error: deleteError } = await supabase.auth.admin.deleteUser(id);
-    if (deleteError) throw deleteError;
+    if (deleteError) {
+      if (isLastSuperAdminError(deleteError)) {
+        return NextResponse.json({ success: false, error: 'Cannot delete the last super_admin' }, { status: 409 });
+      }
+      throw deleteError;
+    }
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

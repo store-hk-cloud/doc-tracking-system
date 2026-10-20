@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getSupabasePublicKey, getSupabaseUrl } from '@/lib/supabase/env';
 
 // เส้นทางที่ไม่ผ่านการตรวจ session ของ middleware
-// - /api/cron/*  : Vercel Cron ยิงมาโดยไม่มี cookie ผู้ใช้ จึงตรวจสิทธิ์เองด้วย
+// - /api/cron/*  : Cloudflare Cron ยิงมาโดยไม่มี cookie ผู้ใช้ จึงตรวจสิทธิ์เองด้วย
 //                  CRON_SECRET ที่ตัว route (ดู api/cron/overdue-documents)
 // - /api/auth/resolve-username : ต้องเรียกก่อนล็อกอิน จึงยังไม่มี session
 const AUTH_EXEMPT_PREFIXES = ['/api/cron/', '/api/auth/'];

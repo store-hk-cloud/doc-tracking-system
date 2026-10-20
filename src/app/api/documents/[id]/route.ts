@@ -133,11 +133,11 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const deptIds = [...new Set((recipients || []).map((r: any) => r.department_id).filter(Boolean))];
     const recipientIds = (recipients || []).map((r: any) => r.id);
     const [{ data: depts }, { data: deliveries }] = await Promise.all([
-      supabase.from('departments').select('id, name').in('id', deptIds.length ? deptIds : ['none']),
+      supabase.from('departments').select('id, name').in('id', deptIds.length ? deptIds : ['00000000-0000-0000-0000-000000000000']),
       supabase
         .from('delivery_logs')
         .select('*')
-        .in('document_recipient_id', recipientIds.length ? recipientIds : ['none'])
+        .in('document_recipient_id', recipientIds.length ? recipientIds : ['00000000-0000-0000-0000-000000000000'])
         .order('created_at', { ascending: false }),
     ]);
     const deptNameMap = new Map((depts || []).map((d: any) => [d.id, d.name]));
@@ -151,7 +151,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const { data: deliveryProfiles } = await supabase
       .from('profiles')
       .select('id, full_name')
-      .in('id', deliveryProfileIds.length ? deliveryProfileIds : ['none']);
+      .in('id', deliveryProfileIds.length ? deliveryProfileIds : ['00000000-0000-0000-0000-000000000000']);
     const deliveryProfileMap = new Map((deliveryProfiles || []).map((profile: any) => [profile.id, profile.full_name]));
     const awaitingReceipt = new Set(['registered', 'delivered', 'awaiting_inspector', 'awaiting_purchasing', 'awaiting_recipient']);
 

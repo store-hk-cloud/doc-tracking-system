@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
-import { requireCapability } from '@/lib/supabase/auth-helpers';
-import { appendAudit, getActorName } from '@/lib/messenger-audit';
+import { forbiddenResponse, requireCapability } from '@/lib/supabase/auth-helpers';
 
 /**
  * POST /api/messenger/runs/[id]/void — ยกเลิกรายการฝากที่บันทึกผิด
@@ -30,69 +29,27 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       );
     }
 
-    const { data: job } = await supabase.from('messenger_jobs').select('*').eq('id', jobId).single();
-    if (!job) return NextResponse.json({ success: false, error: 'ไม่พบงานนี้' }, { status: 404 });
-    if (job.status === 'closed' || job.status === 'cancelled') {
-      return NextResponse.json({ success: false, error: 'งานนี้ปิดแล้ว' }, { status: 409 });
+    // สถานะใบฝาก ทริป และ audit ต้อง commit พร้อมกัน หากส่วนหนึ่งล้มต้องยกเลิกทั้งหมด
+    const forwarded = request.headers.get('x-forwarded-for');
+    const { data, error } = await supabase.rpc('void_cash_run', {
+      p_job_id: jobId,
+      p_actor_id: ctx.user.id,
+      p_reason: voidReason,
+      p_request_ip: (forwarded ? forwarded.split(',')[0].trim() : request.headers.get('x-real-ip')) || null,
+      p_user_agent: request.headers.get('user-agent')?.slice(0, 500) || null,
+    });
+    if (error) {
+      if (error.message === 'void_forbidden') return forbiddenResponse();
+      if (error.message === 'cash_job_not_found') {
+        return NextResponse.json({ success: false, error: 'ไม่พบงานนี้' }, { status: 404 });
+      }
+      if (error.message === 'cash_job_already_processed') {
+        return NextResponse.json({ success: false, error: 'งานนี้ปิดแล้ว กรุณาโหลดข้อมูลล่าสุด' }, { status: 409 });
+      }
+      throw error;
     }
 
-    const { data: deposit } = await supabase
-      .from('bank_deposits')
-      .select('*')
-      .eq('job_id', jobId)
-      .neq('status', 'voided')
-      .maybeSingle();
-
-    if (deposit) {
-      const { error } = await supabase
-        .from('bank_deposits')
-        .update({ status: 'voided', void_reason: voidReason })
-        .eq('id', deposit.id)
-        .neq('status', 'voided');
-      if (error) throw error;
-    }
-
-    const closerSignature = await getActorName(ctx.user.id, ctx.user.email);
-
-    // งานที่ยังไม่ได้ฝากเงิน -> cancelled ได้ตรง ๆ
-    // งานที่ฝากแล้ว -> ปิดเป็น closed พร้อมเหตุผล เพราะเงินเคลื่อนไปจริงแล้ว
-    if (job.status === 'open' || job.status === 'picked_up') {
-      await supabase
-        .from('messenger_jobs')
-        .update({
-          status: 'cancelled',
-          cancelled_at: new Date().toISOString(),
-          cancelled_by: ctx.user.id,
-          cancel_reason: voidReason,
-        })
-        .eq('id', jobId)
-        .in('status', ['open', 'picked_up']);
-    } else {
-      await supabase
-        .from('messenger_jobs')
-        .update({
-          status: 'closed',
-          closed_at: new Date().toISOString(),
-          closed_by: ctx.user.id,
-          closer_signature: closerSignature,
-        })
-        .eq('id', jobId)
-        .in('status', ['deposited', 'completed', 'pending_review']);
-    }
-
-    await appendAudit(ctx, {
-      job_id: jobId,
-      entity: 'deposit',
-      entity_id: deposit?.id ?? jobId,
-      action: 'void_run',
-      from_status: job.status,
-      to_status: 'voided',
-      amount_satang: deposit?.actual_amount_satang ?? null,
-      variance_satang: deposit?.variance_satang ?? null,
-      reason: voidReason,
-    }, request);
-
-    return NextResponse.json({ success: true, data: { job_id: jobId, voided_deposit_id: deposit?.id ?? null } });
+    return NextResponse.json({ success: true, data });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }

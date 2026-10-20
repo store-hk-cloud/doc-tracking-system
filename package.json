@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "build": "next build",
     "test": "node --test scripts/test-*.test.mjs scripts/test-delivery-verification.mjs && npm run test:money",
     "typecheck": "tsc --noEmit --incremental false",
     "dev": "next dev",
-    "build": "next build",
     "start": "next start",
     "lint": "eslint . --max-warnings 0",
     "check": "npm run lint && npm test && npm run build && npm run typecheck",
@@ -17,7 +17,12 @@
     "db:migrate:atomic-writes": "node --env-file=.env.local scripts/run-atomic-document-writes.mjs",
     "db:migrate:atomic-deliveries": "node --env-file=.env.local scripts/run-atomic-deliveries.mjs",
     "test:money": "node scripts/test-money.mjs",
-    "verify:cash": "node scripts/verify-cash-triggers.mjs"
+    "verify:cash": "node scripts/verify-cash-triggers.mjs",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "upload": "opennextjs-cloudflare build && opennextjs-cloudflare upload",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
+    "deploy:cron": "wrangler deploy --config wrangler.cron.jsonc"
   },
   "dependencies": {
     "@capacitor/android": "^7.0.0",
@@ -25,8 +30,6 @@
     "@capacitor/core": "^7.0.0",
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.110.0",
-    "@upstash/redis": "^1.34.0",
-    "@vercel/blob": "^2.8.0",
     "googleapis": "^150.0.1",
     "next": "^15.5.19",
     "react": "^18.3.1",
@@ -40,6 +43,7 @@
   "devDependencies": {
     "@electric-sql/pglite": "0.5.8",
     "@eslint/eslintrc": "^3.0.0",
+    "@opennextjs/cloudflare": "^1.20.6",
     "@tailwindcss/postcss": "^4.3.2",
     "@types/node": "^22.20.0",
     "@types/react": "^19.2.17",
@@ -49,6 +53,7 @@
     "pg": "^8.23.0",
     "react-test-renderer": "18.3.1",
     "tailwindcss": "^4.3.2",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "wrangler": "^4.136.1"
   }
 }

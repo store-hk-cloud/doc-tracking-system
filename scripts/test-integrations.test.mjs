@@ -3,18 +3,48 @@ import test from 'node:test';
 import { google } from 'googleapis';
 import { loadModule } from './test-support/load-module.mjs';
 
-test('image uploads explicitly preserve unique names across Blob SDK upgrades', async () => {
+test('image uploads use the public Supabase Storage bucket', async () => {
   let sent;
-  const blob = loadModule('src/lib/vercel-blob.ts', {
-    '@vercel/blob': { put: async (...args) => { sent = args; return { url: 'https://example.invalid/image.jpg' }; } },
-  });
+  const storage = {
+    from(bucket) {
+      return {
+        async upload(...args) { sent = { bucket, args }; return { error: null }; },
+        getPublicUrl(path) { return { data: { publicUrl: `https://storage.example.invalid/${path}` } }; },
+      };
+    },
+  };
+  const blob = loadModule('src/lib/supabase-storage.ts', {
+    '@/lib/supabase/admin': { getServiceSupabase: () => ({ storage }) },
+  }, { process: { env: { SUPABASE_STORAGE_BUCKET: 'doc-attachments' } } });
   const buffer = Buffer.from('test image');
-  assert.equal(await blob.uploadImage('damage/image.jpg', buffer, 'image/png'), 'https://example.invalid/image.jpg');
-  assert.equal(sent[0], 'damage/image.jpg');
-  assert.equal(sent[1], buffer);
-  assert.equal(sent[2].contentType, 'image/png');
-  assert.equal(sent[2].access, 'public');
-  assert.equal(sent[2].addRandomSuffix, true);
+  const url = await blob.uploadImage('damage/image.jpg', buffer, 'image/png');
+  assert.equal(url, `https://storage.example.invalid/${sent.args[0]}`);
+  assert.equal(sent.bucket, 'doc-attachments');
+  assert.match(sent.args[0], /^damage\/[^/]+image\.jpg$/);
+  assert.equal(sent.args[1], buffer);
+  assert.equal(sent.args[2].contentType, 'image/png');
+  assert.equal(sent.args[2].upsert, false);
+});
+
+test('two image uploads with the same original path never collide or overwrite evidence', async () => {
+  const paths = new Set();
+  const storage = { from: () => ({
+    async upload(path) {
+      if (paths.has(path)) return { error: { message: 'duplicate object' } };
+      paths.add(path);
+      return { error: null };
+    },
+    getPublicUrl: (path) => ({ data: { publicUrl: `https://storage.example.invalid/${path}` } }),
+  }) };
+  const images = loadModule('src/lib/supabase-storage.ts', {
+    '@/lib/supabase/admin': { getServiceSupabase: () => ({ storage }) },
+  });
+  const urls = await Promise.all([
+    images.uploadImage('damage/same-image.jpg', Buffer.from('image')),
+    images.uploadImage('damage/same-image.jpg', Buffer.from('image')),
+  ]);
+  assert.equal(paths.size, 2);
+  assert.notEqual(urls[0], urls[1]);
 });
 
 test('Google OAuth clients preserve credentials, cached clients and Sheets/Drive request shapes', async () => {

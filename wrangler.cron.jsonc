@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "doc-tracking-cron",
+  "account_id": "c926e9b2548989db0471228738765cef",
+  "main": "cloudflare/cron-worker.ts",
+  "compatibility_date": "2026-09-22",
+  "triggers": {
+    "crons": ["0 1 * * *"]
+  },
+  "vars": {
+		"CRON_TARGET_URL": "https://doc-tracking-system.store-hk.workers.dev"
+  }
+}

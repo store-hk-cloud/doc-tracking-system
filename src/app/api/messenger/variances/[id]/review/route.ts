@@ -102,79 +102,25 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const reviewerSignature = await getActorName(ctx.user.id, ctx.user.email);
 
-    // ── บันทึกการตัดสิน ──
-    // trigger assert_variance_approver ทำทั้งการตรวจ (role/dept/segregation/snapshot)
-    // และการปิดรายงานในคำสั่งเดียว โดย SELECT ... FOR UPDATE ทำให้คำขอที่ชนกัน
-    // เข้าคิว คนที่สองจะเจอรายงานที่ไม่ใช่ pending_review แล้วถูกปฏิเสธ
-    // จึงไม่ต้อง (และต้องไม่) flip สถานะรายงานจากฝั่ง route ก่อน
-    const { data: review, error: reviewError } = await supabase
-      .from('cash_variance_reviews')
-      .insert({
-        report_id: reportId,
-        decision,
-        variance_satang_at_decision: deposit.variance_satang,
-        actual_amount_satang_at_decision: deposit.actual_amount_satang,
-        reason,
-        slip_checked: true,
-        reviewed_by: ctx.user.id,
-        reviewer_signature: reviewerSignature,
-        // reviewer_role / reviewer_dept_code ถูกเขียนโดย trigger จากค่าใน DB
-        reviewer_role: ctx.profile.role,
-        reviewer_dept_code: ctx.profile.department_code,
-      })
-      .select()
-      .single();
-
-    if (reviewError) {
-      // trigger ปฏิเสธ แปลว่ารายงานไม่ถูกแตะเลย (การ insert ทั้งชุดล้มพร้อมกัน)
-      // จึงไม่ต้องคืนสถานะอะไร
-      const alreadyDecided = /is already/.test(reviewError.message || '');
+    // review, report, deposit และ job ต้อง commit/rollback พร้อมกัน มิฉะนั้น
+    // review ที่บันทึกแล้วอาจล็อกรายงานไว้ทั้งที่งานยังปิดไม่สำเร็จ
+    const { data: transaction, error: reviewError } = await supabase.rpc('review_cash_variance', {
+      p_report_id: reportId,
+      p_decision: decision,
+      p_reason: reason,
+      p_actor_id: ctx.user.id,
+      p_reviewer_signature: reviewerSignature,
+    });
+    if (reviewError || !transaction) {
+      const message = reviewError?.message || 'บันทึกการตัดสินไม่สำเร็จ';
+      const alreadyDecided = /is already|variance_report_not_pending|variance_job_not_pending/.test(message);
+      const forbidden = /only |cannot review|reviewer .* active|cannot approve/.test(message);
       return NextResponse.json(
-        { success: false, error: alreadyDecided ? 'รายงานนี้ถูกตัดสินไปแล้ว' : reviewError.message },
-        { status: alreadyDecided ? 409 : 403 }
+        { success: false, error: alreadyDecided ? 'รายงานนี้ถูกตัดสินไปแล้ว' : message },
+        { status: alreadyDecided ? 409 : forbidden ? 403 : 500 }
       );
     }
-
-    // ── ปลดล็อกรายการฝากและปิดงาน ──
-    if (decision === 'approved') {
-      const { error: depError } = await supabase
-        .from('bank_deposits')
-        .update({ status: 'variance_resolved', resolved_review_id: review.id })
-        .eq('id', deposit.id)
-        .eq('status', 'variance_pending');
-      if (depError) throw depError;
-
-      await supabase
-        .from('messenger_jobs')
-        .update({
-          status: 'closed',
-          closed_at: new Date().toISOString(),
-          closed_by: ctx.user.id,
-          closer_signature: reviewerSignature,
-        })
-        .eq('id', deposit.job_id)
-        .eq('status', 'pending_review');
-    } else if (decision === 'rejected') {
-      // ไม่อนุมัติ: ปิดงานแต่ทำเครื่องหมายไว้ว่าผลต่างไม่ได้รับการยอมรับ
-      // deposit ยังค้างที่ variance_pending เป็นหลักฐานว่าเรื่องยังไม่จบทางบัญชี
-      await supabase
-        .from('messenger_jobs')
-        .update({
-          status: 'closed',
-          closed_at: new Date().toISOString(),
-          closed_by: ctx.user.id,
-          closer_signature: reviewerSignature,
-        })
-        .eq('id', deposit.job_id)
-        .eq('status', 'pending_review');
-    } else {
-      // ตีกลับให้แมสเซนเจอร์แก้รายงาน — งานกลับไปที่ picked_up ไม่ได้เพราะเงินฝากแล้ว
-      // จึงคงไว้ที่ pending_review และให้ยื่นรายงานใหม่ได้ (unique index ยกเว้น returned)
-      await supabase
-        .from('messenger_jobs')
-        .update({ status: 'pending_review' })
-        .eq('id', deposit.job_id);
-    }
+    const review = (transaction as any).review;
 
     await appendAudit(ctx, {
       job_id: deposit.job_id,

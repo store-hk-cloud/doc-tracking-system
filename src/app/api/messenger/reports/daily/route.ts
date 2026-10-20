@@ -4,6 +4,19 @@ import { requireCapability, forbiddenResponse } from '@/lib/supabase/auth-helper
 import { canViewCash } from '@/lib/permissions';
 import { bangkokDate } from '@/lib/thai-date';
 
+const PAGE_SIZE = 1000;
+
+async function fetchAllRows(build: (from: number, to: number) => any): Promise<any[]> {
+  const rows: any[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await build(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    const page = data || [];
+    rows.push(...page);
+    if (page.length < PAGE_SIZE) return rows;
+  }
+}
+
 /**
  * GET /api/messenger/reports/daily — รายงานสรุปยอดผ่านประจำวัน
  *
@@ -30,52 +43,63 @@ export async function GET(request: NextRequest) {
     const dayStart = `${date}T00:00:00.000+07:00`;
     const dayEnd = `${date}T23:59:59.999+07:00`;
 
-    const [
-      { data: pickupsToday },
-      { data: depositsToday },
-      { data: openPickups },
-      { data: pendingReports },
-      { data: awaitingSlip },
-      { data: unconfirmed },
-    ] = await Promise.all([
-      supabase
+    const [pickupsToday, depositsToday, openPickups, pendingReports, awaitingSlip, unconfirmed] = await Promise.all([
+      fetchAllRows((from, to) => supabase
         .from('cash_pickups')
         .select('envelope_amount_satang, job_id')
         .gte('picked_up_at', dayStart)
-        .lte('picked_up_at', dayEnd),
-      supabase
+        .lte('picked_up_at', dayEnd)
+        .order('id')
+        .range(from, to)),
+      fetchAllRows((from, to) => supabase
         .from('bank_deposits')
         .select('actual_amount_satang, variance_satang, status, slip_status, job_id')
         .neq('status', 'voided')
         .gte('deposited_at', dayStart)
-        .lte('deposited_at', dayEnd),
+        .lte('deposited_at', dayEnd)
+        .order('id')
+        .range(from, to)),
       // เงินคงค้างในมือ: ไม่จำกัดวัน เพราะเงินที่ค้างมาจากเมื่อวานยังเป็นเงินที่ค้าง
-      supabase
+      fetchAllRows((from, to) => supabase
         .from('cash_pickups')
         .select('envelope_amount_satang, messenger_jobs!inner(status)')
-        .is('deposit_id', null),
-      supabase.from('cash_variance_reports').select('id').eq('status', 'pending_review'),
-      supabase
+        .is('deposit_id', null)
+        .order('id')
+        .range(from, to)),
+      fetchAllRows((from, to) => supabase
+        .from('cash_variance_reports')
+        .select('id')
+        .eq('status', 'pending_review')
+        .order('id')
+        .range(from, to)),
+      fetchAllRows((from, to) => supabase
         .from('bank_deposits')
         .select('id')
         .eq('slip_status', 'pending')
-        .neq('status', 'voided'),
-      supabase.from('cash_pickups').select('id').is('branch_confirmed_at', null),
+        .neq('status', 'voided')
+        .order('id')
+        .range(from, to)),
+      fetchAllRows((from, to) => supabase
+        .from('cash_pickups')
+        .select('id')
+        .is('branch_confirmed_at', null)
+        .order('id')
+        .range(from, to)),
     ]);
 
-    const received = (pickupsToday || []).reduce((s: number, r: any) => s + (r.envelope_amount_satang || 0), 0);
-    const deposited = (depositsToday || []).reduce((s: number, r: any) => s + (r.actual_amount_satang || 0), 0);
+    const received = pickupsToday.reduce((s: number, r: any) => s + (r.envelope_amount_satang || 0), 0);
+    const deposited = depositsToday.reduce((s: number, r: any) => s + (r.actual_amount_satang || 0), 0);
 
     let short = 0;
     let over = 0;
-    for (const d of depositsToday || []) {
+    for (const d of depositsToday) {
       const v = d.variance_satang || 0;
       if (v < 0) short += -v;
       else if (v > 0) over += v;
     }
 
     // นับเฉพาะงานที่ยังเดินอยู่ — งานที่ยกเลิกไม่ถือว่ามีเงินอยู่ในมือ
-    const inHand = (openPickups || [])
+    const inHand = openPickups
       .filter((r: any) => {
         const status = Array.isArray(r.messenger_jobs) ? r.messenger_jobs[0]?.status : r.messenger_jobs?.status;
         return status === 'picked_up';
@@ -91,10 +115,10 @@ export async function GET(request: NextRequest) {
         in_hand_satang: inHand,
         short_satang: short,
         over_satang: over,
-        pending_review_count: (pendingReports || []).length,
-        awaiting_slip_count: (awaitingSlip || []).length,
-        awaiting_branch_confirm_count: (unconfirmed || []).length,
-        job_count: new Set((pickupsToday || []).map((r: any) => r.job_id)).size,
+        pending_review_count: pendingReports.length,
+        awaiting_slip_count: awaitingSlip.length,
+        awaiting_branch_confirm_count: unconfirmed.length,
+        job_count: new Set(pickupsToday.map((r: any) => r.job_id)).size,
       },
     });
   } catch (error: any) {

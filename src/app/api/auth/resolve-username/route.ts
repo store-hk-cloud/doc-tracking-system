@@ -1,29 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { escapeLikePattern, getServiceSupabase } from '@/lib/supabase/admin';
+import { createServerSupabase } from '@/lib/supabase/server';
 
 /**
- * POST /api/auth/resolve-username — แปลงชื่อผู้ใช้เป็นอีเมลสำหรับล็อกอิน
+ * POST /api/auth/resolve-username — เข้าสู่ระบบด้วยชื่อผู้ใช้
  *
- * Supabase Auth ผูกกับอีเมลเสมอ เราจึงไม่เปลี่ยนกลไก auth แต่ให้แมสเซนเจอร์
- * กรอกแค่ชื่อผู้ใช้ แล้ว server แปลงเป็นอีเมลก่อนส่งให้ signInWithPassword
+ * Supabase Auth ผูกกับอีเมลเสมอ แต่ห้ามส่งอีเมลที่ resolve ได้กลับไปยัง browser
+ * เพราะผู้ที่ยังไม่ล็อกอินจะใช้ endpoint นี้เดาได้ทั้งอีเมลและชื่อผู้ใช้ที่มีอยู่
  *
- * ข้อควรระวังด้านความปลอดภัย: endpoint นี้ไม่ตรวจรหัสผ่าน จึงบอกได้แค่ว่า
- * "ชื่อผู้ใช้นี้ผูกกับอีเมลอะไร" ซึ่งเปิดช่องให้ไล่เดาว่ามีชื่อผู้ใช้ไหนอยู่บ้าง
- * (user enumeration) เราจึง:
- *   - รับเฉพาะชื่อผู้ใช้ที่ตรงเป๊ะ (escape wildcard ของ ILIKE ก่อนค้น)
- *   - ตอบข้อความเดียวกันทั้งกรณีไม่พบและกรณีถูกปิดใช้งาน
- *   - หน่วงเวลาเล็กน้อยให้เวลาตอบใกล้เคียงกันทุกกรณี
- * ตัวรหัสผ่านยังถูกตรวจโดย Supabase Auth ตามปกติ ไม่ได้อ่อนลง
+ * route จึง resolve และตรวจรหัสผ่านบน server ในคำขอเดียว แล้วส่งกลับเฉพาะ token
+ * ที่ Supabase ออกให้หลังตรวจ credential สำเร็จเท่านั้น
  */
 
 const GENERIC_ERROR = 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง';
+const FALLBACK_EMAIL = 'unknown-username@invalid.local';
+const MIN_RESPONSE_TIME_MS = 250;
+
+function waitForMinimumResponseTime(startedAt: number) {
+  const remaining = MIN_RESPONSE_TIME_MS - (Date.now() - startedAt);
+  return remaining > 0
+    ? new Promise<void>((resolve) => setTimeout(resolve, remaining))
+    : Promise.resolve();
+}
 
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now();
+
   try {
     const body = await request.json();
     const username = String(body.username || '').trim();
+    const password = typeof body.password === 'string' ? body.password : '';
 
-    if (!/^[a-zA-Z0-9._-]{3,64}$/.test(username)) {
+    if (!/^[a-zA-Z0-9._-]{3,64}$/.test(username) || !password) {
+      await waitForMinimumResponseTime(startedAt);
       return NextResponse.json({ success: false, error: GENERIC_ERROR }, { status: 400 });
     }
 
@@ -33,21 +42,33 @@ export async function POST(request: NextRequest) {
     // (ยัง ilike อยู่เพื่อคงพฤติกรรมเดิมที่ชื่อผู้ใช้ไม่สนตัวพิมพ์เล็กใหญ่)
     const escaped = escapeLikePattern(username);
 
-    const { data } = await getServiceSupabase()
+    const { data, error: profileError } = await getServiceSupabase()
       .from('profiles')
       .select('email, is_active')
       .ilike('username', escaped)
       .maybeSingle();
 
-    // หน่วงให้เวลาตอบใกล้เคียงกันไม่ว่าจะเจอหรือไม่เจอ
-    await new Promise((r) => setTimeout(r, 120));
+    // เรียก Supabase Auth ทุกครั้งที่ input ถูกต้อง เพื่อลดความต่างของเวลาตอบ
+    // ระหว่างชื่อผู้ใช้ที่พบกับไม่พบ โดยไม่ส่งอีเมลของ profile ออกนอก server
+    const email = !profileError && data?.is_active ? data.email : FALLBACK_EMAIL;
+    const supabase = await createServerSupabase();
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
 
-    if (!data || data.is_active === false) {
+    await waitForMinimumResponseTime(startedAt);
+
+    if (profileError || !data || data.is_active === false || authError || !authData.session) {
       return NextResponse.json({ success: false, error: GENERIC_ERROR }, { status: 401 });
     }
 
-    return NextResponse.json({ success: true, data: { email: data.email } });
+    return NextResponse.json({
+      success: true,
+      data: {
+        access_token: authData.session.access_token,
+        refresh_token: authData.session.refresh_token,
+      },
+    });
   } catch {
+    await waitForMinimumResponseTime(startedAt);
     return NextResponse.json({ success: false, error: GENERIC_ERROR }, { status: 400 });
   }
 }

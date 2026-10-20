@@ -43,8 +43,8 @@ export async function GET(request: NextRequest) {
     const profileIds = [...new Set((data || []).map((d: any) => d.recipient_id).filter(Boolean))];
 
     const [{ data: departments }, { data: profiles }] = await Promise.all([
-      supabase.from('departments').select('id, name').in('id', deptIds.length ? deptIds : ['none']),
-      supabase.from('profiles').select('id, full_name').in('id', profileIds.length ? profileIds : ['none']),
+      supabase.from('departments').select('id, name').in('id', deptIds.length ? deptIds : ['00000000-0000-0000-0000-000000000000']),
+      supabase.from('profiles').select('id, full_name').in('id', profileIds.length ? profileIds : ['00000000-0000-0000-0000-000000000000']),
     ]);
 
     const deptMap = new Map((departments || []).map((d: any) => [d.id, d.name]));

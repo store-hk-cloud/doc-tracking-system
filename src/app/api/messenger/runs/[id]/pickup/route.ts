@@ -159,64 +159,27 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const receiverSignature = await getActorName(ctx.user.id, ctx.user.email);
     const pickedUpAt = new Date().toISOString();
 
-    // ── จับจองซองก่อนสร้างจุดรับ ──
-    // conditional update pending -> accepted เป็นจุด serialize เดียว: ถ้าสองคน
-    // กดรับซองใบเดียวกันพร้อมกัน มีคนเดียวที่ผ่าน อีกคนได้ 409
-    // (trigger บังคับด้วยว่า pickup อ้าง handover ที่ยัง pending ไม่ได้)
-    if (handover) {
-      const { data: claimed, error: claimError } = await supabase
-        .from('cash_handovers')
-        .update({ status: 'accepted', accepted_by: ctx.user.id, accepted_at: pickedUpAt })
-        .eq('id', handover.id)
-        .eq('status', 'pending')
-        .select()
-        .single();
-      if (claimError || !claimed) {
-        return NextResponse.json(
-          { success: false, error: 'ซองนี้ถูกรับไปแล้วโดยคนอื่น' },
-          { status: 409 }
-        );
-      }
-    }
-
-    // ── บันทึกเงินก่อน แล้วค่อยขยับสถานะ ──
-    // ลำดับนี้ตั้งใจ: หลักฐานการรับเงินสำคัญกว่าสถานะงาน ถ้าขั้นที่สองล้ม
-    // ยอดยังอยู่ในระบบและกดซ้ำได้ ไม่ใช่เงินหายจากระบบ
-    //
-    // การกดซ้ำ/เน็ตกระตุกถูกกันด้วย unique index (job_id, branch_id) ที่ระดับ DB
-    // ไม่ได้พึ่ง conditional update เหมือนก่อน เพราะสถานะ picked_up ตอนนี้รับ
-    // การเพิ่ม pickup ได้หลายครั้งโดยชอบธรรม
-    const { data: pickup, error: pickupError } = await supabase
-      .from('cash_pickups')
-      .insert({
-        job_id: jobId,
-        branch_id: branch.id,
-        handover_id: handover ? handover.id : null,
-        cashier_profile_id: cashierProfileId,
-        cashier_name: cashierName,
-        envelope_count: envelopeCount,
-        envelope_amount_satang: envelopeSatang,
-        envelope_photo_id: body.envelope_photo_id,
-        picked_up_at: pickedUpAt,
-        lat: body.lat ?? null,
-        lng: body.lng ?? null,
-        gps_accuracy_m: body.gps_accuracy_m ?? null,
-        received_by: ctx.user.id,
-        receiver_signature: receiverSignature,
-      })
-      .select()
-      .single();
-    if (pickupError) {
-      // คืนซองกลับเป็น pending ถ้าสร้างจุดรับไม่สำเร็จ ไม่งั้นซองจะค้างสถานะ
-      // accepted โดยไม่มีจุดรับจริง แล้วไม่มีใครรับได้อีก
-      if (handover) {
-        await supabase
-          .from('cash_handovers')
-          .update({ status: 'pending', accepted_by: null, accepted_at: null })
-          .eq('id', handover.id)
-          .eq('status', 'accepted');
-      }
-      if ((pickupError as any).code === '23505') {
+    // จับจองซอง, สร้าง pickup และย้ายงานอยู่ใน transaction เดียว จึงไม่เกิดซอง
+    // accepted ที่ไม่มี pickup หาก unique/FK/trigger ปฏิเสธการบันทึก
+    const { data: transaction, error: transactionError } = await supabase.rpc('record_cash_pickup', {
+      p_job_id: jobId,
+      p_actor_id: ctx.user.id,
+      p_branch_id: branch.id,
+      p_handover_id: handover ? handover.id : null,
+      p_cashier_profile_id: cashierProfileId,
+      p_cashier_name: cashierName,
+      p_envelope_count: envelopeCount,
+      p_envelope_amount_satang: envelopeSatang,
+      p_envelope_photo_id: body.envelope_photo_id,
+      p_picked_up_at: pickedUpAt,
+      p_lat: body.lat ?? null,
+      p_lng: body.lng ?? null,
+      p_gps_accuracy_m: body.gps_accuracy_m ?? null,
+      p_receiver_signature: receiverSignature,
+    });
+    if (transactionError || !transaction) {
+      const message = transactionError?.message || 'บันทึกการรับเงินไม่สำเร็จ';
+      if ((transactionError as any)?.code === '23505' || /uq_cash_pickups_job_branch|duplicate key/i.test(message)) {
         return NextResponse.json(
           {
             success: false,
@@ -226,26 +189,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           { status: 409 }
         );
       }
-      throw pickupError;
+      if (/cash_handover_unavailable|pickup_not_allowed/.test(message)) {
+        return NextResponse.json(
+          { success: false, error: 'ซองหรือทริปนี้ถูกดำเนินการไปแล้ว กรุณาโหลดข้อมูลใหม่' },
+          { status: 409 }
+        );
+      }
+      throw transactionError;
     }
-
-    // ผูกใบประกาศกับจุดรับที่เกิดขึ้นจริง
-    if (handover) {
-      await supabase
-        .from('cash_handovers')
-        .update({ accepted_pickup_id: pickup.id })
-        .eq('id', handover.id)
-        .is('accepted_pickup_id', null);
-    }
-
-    const { error: moveError } = await supabase
-      .from('messenger_jobs')
-      .update({ status: 'picked_up', picked_up_at: job.picked_up_at || pickedUpAt })
-      .eq('id', jobId)
-      .in('status', ['open', 'picked_up']);
-    if (moveError) {
-      console.error('[Messenger Pickup] ขยับสถานะงานไม่สำเร็จ แต่บันทึกยอดแล้ว:', moveError);
-    }
+    const pickup = (transaction as any).pickup;
 
     await appendAudit(ctx, {
       job_id: jobId,

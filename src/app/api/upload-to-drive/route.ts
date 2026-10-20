@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { uploadToDrive } from '@/lib/google-drive';
 import { requireRoles } from '@/lib/supabase/auth-helpers';
+import { MAX_IMAGE_BYTES, validateImageContent } from '@/lib/image-validation';
 
 // เพดานและชนิดไฟล์ใช้ค่าเดียวกับ api/messenger/runs/[id]/photos ซึ่งเป็น
 // มาตรฐานของโปรเจกต์อยู่แล้ว route นี้เดิมไม่ตรวจอะไรเลยทั้งที่เปิดถึง role user
-const MAX_BYTES = 12 * 1024 * 1024;
-const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
-
 // โฟลเดอร์ปลายทางต้องมาจากรายการปิด ไม่ใช่ค่าที่ client ส่งมาอิสระ:
 // ค่านี้ถูกต่อเข้าไปใน query string ของ Drive API (getOrCreateSubfolder) และ
 // ใครที่ล็อกอินอยู่ก็ส่งค่าอะไรมาก็ได้ ทำให้สร้างโฟลเดอร์ทิ้งใน Drive ของบริษัท
@@ -41,13 +39,7 @@ export async function POST(request: NextRequest) {
     if (!file) {
       return NextResponse.json({ success: false, error: 'No file provided' }, { status: 400 });
     }
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      return NextResponse.json(
-        { success: false, error: 'อัปโหลดได้เฉพาะไฟล์รูปภาพ (JPEG, PNG, WebP, HEIC)' },
-        { status: 415 }
-      );
-    }
-    if (file.size > MAX_BYTES) {
+    if (file.size > MAX_IMAGE_BYTES) {
       return NextResponse.json(
         { success: false, error: 'ไฟล์ใหญ่เกินไป กรุณาถ่ายใหม่หรือย่อขนาดก่อน' },
         { status: 413 }
@@ -55,9 +47,13 @@ export async function POST(request: NextRequest) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
+    const image = validateImageContent(file.type, buffer);
+    if (!image.ok) {
+      return NextResponse.json({ success: false, error: image.error }, { status: 415 });
+    }
     const fileName = `${Date.now()}-${safeFileName(file.name)}`;
 
-    const { fileId, viewLink } = await uploadToDrive(fileName, buffer, file.type, folderName);
+    const { fileId, viewLink } = await uploadToDrive(fileName, buffer, image.mimeType, folderName);
 
     return NextResponse.json({
       success: true,

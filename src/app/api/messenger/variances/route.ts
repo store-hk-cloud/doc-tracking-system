@@ -37,9 +37,9 @@ export async function GET(request: NextRequest) {
       supabase
         .from('messenger_jobs')
         .select('id, job_no, status, branch_id, assigned_to, branches(name)')
-        .in('id', jobIds.length ? jobIds : ['none']),
-      supabase.from('approved_banks').select('id, name').in('id', bankIds.length ? bankIds : ['none']),
-      supabase.from('profiles').select('id, full_name').in('id', profileIds.length ? profileIds : ['none']),
+        .in('id', jobIds.length ? jobIds : ['00000000-0000-0000-0000-000000000000']),
+      supabase.from('approved_banks').select('id, name').in('id', bankIds.length ? bankIds : ['00000000-0000-0000-0000-000000000000']),
+      supabase.from('profiles').select('id, full_name').in('id', profileIds.length ? profileIds : ['00000000-0000-0000-0000-000000000000']),
     ]);
 
     const jobMap = new Map((jobs || []).map((j: any) => [j.id, j]));

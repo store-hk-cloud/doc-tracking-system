@@ -314,7 +314,7 @@ export async function POST(request: NextRequest) {
 
     // เขียนทุกปลายทางของเอกสารเดียวกันในคำขอเดียว ลดโอกาสซิงก์สำเร็จเพียงบางแถว
     // และลดจำนวนคำขอ Google Sheets เมื่อมีหลายหน่วยงานปลายทาง
-    await appendRows('เอกสารเข้า', (recipients || []).map((r) => [
+    await appendRows(doc.received_date, (recipients || []).map((r) => [
         documentNo(doc),            // A: Running No.
         doc.received_date,                 // B: วันที่รับ
         doc.doc_number || '',              // C: เลขที่เอกสาร

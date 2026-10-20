@@ -16,12 +16,10 @@ import { documentNo } from '@/lib/document-no';
  * กันส่งซ้ำด้วยตาราง document_overdue_alerts ที่ unique (recipient, threshold)
  * แต่ละฉบับจึงได้เมลระดับ 24 ชม. แค่ครั้งเดียวไม่ว่า cron จะรันกี่รอบ
  *
- * ตารางเวลา: วันละครั้ง 08:00 น. เวลาไทย (01:00 UTC) เพราะแผน Vercel Hobby
- * จำกัด cron ไว้วันละครั้ง ผลคือเอกสารที่เพิ่งเกิน 24 ชม. หลังรอบเช้าจะได้เมล
- * เช้าวันถัดไป (ช้าได้สูงสุดราว 23 ชม.) ถ้าต้องการเตือนไวกว่านี้ต้องขึ้นแผน Pro
- * แล้วเปลี่ยน schedule ใน vercel.json เป็นรายชั่วโมง
+ * ตารางเวลา: วันละครั้ง 08:00 น. เวลาไทย (01:00 UTC) ตาม schedule ของ
+ * Cloudflare Cron Worker ที่เรียก endpoint นี้
  *
- * ความปลอดภัย: Vercel Cron ส่ง header Authorization: Bearer $CRON_SECRET
+ * ความปลอดภัย: Cloudflare Cron Worker ส่ง header Authorization: Bearer $CRON_SECRET
  * route นี้ต้องมี CRON_SECRET ตั้งไว้เสมอ ถ้าไม่ตั้งจะตอบ 503 ไม่ใช่เปิดให้ทุกคน
  *
  * middleware ยกเว้น /api/cron/ ออกจากการตรวจ session (ดู src/middleware.ts)
@@ -103,8 +101,8 @@ export async function GET(request: NextRequest) {
     const recorderIds = [...new Set(pending.map((r) => r.documents?.recorded_by).filter(Boolean))];
     const deptIds = [...new Set(pending.map((r) => r.department_id).filter(Boolean))];
     const [{ data: recorders }, { data: depts }] = await Promise.all([
-      supabase.from('profiles').select('id, full_name, email').in('id', recorderIds.length ? recorderIds : ['none']),
-      supabase.from('departments').select('id, name').in('id', deptIds.length ? deptIds : ['none']),
+      supabase.from('profiles').select('id, full_name, email').in('id', recorderIds.length ? recorderIds : ['00000000-0000-0000-0000-000000000000']),
+      supabase.from('departments').select('id, name').in('id', deptIds.length ? deptIds : ['00000000-0000-0000-0000-000000000000']),
     ]);
     const recorderMap = new Map((recorders || []).map((p: any) => [p.id, p]));
     const deptMap = new Map((depts || []).map((d: any) => [d.id, d.name]));

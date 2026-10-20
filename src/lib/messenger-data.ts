@@ -93,7 +93,7 @@ export async function enrichRunBundle(bundle: NonNullable<Awaited<ReturnType<typ
     deposit
       ? supabase.from('approved_banks').select('id, name').eq('id', deposit.bank_id).maybeSingle()
       : Promise.resolve({ data: null }),
-    supabase.from('profiles').select('id, full_name').in('id', profileIds.length ? profileIds : ['none']),
+    supabase.from('profiles').select('id, full_name').in('id', profileIds.length ? profileIds : ['00000000-0000-0000-0000-000000000000']),
   ]);
 
   const nameMap = new Map((profiles || []).map((p: any) => [p.id, p.full_name]));

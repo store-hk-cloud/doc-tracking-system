@@ -5,9 +5,9 @@ import { uploadToDrive } from '@/lib/google-drive';
 import { requireCapability, forbiddenResponse } from '@/lib/supabase/auth-helpers';
 import { canSeeJob, canUploadEvidence } from '@/lib/permissions';
 import { appendAudit, getActorName } from '@/lib/messenger-audit';
+import { imageFileExtension, MAX_IMAGE_BYTES, validateImageContent } from '@/lib/image-validation';
 
 const PHOTO_KINDS = ['payin_slip', 'cash_envelope', 'deposit_slip', 'variance_doc', 'other'] as const;
-const MAX_BYTES = 12 * 1024 * 1024; // client ย่อรูปมาแล้ว ค่านี้เป็นเพดานกันหลุด
 
 /**
  * POST /api/messenger/runs/[id]/photos — อัปหลักฐานภาพ
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!PHOTO_KINDS.includes(photoKind as any)) {
       return NextResponse.json({ success: false, error: 'ชนิดรูปไม่ถูกต้อง' }, { status: 400 });
     }
-    if (file.size > MAX_BYTES) {
+    if (file.size > MAX_IMAGE_BYTES) {
       return NextResponse.json(
         { success: false, error: 'ไฟล์ใหญ่เกินไป กรุณาถ่ายใหม่หรือย่อขนาดก่อน' },
         { status: 413 }
@@ -63,6 +63,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
+    const image = validateImageContent(file.type, buffer);
+    if (!image.ok) {
+      return NextResponse.json({ success: false, error: image.error }, { status: 415 });
+    }
     // hash จากไบต์จริงที่ได้รับ ไม่ใช่ค่าที่ client ส่งมา
     const sha256 = createHash('sha256').update(buffer).digest('hex');
 
@@ -91,8 +95,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     const uploaderSignature = await getActorName(ctx.user.id, ctx.user.email);
-    const fileName = `${jobId}-${photoKind}-${Date.now()}.jpg`;
-    const { fileId, viewLink } = await uploadToDrive(fileName, buffer, file.type || 'image/jpeg', 'cash');
+    const fileName = `${jobId}-${photoKind}-${Date.now()}.${imageFileExtension(image.mimeType)}`;
+    const { fileId, viewLink } = await uploadToDrive(fileName, buffer, image.mimeType, 'cash');
 
     const { data: photo, error } = await supabase
       .from('messenger_job_photos')

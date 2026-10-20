@@ -1,10 +1,18 @@
 import { NextResponse } from 'next/server';
+import { randomUUID } from 'crypto';
 import { getServiceSupabase } from '@/lib/supabase/admin';
 import { requireRoles } from '@/lib/supabase/auth-helpers';
-import { listSheetTabs, getSheetValues, batchUpdateRowsOrThrow, appendRowsOrThrow, getSpreadsheetUrl } from '@/lib/google-sheets';
+import { ensureDailySheetReady, HEADERS, listSheetTabs, getSheetValuesBatch, batchUpdateRowsOrThrow, appendRowsOrThrow, getSpreadsheetUrl } from '@/lib/google-sheets';
 import { documentNo } from '@/lib/document-no';
 
 const PAGE_SIZE = 1000;
+const AWAITING_RECEIPT = new Set([
+  'registered', 'delivered', 'awaiting_inspector', 'awaiting_purchasing', 'awaiting_recipient',
+]);
+
+function hasExpectedHeader(row: unknown): boolean {
+  return Array.isArray(row) && HEADERS.every((header, index) => row[index] === header);
+}
 
 async function fetchAllRows(build: (from: number, to: number) => any): Promise<any[]> {
   const rows: any[] = [];
@@ -29,23 +37,45 @@ export async function GET() {
     if (auth.response) return auth.response;
 
     const supabase = getServiceSupabase();
-    const tabs = await listSheetTabs();
+    const lockToken = randomUUID();
+    const { data: acquired, error: lockError } = await supabase.rpc('try_acquire_sheet_backfill_lock', {
+      p_token: lockToken,
+    });
+    if (lockError) throw lockError;
+    if (!acquired) {
+      return NextResponse.json(
+        { success: false, error: 'กำลังมีการซ่อมข้อมูล Google Sheets อยู่ โปรดลองใหม่อีกครั้ง' },
+        { status: 409 },
+      );
+    }
 
-    const referenceRows = new Map<string, { sheet: string; row: number }[]>();
-    const runningNoRows = new Map<string, { sheet: string; row: number; hasRef: boolean }[]>();
+    try {
+    const tabs = await listSheetTabs();
+    const rowsBySheet = await getSheetValuesBatch(tabs);
+
+    // อ่านข้อมูลแต่ละแท็บเพียงรอบเดียวก่อน แล้วซ่อมโครงสร้างเฉพาะแท็บที่หัวตาราง
+    // หาย เพื่อไม่ยิง metadata/header request ซ้ำทุกวันจนเกิน quota ของ Sheets.
     for (const sheet of tabs) {
-      const rows = await getSheetValues(sheet);
+      if (hasExpectedHeader(rowsBySheet.get(sheet)?.[0])) continue;
+      await ensureDailySheetReady(sheet);
+      rowsBySheet.set(sheet, (await getSheetValuesBatch([sheet])).get(sheet) || []);
+    }
+
+    const referenceRows = new Map<string, { sheet: string; row: number; runningNo: string | null }[]>();
+    const runningNoRows = new Map<string, { sheet: string; row: number; referenceId: string | null }[]>();
+    for (const sheet of tabs) {
+      const rows = rowsBySheet.get(sheet) || [];
       for (let i = 1; i < rows.length; i++) {
         const runningNo = rows[i][0];
         const ref = rows[i][20];
         if (ref) {
           const list = referenceRows.get(String(ref)) || [];
-          list.push({ sheet, row: i + 1 });
+          list.push({ sheet, row: i + 1, runningNo: runningNo ? String(runningNo) : null });
           referenceRows.set(String(ref), list);
         }
         if (runningNo) {
           const list = runningNoRows.get(String(runningNo)) || [];
-          list.push({ sheet, row: i + 1, hasRef: !!ref });
+          list.push({ sheet, row: i + 1, referenceId: ref ? String(ref) : null });
           runningNoRows.set(String(runningNo), list);
         }
       }
@@ -56,6 +86,10 @@ export async function GET() {
       fetchAllRows((from, to) => supabase.from('document_recipients').select('*').order('id').range(from, to)),
     ]);
     const docById = new Map(docs.map((d: any) => [d.id, d]));
+    const recipientIds = new Set(recipients.map((r: any) => String(r.id)));
+    const duplicateReferences = [...referenceRows.entries()]
+      .filter(([referenceId, rows]) => recipientIds.has(referenceId) && rows.length > 1)
+      .length;
 
     const recipientsByDoc = new Map<string, any[]>();
     for (const r of recipients) {
@@ -66,8 +100,8 @@ export async function GET() {
 
     const deptIds = [...new Set(recipients.map((r: any) => r.department_id).filter(Boolean))];
 
-    const [{ data: departments }, deliveries] = await Promise.all([
-      supabase.from('departments').select('id, name').in('id', deptIds.length ? deptIds : ['none']),
+    const [{ data: departments, error: departmentsError }, deliveries] = await Promise.all([
+      supabase.from('departments').select('id, name').in('id', deptIds.length ? deptIds : ['00000000-0000-0000-0000-000000000000']),
       fetchAllRows((from, to) => supabase
         .from('delivery_logs')
         .select('*')
@@ -75,14 +109,16 @@ export async function GET() {
         .order('id')
         .range(from, to)),
     ]);
+    if (departmentsError) throw departmentsError;
     const profileIds = [...new Set([
       ...docs.map((d: any) => d.recorded_by),
       ...deliveries.map((delivery: any) => delivery.recipient_id),
     ].filter(Boolean))];
-    const { data: profiles } = await supabase
+    const { data: profiles, error: profilesError } = await supabase
       .from('profiles')
       .select('id, full_name')
-      .in('id', profileIds.length ? profileIds : ['none']);
+      .in('id', profileIds.length ? profileIds : ['00000000-0000-0000-0000-000000000000']);
+    if (profilesError) throw profilesError;
     const deptMap = new Map((departments || []).map((d: any) => [d.id, d.name]));
     const profileMap = new Map((profiles || []).map((p: any) => [p.id, p.full_name]));
     const deliveryByRecipient = new Map<string, any>();
@@ -91,7 +127,7 @@ export async function GET() {
     }
 
     const buildValues = (doc: any, r: any) => {
-      const delivery = deliveryByRecipient.get(r.id);
+      const delivery = AWAITING_RECEIPT.has(r.status) ? null : deliveryByRecipient.get(r.id);
       const profName = profileMap.get(doc.recorded_by) || '';
       return [
         documentNo(doc), doc.received_date, doc.doc_number || '',
@@ -114,17 +150,22 @@ export async function GET() {
 
       // แถวที่มีรหัสอ้างอิงแล้วก็ต้องเขียนทับจากฐานข้อมูล เพราะการข้ามแบบเดิม
       // ทำให้สถานะ registered ค้างตลอดไปแม้ผู้รับลงชื่อและปิดงานแล้ว
-      const exactRow = referenceRows.get(r.id)?.[0];
-      if (exactRow) {
-        const list = bySheet.get(exactRow.sheet) || [];
-        list.push({ row: exactRow.row, values });
-        bySheet.set(exactRow.sheet, list);
+      const expectedRunningNo = documentNo(doc);
+      const exactRows = referenceRows.get(r.id)?.filter((row) => row.runningNo === expectedRunningNo) || [];
+      if (exactRows.length > 0) {
+        for (const exactRow of exactRows) {
+          const list = bySheet.get(exactRow.sheet) || [];
+          list.push({ row: exactRow.row, values });
+          bySheet.set(exactRow.sheet, list);
+        }
         continue;
       }
 
-      const siblingRows = runningNoRows.get(documentNo(doc)) || [];
+      const siblingRows = runningNoRows.get(expectedRunningNo) || [];
       const recsForDoc = recipientsByDoc.get(r.document_id) || [];
-      const reusableBlankRow = recsForDoc.length === 1 ? siblingRows.find((row) => !row.hasRef) : undefined;
+      const reusableBlankRow = recsForDoc.length === 1
+        ? siblingRows.find((row) => !row.referenceId || !recipientIds.has(row.referenceId))
+        : undefined;
 
       if (reusableBlankRow) {
         const list = bySheet.get(reusableBlankRow.sheet) || [];
@@ -157,8 +198,22 @@ export async function GET() {
       tabsScanned: tabs.length,
       updated,
       appended,
-      message: updated === 0 && appended === 0 ? 'ข้อมูลใน Sheets ครบถ้วนแล้ว ไม่มีอะไรต้องแก้' : undefined,
+      duplicateReferences,
+      message: updated === 0 && appended === 0 && duplicateReferences === 0
+        ? 'ข้อมูลใน Sheets ครบถ้วนแล้ว ไม่มีอะไรต้องแก้'
+        : undefined,
     });
+    } finally {
+      try {
+        const { error: releaseError } = await supabase.rpc('release_sheet_backfill_lock', {
+          p_token: lockToken,
+        });
+        if (releaseError) console.error('[Backfill Sheets] release lock error:', releaseError);
+      } catch (releaseError) {
+        // lease มีวันหมดอายุ จึงไม่ให้การปลดล็อกที่ล้มเหลวกลบผลลัพธ์งานซ่อมจริง
+        console.error('[Backfill Sheets] release lock exception:', releaseError);
+      }
+    }
   } catch (error: any) {
     console.error('[Backfill Sheets] Error:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

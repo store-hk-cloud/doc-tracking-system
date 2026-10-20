@@ -21,6 +21,9 @@ export function loadModule(path, mocks = {}, globals = {}, cache = new Map()) {
       if (name in mocks) return mocks[name];
       if (name.startsWith('@/') || name.startsWith('.')) {
         const target = name.startsWith('@/') ? resolve('src', name.slice(2)) : resolve(dirname(file), name);
+        // การ import แบบ relative และ alias ต้องแทน dependency ตัวเดียวกันได้
+        const mockName = Object.keys(mocks).find((key) => key.startsWith('@/') && resolve('src', key.slice(2)) === target);
+        if (mockName) return mocks[mockName];
         const match = [target, `${target}.ts`, `${target}.tsx`, `${target}/index.ts`].find(existsSync);
         return loadModule(match, mocks, globals, cache);
       }

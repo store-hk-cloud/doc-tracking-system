@@ -66,8 +66,8 @@ export async function GET(request: NextRequest) {
       ...new Set(rows.flatMap((r) => [r.declared_by, r.accepted_by]).filter(Boolean)),
     ];
     const [{ data: branches }, { data: people }] = await Promise.all([
-      supabase.from('branches').select('id, name').in('id', branchIds.length ? branchIds : ['none']),
-      supabase.from('profiles').select('id, full_name').in('id', peopleIds.length ? peopleIds : ['none']),
+      supabase.from('branches').select('id, name').in('id', branchIds.length ? branchIds : ['00000000-0000-0000-0000-000000000000']),
+      supabase.from('profiles').select('id, full_name').in('id', peopleIds.length ? peopleIds : ['00000000-0000-0000-0000-000000000000']),
     ]);
     const branchMap = new Map((branches || []).map((b: any) => [b.id, b.name]));
     const nameMap = new Map((people || []).map((p: any) => [p.id, p.full_name]));

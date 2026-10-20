@@ -46,3 +46,48 @@ test('late initial session cannot restore a user after sign-out', async () => {
     assert.equal(app.state().loading, false);
   } finally { app.renderer.unmount(); }
 });
+
+test('username login sends both credentials to the opaque endpoint and stores only the returned session', async () => {
+  let state;
+  let setSessionInput;
+  const requests = [];
+  const location = { href: '' };
+  const auth = {
+    getSession: async () => ({ data: { session: null } }),
+    onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+    setSession: async (session) => {
+      setSessionInput = session;
+      return { error: null };
+    },
+  };
+  const authModule = loadModule('src/components/auth/AuthProvider.tsx', {
+    '@/lib/supabase/client': { createClient: () => ({ auth }) },
+  }, {
+    fetch: async (url, init) => {
+      requests.push({ url, init });
+      return {
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: { access_token: 'access-token', refresh_token: 'refresh-token' },
+        }),
+      };
+    },
+    window: { location },
+  });
+  function Reader() { state = authModule.useAuth(); return null; }
+  let renderer;
+  try {
+    await act(async () => { renderer = create(React.createElement(authModule.AuthProvider, null, React.createElement(Reader))); });
+    let error;
+    await act(async () => { error = await state.signInWithUsername('messenger_01', 'correct-password'); });
+
+    assert.equal(error, null);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url, '/api/auth/resolve-username');
+    assert.deepEqual(JSON.parse(requests[0].init.body), { username: 'messenger_01', password: 'correct-password' });
+    assert.equal(setSessionInput.access_token, 'access-token');
+    assert.equal(setSessionInput.refresh_token, 'refresh-token');
+    assert.equal(location.href, '/dashboard');
+  } finally { renderer?.unmount(); }
+});

@@ -49,7 +49,7 @@ function getAuth(): any {
 
 export function getSheetsClient(): any {
   const auth = getAuth();
-  if (!auth) throw new Error('Google Sheets not configured. Set GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET + GOOGLE_REFRESH_TOKEN in Vercel');
+  if (!auth) throw new Error('Google Sheets not configured. Set GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET + GOOGLE_REFRESH_TOKEN in the hosting environment');
   if (cachedSheets) return cachedSheets;
   cachedSheets = google.sheets({ version: 'v4', auth });
   return cachedSheets;
@@ -57,7 +57,7 @@ export function getSheetsClient(): any {
 
 export function getDriveClient(): any {
   const auth = getAuth();
-  if (!auth) throw new Error('Google Drive not configured. Set GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET + GOOGLE_REFRESH_TOKEN in Vercel');
+  if (!auth) throw new Error('Google Drive not configured. Set GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET + GOOGLE_REFRESH_TOKEN in the hosting environment');
   if (cachedDrive) return cachedDrive;
   cachedDrive = google.drive({ version: 'v3', auth });
   return cachedDrive;

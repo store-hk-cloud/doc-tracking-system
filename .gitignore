@@ -46,3 +46,12 @@ node_modules
 !.env.example
 
 .vercel
+
+# OpenNext
+.open-next
+
+# wrangler files
+.wrangler
+cloudflare-env.d.ts
+.dev.vars*
+!.dev.vars.example

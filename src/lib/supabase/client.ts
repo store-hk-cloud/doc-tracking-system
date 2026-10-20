@@ -8,7 +8,7 @@ export function createClient(): SupabaseClient {
 
   if (!supabaseUrl || !supabaseKey) {
     if (typeof window !== 'undefined') {
-      console.warn('⚠️ Supabase environment variables not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in .env.local or Vercel Environment Variables.');
+      console.warn('⚠️ Supabase environment variables not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in the hosting environment.');
     }
     // Return a mock client that won't crash build
     return {

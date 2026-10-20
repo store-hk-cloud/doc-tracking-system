@@ -72,24 +72,29 @@ export default function RecipientPage() {
     setSubmitting(true);
     setError('');
 
-    const res = await fetch('/api/deliveries', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        document_recipient_id: docId,
-        is_verified: verified,
-        recipient_signature: signature.trim(),
-        verification_note: verified ? null : verifyNote,
-      }),
-    });
+    try {
+      const res = await fetch('/api/deliveries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          document_recipient_id: docId,
+          is_verified: verified,
+          recipient_signature: signature.trim(),
+          verification_note: verified ? null : verifyNote,
+        }),
+      });
 
-    const data = await res.json();
-    if (data.success) {
-      setSuccess(verified ? '✅ รับเอกสารเรียบร้อย' : '⚠️ แจ้งปัญหาเรียบร้อย');
-    } else {
-      setError(data.error || 'เกิดข้อผิดพลาด');
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        setSuccess(verified ? '✅ รับเอกสารเรียบร้อย' : '⚠️ แจ้งปัญหาเรียบร้อย');
+      } else {
+        setError(data.error || `ไม่สำเร็จ (HTTP ${res.status})`);
+      }
+    } catch {
+      setError('ส่งคำขอไม่สำเร็จ กรุณาโหลดข้อมูลล่าสุดก่อนลองใหม่');
+    } finally {
+      setSubmitting(false);
     }
-    setSubmitting(false);
   };
 
   const handleApproval = async () => {
@@ -99,23 +104,28 @@ export default function RecipientPage() {
     }
     setSubmitting(true);
     setError('');
-    const res = await fetch(`/api/documents/${docId}/sign`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ [approvalStage]: signature.trim() }),
-    });
-    const data = await res.json();
-    if (data.success) {
-      setDoc(data.data);
-      setNotice(`✅ บันทึกชื่อ${approvalLabel}แล้ว`);
-      setSuccess('');
-      setEditingApprovalStage(null);
-      setSignature(profile?.full_name || '');
-      setSignatureTouched(false);
-    } else {
-      setError(data.error || 'เกิดข้อผิดพลาด');
+    try {
+      const res = await fetch(`/api/documents/${docId}/sign`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [approvalStage]: signature.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        setDoc(data.data);
+        setNotice(`✅ บันทึกชื่อ${approvalLabel}แล้ว`);
+        setSuccess('');
+        setEditingApprovalStage(null);
+        setSignature(profile?.full_name || '');
+        setSignatureTouched(false);
+      } else {
+        setError(data.error || `ไม่สำเร็จ (HTTP ${res.status})`);
+      }
+    } catch {
+      setError('ส่งคำขอไม่สำเร็จ กรุณาโหลดข้อมูลล่าสุดก่อนลองใหม่');
+    } finally {
+      setSubmitting(false);
     }
-    setSubmitting(false);
   };
 
   if (loading) return <div className="loading-screen">กำลังโหลด...</div>;

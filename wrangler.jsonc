@@ -1,0 +1,41 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"main": ".open-next/worker.js",
+	"name": "doc-tracking-system",
+	"account_id": "c926e9b2548989db0471228738765cef",
+	"compatibility_date": "2026-09-22",
+	"compatibility_flags": [
+		"nodejs_compat",
+		"global_fetch_strictly_public"
+	],
+	"assets": {
+		"directory": ".open-next/assets",
+		"binding": "ASSETS"
+	},
+	"services": [
+		{
+			// Self-reference service binding, the service name must match the worker name
+			// see https://opennext.js.org/cloudflare/caching
+			"binding": "WORKER_SELF_REFERENCE",
+			"service": "doc-tracking-system"
+		}
+	],
+	"images": {
+		// Enable image optimization
+		// see https://opennext.js.org/cloudflare/howtos/image
+		"binding": "IMAGES"
+	},
+	"vars": {
+		"NEXT_PUBLIC_SUPABASE_URL": "https://xebrtqvxmbjidrkvdktn.supabase.co",
+		"NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_ku63Ee2FNIJ4yqHbb3gc_Q_ajNbRpCC",
+		"NEXT_PUBLIC_APP_URL": "https://doc-tracking-system.store-hk.workers.dev",
+		"SUPER_ADMIN_EMAIL": "store-hk@hillkoff.com",
+		"SUPABASE_STORAGE_BUCKET": "doc-attachments"
+	},
+	"kv_namespaces": [
+		{
+			"binding": "NOTIFICATIONS_KV",
+			"id": "9b24f790fe77419a976c2a3b2129a2be"
+		}
+	]
+}

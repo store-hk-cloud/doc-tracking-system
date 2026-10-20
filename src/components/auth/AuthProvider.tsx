@@ -9,6 +9,7 @@ interface AuthContextType {
   profile: Profile | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<string | null>;
+  signInWithUsername: (username: string, password: string) => Promise<string | null>;
   signOut: () => Promise<void>;
 }
 
@@ -17,6 +18,7 @@ const AuthContext = createContext<AuthContextType>({
   profile: null,
   loading: true,
   signIn: async () => null,
+  signInWithUsername: async () => null,
   signOut: async () => {},
 });
 
@@ -68,17 +70,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return error.message;
     // Reload the page to get fresh session
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- ต้องโหลด AuthProvider ใหม่เพื่ออ่าน session/profile หลังเข้าสู่ระบบ
     window.location.href = '/dashboard';
     return null;
   };
 
+  const signInWithUsername = async (username: string, password: string): Promise<string | null> => {
+    try {
+      const response = await fetch('/api/auth/resolve-username', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const result = await response.json();
+      const accessToken = result?.data?.access_token;
+      const refreshToken = result?.data?.refresh_token;
+
+      if (!response.ok || result?.success !== true || typeof accessToken !== 'string' || typeof refreshToken !== 'string') {
+        return 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง';
+      }
+
+      const { error } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
+      if (error) return 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง';
+
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- ต้องโหลด AuthProvider ใหม่เพื่ออ่าน session/profile หลังเข้าสู่ระบบ
+      window.location.href = '/dashboard';
+      return null;
+    } catch {
+      return 'เชื่อมต่อไม่สำเร็จ กรุณาลองอีกครั้ง';
+    }
+  };
+
   const signOut = async () => {
     await supabase.auth.signOut();
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- โหลดใหม่เพื่อล้าง state และข้อมูลหน้าที่ป้องกันด้วย session
     window.location.href = '/';
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, profile, loading, signIn, signInWithUsername, signOut }}>
       {children}
     </AuthContext.Provider>
   );

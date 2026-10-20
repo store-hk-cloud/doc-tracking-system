@@ -86,6 +86,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // ตรวจ FK ที่ผู้ใช้เลือกก่อนสร้างบัญชี Auth เพราะ Auth กับ profile อยู่คนละ
+    // service และไม่สามารถทำ transaction ร่วมกันได้
+    if (body.department_id) {
+      const { data: department, error: departmentError } = await supabase
+        .from('departments')
+        .select('id')
+        .eq('id', body.department_id)
+        .maybeSingle();
+      if (departmentError) throw departmentError;
+      if (!department) {
+        return NextResponse.json({ success: false, error: 'ไม่พบหน่วยงานที่เลือก' }, { status: 400 });
+      }
+    }
+
     // Admins can only ever create plain 'user' accounts — never admin/super_admin.
     let role: string = 'user';
     if (auth.context!.profile.role === 'super_admin') {
@@ -100,12 +114,15 @@ export async function POST(request: NextRequest) {
       email_confirm: true,
     });
     if (authError) throw authError;
+    const createdUserId = authData.user?.id;
+    if (!createdUserId) throw new Error('สร้างบัญชีเข้าสู่ระบบไม่สำเร็จ');
 
-    // Create profile
+    // หาก insert profile ล้ม ต้องลบบัญชี Auth ที่เพิ่งสร้างทันที ไม่เช่นนั้นอีเมล
+    // เดิมจะล็อกอินไม่ได้และสร้างซ้ำไม่ได้ทั้งที่ไม่มีผู้ใช้ในระบบจริง
     const { data, error } = await supabase
       .from('profiles')
       .insert({
-        id: authData.user.id,
+        id: createdUserId,
         email,
         username,
         full_name: body.full_name,
@@ -115,7 +132,13 @@ export async function POST(request: NextRequest) {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error || !data) {
+      const { error: cleanupError } = await supabase.auth.admin.deleteUser(createdUserId);
+      if (cleanupError) {
+        console.error('[Profiles] ล้างบัญชี Auth ที่ไม่มี profile ไม่สำเร็จ:', cleanupError.message);
+      }
+      throw error || new Error('สร้างข้อมูลผู้ใช้ไม่สำเร็จ');
+    }
 
     // Get department name
     let department_name = null;

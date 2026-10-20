@@ -31,24 +31,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!job) return NextResponse.json({ success: false, error: 'ไม่พบงานนี้' }, { status: 404 });
     if (job.assigned_to !== ctx.user.id) return forbiddenResponse();
 
-    // ทริปหนึ่งเก็บซองได้หลายสาขาแล้วฝากรวมครั้งเดียว จึงรวมทุกจุดรับของงานนี้
-    // ยอดที่ควรฝาก = ผลรวมยอดหน้าซองทุกใบ (trigger assert_expected_matches_pickups
-    // คำนวณผลรวมเดียวกันใน DB แล้วเทียบ ส่งค่าปลอมมาไม่ได้)
-    const { data: pickups } = await supabase
-      .from('cash_pickups')
-      .select('*')
-      .eq('job_id', jobId)
-      .order('picked_up_at');
-    if (!pickups || pickups.length === 0) {
-      return NextResponse.json(
-        { success: false, error: 'ต้องบันทึกการรับซองเงินอย่างน้อยหนึ่งจุดก่อน' },
-        { status: 409 }
-      );
-    }
-    const expectedTotalSatang = pickups.reduce(
-      (sum: number, p: any) => sum + Number(p.envelope_amount_satang),
-      0
-    );
+    // การรวมยอดและผูก pickup ต้องทำใต้ล็อกเดียวกับการสร้างใบฝาก เพื่อไม่ให้
+    // คำขอรับซองอีกชุดแทรกระหว่างคำนวณยอดกับการฝาก
 
     // ── ตรวจ input ──
     let actualSatang: number;
@@ -176,72 +160,44 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const submittedSignature = await getActorName(ctx.user.id, ctx.user.email);
     const depositedAt = body.deposited_at || new Date().toISOString();
 
-    // ── ย้ายสถานะงานก่อน: ยิงซ้ำสองครั้งเพื่อชนกันแล้วเลือกยอดที่ต่ำกว่า จะแพ้ที่นี่ ──
-    const { data: movedJob, error: moveError } = await supabase
-      .from('messenger_jobs')
-      .update({ status: 'deposited', deposited_at: depositedAt })
-      .eq('id', jobId)
-      .eq('assigned_to', ctx.user.id)
-      .eq('status', 'picked_up')
-      .select()
-      .single();
-    if (moveError || !movedJob) {
-      return NextResponse.json(
-        { success: false, error: 'งานนี้บันทึกการฝากเงินไปแล้ว' },
-        { status: 409 }
-      );
-    }
-
-    // expected_total ถูก trigger assert_expected_matches_pickups ตรวจซ้ำกับ
-    // ผลรวม pay-in จริงใน DB ส่งค่าปลอมมาไม่ได้
-    const { data: deposit, error: depositError } = await supabase
-      .from('bank_deposits')
-      .insert({
-        job_id: jobId,
-        status: 'recorded',
-        bank_id: bank.id,
-        bank_branch_id: bankBranchId,
-        bank_branch_name: bankBranchName,
-        expected_total_satang: expectedTotalSatang,
-        actual_amount_satang: actualSatang,
-        reference_no: referenceNo,
-        reference_no_source: referenceNoSource,
-        slip_photo_id: slipPhotoId,
-        slip_status: slipPhotoId ? 'attached' : 'pending',
-        deposited_at: depositedAt,
-        submitted_by: ctx.user.id,
-        submitted_signature: submittedSignature,
-      })
-      .select()
-      .single();
-
-    if (depositError) {
-      // rollback สถานะงานเพื่อให้ผู้ใช้กรอกใหม่ได้ ไม่ค้างอยู่ในสถานะ deposited
-      // ที่ไม่มี deposit จริง (ไม่มี transaction ข้าม HTTP ได้กับ supabase-js)
-      await supabase
-        .from('messenger_jobs')
-        .update({ status: 'picked_up', deposited_at: null })
-        .eq('id', jobId)
-        .eq('status', 'deposited');
-      const duplicateRef = /uq_bank_deposits_ref/.test(depositError.message || '');
+    // สร้างใบฝาก, ผูกทุก pickup และตัดสินสถานะสุดท้ายใน transaction เดียว
+    // หาก unique/FK/trigger ใดล้ม สถานะงานยังเป็น picked_up และกรอกใหม่ได้ทันที
+    const { data: transaction, error: transactionError } = await supabase.rpc('record_bank_deposit', {
+      p_job_id: jobId,
+      p_actor_id: ctx.user.id,
+      p_bank_id: bank.id,
+      p_bank_branch_id: bankBranchId,
+      p_bank_branch_name: bankBranchName,
+      p_actual_amount_satang: actualSatang,
+      p_reference_no: referenceNo,
+      p_reference_no_source: referenceNoSource,
+      p_slip_photo_id: slipPhotoId,
+      p_deposited_at: depositedAt,
+      p_submitted_signature: submittedSignature,
+    });
+    if (transactionError || !transaction) {
+      const message = transactionError?.message || 'บันทึกการฝากเงินไม่สำเร็จ';
+      const duplicateRef = /uq_bank_deposits_ref|duplicate key/i.test(message);
+      const noPickups = /no_cash_pickups/.test(message);
+      const alreadyDeposited = /deposit_not_allowed/.test(message);
       return NextResponse.json(
         {
           success: false,
-          error: duplicateRef
+          error: noPickups
+            ? 'ต้องบันทึกการรับซองเงินอย่างน้อยหนึ่งจุดก่อน'
+            : duplicateRef
             ? 'เลขที่ใบนำฝากนี้ถูกบันทึกไปแล้วกับธนาคารเดียวกัน'
-            : depositError.message,
+            : alreadyDeposited
+              ? 'งานนี้บันทึกการฝากเงินไปแล้ว'
+              : message,
         },
-        { status: duplicateRef ? 409 : 500 }
+        { status: duplicateRef || noPickups || alreadyDeposited ? 409 : 500 }
       );
     }
-
-    // ผูกทุกจุดรับของทริปเข้ากับการฝากครั้งนี้ เพื่อให้ตามรอยได้ว่าซองจากสาขาไหน
-    // ไปอยู่ในใบฝากใบใด (deposit_id เป็น write-once ที่ระดับ trigger)
-    await supabase
-      .from('cash_pickups')
-      .update({ deposit_id: deposit.id })
-      .eq('job_id', jobId)
-      .is('deposit_id', null);
+    const result = transaction as any;
+    const deposit = result.deposit;
+    const expectedTotalSatang = Number(result.expected_total_satang);
+    const pickupCount = Number(result.pickup_count);
 
     // ── Decision: ยอดตรงหรือไม่ (อ่านจาก generated column) ──
     const variance = deposit.variance_satang as number;
@@ -262,7 +218,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         bank_branch_from_list: !!bankBranchId && !bankBranchCreated,
         bank_branch_created: bankBranchCreated,
         expected_total_satang: expectedTotalSatang,
-        pickup_count: pickups.length,
+        pickup_count: pickupCount,
         reference_no_source: referenceNoSource,
         slip_status: deposit.slip_status,
         variance_kind: kind,
@@ -272,21 +228,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const financeDepts = await financeDepartmentIds();
 
     if (kind === 'match') {
-      // ยอดตรง -> ปิดงานอัตโนมัติ (deposit ไป matched ได้ต่อเมื่อมีรูปแล้ว
-      // ตาม CHECK bank_deposits_final_needs_slip ถ้ายังรอรูปจะค้างที่ recorded)
-      if (deposit.slip_photo_id) {
-        await supabase
-          .from('bank_deposits')
-          .update({ status: 'matched' })
-          .eq('id', deposit.id)
-          .eq('status', 'recorded');
-      }
-      await supabase
-        .from('messenger_jobs')
-        .update({ status: 'completed', completed_at: new Date().toISOString() })
-        .eq('id', jobId)
-        .eq('status', 'deposited');
-
       await Promise.all(
         financeDepts.map((deptId) =>
           notifyDepartment(deptId, {
@@ -305,17 +246,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     // ── ยอดไม่ตรง -> ต้องทำ Cash Variance Report ก่อน ปิดเองไม่ได้ ──
-    await supabase
-      .from('bank_deposits')
-      .update({ status: 'variance_pending' })
-      .eq('id', deposit.id)
-      .eq('status', 'recorded');
-    await supabase
-      .from('messenger_jobs')
-      .update({ status: 'pending_review' })
-      .eq('id', jobId)
-      .eq('status', 'deposited');
-
     await Promise.all(
       financeDepts.map((deptId) =>
         notifyDepartment(deptId, {
@@ -386,28 +316,20 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       );
     }
 
-    const { data: updated, error } = await supabase
-      .from('bank_deposits')
-      .update({ slip_photo_id: photo.id, slip_status: 'attached' })
-      .eq('id', deposit.id)
-      .is('slip_photo_id', null)
-      .select()
-      .single();
-    if (error || !updated) {
+    // แนบรูปและเปลี่ยนรายการยอดตรงเป็น matched พร้อมกัน เพราะทั้งสองการเปลี่ยน
+    // กลับไม่ได้หลังแนบรูปสำเร็จ หากขั้นใดล้ม RPC จะ rollback ทั้งคู่
+    const { data: transaction, error } = await supabase.rpc('attach_bank_deposit_slip', {
+      p_deposit_id: deposit.id,
+      p_actor_id: ctx.user.id,
+      p_slip_photo_id: photo.id,
+    });
+    if (error || !transaction) {
       return NextResponse.json(
         { success: false, error: error?.message || 'แนบรูปไม่สำเร็จ' },
         { status: 409 }
       );
     }
-
-    // ยอดตรงและตอนนี้มีรูปแล้ว -> ปิดรายการฝากได้
-    if (updated.variance_satang === 0) {
-      await supabase
-        .from('bank_deposits')
-        .update({ status: 'matched' })
-        .eq('id', updated.id)
-        .eq('status', 'recorded');
-    }
+    const updated = (transaction as any).deposit;
 
     await appendAudit(ctx, {
       job_id: jobId,

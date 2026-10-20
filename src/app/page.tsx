@@ -14,39 +14,18 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { signIn } = useAuth();
+  const { signIn, signInWithUsername } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    // แมสเซนเจอร์ไม่มีอีเมลบริษัท จึงล็อกอินด้วยชื่อผู้ใช้
-    // Supabase Auth ผูกกับอีเมลเสมอ เราจึงให้ server แปลงชื่อผู้ใช้เป็นอีเมลก่อน
-    // แล้วค่อยเข้าสู่ระบบตามปกติ — รหัสผ่านยังถูกตรวจโดย Supabase เหมือนเดิม
-    let loginEmail = email;
-    if (mode === 'username') {
-      try {
-        const res = await fetch('/api/auth/resolve-username', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: username.trim() }),
-        });
-        const data = await res.json();
-        if (!data.success) {
-          setError(data.error || 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
-          setLoading(false);
-          return;
-        }
-        loginEmail = data.data.email;
-      } catch {
-        setError('เชื่อมต่อไม่สำเร็จ กรุณาลองอีกครั้ง');
-        setLoading(false);
-        return;
-      }
-    }
-
-    const err = await signIn(loginEmail, password);
+    // ส่งชื่อผู้ใช้พร้อมรหัสผ่านให้ server ตรวจในคำขอเดียว เพื่อไม่ให้อีเมลของบัญชี
+    // ถูก resolve และปรากฏใน browser ก่อนยืนยันตัวตนสำเร็จ
+    const err = mode === 'username'
+      ? await signInWithUsername(username.trim(), password)
+      : await signIn(email, password);
     if (err) setError(mode === 'username' ? 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' : err);
     setLoading(false);
   };

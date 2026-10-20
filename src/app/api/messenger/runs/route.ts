@@ -65,8 +65,8 @@ export async function GET(request: NextRequest) {
     const profileIds = [...new Set(rows.map((r: any) => r.assigned_to).filter(Boolean))];
 
     const [{ data: branches }, { data: profiles }] = await Promise.all([
-      supabase.from('branches').select('id, name').in('id', branchIds.length ? branchIds : ['none']),
-      supabase.from('profiles').select('id, full_name').in('id', profileIds.length ? profileIds : ['none']),
+      supabase.from('branches').select('id, name').in('id', branchIds.length ? branchIds : ['00000000-0000-0000-0000-000000000000']),
+      supabase.from('profiles').select('id, full_name').in('id', profileIds.length ? profileIds : ['00000000-0000-0000-0000-000000000000']),
     ]);
     const branchMap = new Map((branches || []).map((b: any) => [b.id, b.name]));
     const nameMap = new Map((profiles || []).map((p: any) => [p.id, p.full_name]));
@@ -172,7 +172,17 @@ export async function POST(request: NextRequest) {
       })
       .select()
       .single();
-    if (error) throw error;
+    if (error) {
+      // ด่าน SELECT ด้านบนช่วยให้ตอบข้อความที่อ่านง่าย แต่ unique index ใน DB
+      // คือด่านจริงสำหรับคำขอเปิดทริปพร้อมกันหลายคำขอ
+      if (error.code === '23505' && /uq_messenger_jobs_active_cash_handover/.test(error.message || '')) {
+        return NextResponse.json(
+          { success: false, error: 'ยังมีงานฝากเงินที่ค้างอยู่ ต้องดำเนินการให้เสร็จก่อนเปิดงานใหม่' },
+          { status: 409 }
+        );
+      }
+      throw error;
+    }
 
     await appendAudit(ctx, {
       job_id: job.id,

@@ -40,6 +40,13 @@ function todaySheetName(): string {
   return bangkokDate();
 }
 
+// แท็บข้อมูลของระบบมีได้เฉพาะวันที่ ISO เท่านั้น แท็บ suffix _conflict... เป็น
+// ซากจากบัคเดิมที่ Google เติมชื่อให้ตอน create พร้อมกัน ห้ามใช้เป็นแหล่งค้นหา
+// หรือปลายทางเขียน มิฉะนั้นสถานะใหม่จะไปอัปเดตสำเนาเก่าแทนแถวหลัก.
+function isDailySheetName(value: unknown): value is string {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
 /* ─────────────────────── กันชนโควตาของ Google Sheets ───────────────────────
  *
  * โควตาคือ 300 คำขอ/นาที ต่อโปรเจกต์ และ 60 คำขอ/นาที ต่อผู้ใช้ ซึ่งที่นี่คือ
@@ -108,12 +115,75 @@ async function getOrCreateSpreadsheet(): Promise<string> {
 // same warm serverless instance — cuts a metadata read per call down to one.
 const ensuredDailySheets = new Set<string>();
 const dailySheetBuilds = new Map<string, Promise<string>>();
+const headerRepairBuilds = new Map<string, Promise<string>>();
 
 function deterministicSheetId(date: string): number {
   return Number(date.replaceAll('-', ''));
 }
 
-async function ensureDailySheet(date: string): Promise<string> {
+function hasExpectedHeader(row: unknown): boolean {
+  return Array.isArray(row) && HEADERS.every((header, index) => row[index] === header);
+}
+
+function looksLikeHeader(row: unknown[]): boolean {
+  return row[0] === HEADERS[0]
+    || row[0] === 'Running No.'
+    || row[20] === HEADERS[20];
+}
+
+async function ensureDailyHeader(
+  spreadsheetId: string,
+  sheets: ReturnType<typeof getSheetsClient>,
+  date: string,
+  sheetId: number,
+  repairDocumentRow: boolean,
+): Promise<boolean> {
+  const { data } = await withSheetsSlot<any>(() => sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${date}!A1:U1`,
+  }));
+  const firstRow = data?.values?.[0] || [];
+  if (hasExpectedHeader(firstRow)) return false;
+
+  // หัวตารางรุ่นเก่าเปลี่ยนได้ตรง ๆ แต่ข้อมูลจริงแถวแรกต้องเลื่อนลงก่อน
+  // เพื่อไม่ให้การซ่อมแท็บที่เคยสร้างพลาดทำเอกสารแถวแรกหายไป
+  if (firstRow.some((value: unknown) => value !== '') && !looksLikeHeader(firstRow)) {
+    if (!repairDocumentRow) return false;
+    await withSheetsSlot(() => sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          {
+            insertDimension: {
+              range: { sheetId, dimension: 'ROWS', startIndex: 0, endIndex: 1 },
+              inheritFromBefore: false,
+            },
+          },
+          {
+            updateCells: {
+              start: { sheetId, rowIndex: 0, columnIndex: 0 },
+              rows: [{
+                values: HEADERS.map((header) => ({ userEnteredValue: { stringValue: header } })),
+              }],
+              fields: 'userEnteredValue',
+            },
+          },
+        ],
+      },
+    }));
+  } else {
+    await withSheetsSlot(() => sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${date}!A1:U1`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [HEADERS] },
+    }));
+  }
+  invalidateLocationIndexes();
+  return true;
+}
+
+async function ensureDailySheet(date: string, repairExistingHeader = false): Promise<string> {
   const spreadsheetId = await getSpreadsheetId();
   const sheets = getSheetsClient();
   let created = false;
@@ -123,9 +193,9 @@ async function ensureDailySheet(date: string): Promise<string> {
     sheets.spreadsheets.get({ spreadsheetId })
   );
   const existingSheets = sheetInfo?.sheets || [];
-  const hasToday = existingSheets.some((s: any) => s.properties?.title === date);
+  let dailySheet = existingSheets.find((s: any) => s.properties?.title === date);
 
-  if (!hasToday) {
+  if (!dailySheet) {
     try {
       // sheetId ที่คำนวณจากวันที่ทำให้ serverless หลาย instance ที่สร้างแท็บ
       // พร้อมกันชนกันด้วย ID เดียว แล้วมีเพียงคำขอแรกที่สำเร็จ แทนที่ Google
@@ -141,24 +211,22 @@ async function ensureDailySheet(date: string): Promise<string> {
         },
       }));
       created = true;
+      dailySheet = { properties: { sheetId: deterministicSheetId(date), title: date } };
     } catch (error) {
       // อีก instance อาจสร้างแท็บสำเร็จระหว่าง metadata read กับ addSheet
       // ยอมรับ error ได้เฉพาะเมื่ออ่านซ้ำแล้วพบแท็บหลักจริงเท่านั้น
       const { data: latest } = await withSheetsSlot<any>(() =>
         sheets.spreadsheets.get({ spreadsheetId })
       );
-      const nowExists = (latest?.sheets || []).some((s: any) => s.properties?.title === date);
-      if (!nowExists) throw error;
+      dailySheet = (latest?.sheets || []).find((s: any) => s.properties?.title === date);
+      if (!dailySheet) throw error;
     }
-    // Write headers
-    await withSheetsSlot(() => sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `${date}!A1:U1`,
-      valueInputOption: 'USER_ENTERED',
-      requestBody: { values: [HEADERS] },
-    }));
-    if (created) console.log(`[Google Sheets] Created daily sheet: ${date}`);
   }
+
+  const sheetId = dailySheet?.properties?.sheetId;
+  if (typeof sheetId !== 'number') throw new Error(`Daily sheet ${date} has no sheet ID`);
+  await ensureDailyHeader(spreadsheetId, sheets, date, sheetId, created || repairExistingHeader);
+  if (created) console.log(`[Google Sheets] Created daily sheet: ${date}`);
 
   ensuredDailySheets.add(date);
   return date;
@@ -172,6 +240,22 @@ async function getOrCreateDailySheet(date = todaySheetName()): Promise<string> {
   const build = ensureDailySheet(date).finally(() => dailySheetBuilds.delete(date));
   dailySheetBuilds.set(date, build);
   return build;
+}
+
+// ใช้ก่อนอ่านแท็บรายวันในงานซ่อม เพื่อให้ข้อมูลแถวแรกไม่ถูกตีความว่าเป็น header
+// แล้วหลุดจากการเทียบกับฐานข้อมูล.
+export async function ensureDailySheetReady(date: string): Promise<string> {
+  if (!isDailySheetName(date)) throw new Error(`Invalid daily sheet name: ${date}`);
+  const inFlightRepair = headerRepairBuilds.get(date);
+  if (inFlightRepair) return inFlightRepair;
+
+  const repair = (async () => {
+    const inFlightBuild = dailySheetBuilds.get(date);
+    if (inFlightBuild) await inFlightBuild;
+    return ensureDailySheet(date, true);
+  })().finally(() => headerRepairBuilds.delete(date));
+  headerRepairBuilds.set(date, repair);
+  return repair;
 }
 
 export async function getSpreadsheetId(): Promise<string> {
@@ -190,7 +274,7 @@ export async function listSheetTabs(): Promise<string[]> {
   const { data: info } = await withSheetsSlot<any>(() =>
     sheets.spreadsheets.get({ spreadsheetId })
   );
-  return (info?.sheets || []).map((s: any) => s.properties?.title).filter(Boolean);
+  return (info?.sheets || []).map((s: any) => s.properties?.title).filter(isDailySheetName);
 }
 
 /** Read all rows (including header) of a given sheet tab, columns A:U. */
@@ -204,6 +288,28 @@ export async function getSheetValues(sheet: string): Promise<string[][]> {
     sheets.spreadsheets.values.get({ spreadsheetId, range: `${sheet}!A:U` })
   );
   return res.data.values || [];
+}
+
+/** Read multiple daily tabs in one API request to keep maintenance below Sheets read quota. */
+export async function getSheetValuesBatch(sheetNames: string[]): Promise<Map<string, string[][]>> {
+  const names = [...new Set(sheetNames.filter(isDailySheetName))];
+  const rowsBySheet = new Map<string, string[][]>();
+  if (names.length === 0) return rowsBySheet;
+
+  const spreadsheetId = await getSpreadsheetId();
+  const sheets = getSheetsClient();
+  for (let start = 0; start < names.length; start += 100) {
+    const chunk = names.slice(start, start + 100);
+    const { data } = await withSheetsSlot<any>(() => sheets.spreadsheets.values.batchGet({
+      spreadsheetId,
+      ranges: chunk.map((sheet) => `${sheet}!A:U`),
+    }));
+    const valueRanges = data?.valueRanges || [];
+    for (let index = 0; index < chunk.length; index += 1) {
+      rowsBySheet.set(chunk[index], valueRanges[index]?.values || []);
+    }
+  }
+  return rowsBySheet;
 }
 
 /** Overwrite multiple full rows (A:U) within a single sheet tab in one API call. */
@@ -225,7 +331,7 @@ export async function batchUpdateRowsOrThrow(sheet: string, updates: { row: numb
   await withSheetsSlot(() => sheets.spreadsheets.values.batchUpdate({
     spreadsheetId,
     requestBody: {
-      valueInputOption: 'USER_ENTERED',
+      valueInputOption: 'RAW',
       data: updates.map((u) => ({ range: `${sheet}!A${u.row}:U${u.row}`, values: [u.values] })),
     },
   }));
@@ -237,7 +343,7 @@ export async function updateRowInSheetOrThrow(sheet: string, rowIndex: number, v
   await withSheetsSlot(() => sheets.spreadsheets.values.update({
     spreadsheetId,
     range: `${sheet}!A${rowIndex}:U${rowIndex}`,
-    valueInputOption: 'USER_ENTERED',
+    valueInputOption: 'RAW',
     requestBody: { values: [values] },
   }));
 }
@@ -262,17 +368,17 @@ export async function appendRowsOrThrow(sheetName: string, rows: string[][]) {
   if (rows.length === 0) return;
   const spreadsheetId = await getSpreadsheetId();
   const sheets = getSheetsClient();
-  const preferredDate = /^\d{4}-\d{2}-\d{2}$/.test(sheetName) ? sheetName : todaySheetName();
+  const preferredDate = isDailySheetName(sheetName) ? sheetName : todaySheetName();
   const targetSheet = await getOrCreateDailySheet(preferredDate);
   await withSheetsSlot(() => sheets.spreadsheets.values.append({
     spreadsheetId,
     range: `${targetSheet}!A:U`,
-    valueInputOption: 'USER_ENTERED',
+    valueInputOption: 'RAW',
     requestBody: { values: rows },
   }));
   // แถวที่เพิ่งเพิ่มยังไม่อยู่ในดัชนี — ทิ้งดัชนีเพื่อไม่ให้ findRowLocation หาไม่เจอ
   // แล้วต้อง rebuild เองทุกครั้งที่ถูกเรียกถึงแถวใหม่
-  locationIndexes.clear();
+  invalidateLocationIndexes();
 }
 
 // Update a row in a specific sheet tab (use findRowLocation first — a row may
@@ -295,28 +401,33 @@ const LOCATION_INDEX_TTL_MS = 60_000;
 const locationIndexes = new Map<number, { builtAt: number; byValue: Map<string, RowLocation> }>();
 // คำขอที่มาพร้อมกันต้องรอดัชนีชุดเดียวกัน ไม่ใช่ต่างคนต่างสร้าง
 const locationIndexBuilds = new Map<number, Promise<Map<string, RowLocation>>>();
+let locationIndexGeneration = 0;
+
+function invalidateLocationIndexes() {
+  locationIndexGeneration += 1;
+  locationIndexes.clear();
+}
 
 async function buildLocationIndex(column: number): Promise<Map<string, RowLocation>> {
   const spreadsheetId = await getSpreadsheetId();
   const sheets = getSheetsClient();
   const today = todaySheetName();
   const { data: info } = await withSheetsSlot<any>(() => sheets.spreadsheets.get({ spreadsheetId }));
-  const allSheets = (info?.sheets || []).map((s: any) => s.properties?.title).filter(Boolean);
+  const dailySheets = (info?.sheets || []).filter((s: any) => isDailySheetName(s.properties?.title));
+  const allSheets = dailySheets.map((s: any) => s.properties.title);
 
   // เรียงแท็บวันนี้ไว้หน้าสุด และเก็บ "ค่าแรกที่เจอ" เพื่อให้ผลลัพธ์ตรงกับการ
   // ค้นแบบเดิมทุกกรณี รวมถึงกรณีรหัสอ้างอิงซ้ำข้ามแท็บ
   const targetSheets = allSheets.includes(today)
     ? [today, ...allSheets.filter((s: string) => s !== today)]
     : allSheets;
+  const rowsBySheet = await getSheetValuesBatch(targetSheets);
 
   const byValue = new Map<string, RowLocation>();
   for (const sheet of targetSheets) {
-    const res = await withSheetsSlot<any>(() => sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: `${sheet}!A:U`,
-    }));
-    const rows = res.data.values || [];
-    for (let i = 1; i < rows.length; i++) {
+    const rows = rowsBySheet.get(sheet) || [];
+    const firstDataRow = hasExpectedHeader(rows[0] || []) || looksLikeHeader(rows[0] || []) ? 1 : 0;
+    for (let i = firstDataRow; i < rows.length; i++) {
       const key = rows[i][column - 1]?.toString();
       if (key && !byValue.has(key)) byValue.set(key, { sheet, row: i + 1 });
     }
@@ -332,11 +443,17 @@ async function getLocationIndex(column: number, forceRebuild: boolean): Promise<
   const inFlight = locationIndexBuilds.get(column);
   if (inFlight) return inFlight;
 
-  const build = buildLocationIndex(column)
-    .then((byValue) => {
-      locationIndexes.set(column, { builtAt: Date.now(), byValue });
-      return byValue;
-    })
+  const build = (async () => {
+    // การซ่อมหัวตารางอาจเลื่อนเลขแถวระหว่างที่อ่านดัชนี ต้องทิ้ง snapshot เก่าด้วย
+    let generation: number;
+    let byValue: Map<string, RowLocation>;
+    do {
+      generation = locationIndexGeneration;
+      byValue = await buildLocationIndex(column);
+    } while (generation !== locationIndexGeneration);
+    locationIndexes.set(column, { builtAt: Date.now(), byValue });
+    return byValue;
+  })()
     .finally(() => locationIndexBuilds.delete(column));
   locationIndexBuilds.set(column, build);
   return build;
@@ -345,20 +462,19 @@ async function getLocationIndex(column: number, forceRebuild: boolean): Promise<
 // Returns which sheet TAB a row lives in, not just its row number — a match found
 // in an older daily tab must be updated there, not in today's tab (see updateRowInSheet).
 export async function findRowLocation(column: number, value: string): Promise<RowLocation | null> {
-  try {
-    const hit = (await getLocationIndex(column, false)).get(value);
-    if (hit) return hit;
-    // ไม่เจอในดัชนี = อาจเป็นแถวที่ถูก append หลังดัชนีถูกสร้าง จึงสร้างใหม่หนึ่งครั้ง
-    // ก่อนจะสรุปว่าไม่มีจริง (ราคาเท่าการสแกนแบบเดิม ไม่แพงกว่า)
-    return (await getLocationIndex(column, true)).get(value) || null;
-  } catch (error) {
-    console.error('[Google Sheets] Find error:', error);
-    return null;
-  }
+  const hit = (await getLocationIndex(column, false)).get(value);
+  if (hit) return hit;
+  // ไม่เจอในดัชนี = อาจเป็นแถวที่ถูก append หลังดัชนีถูกสร้าง จึงสร้างใหม่หนึ่งครั้ง
+  // ก่อนจะสรุปว่าไม่มีจริง (ราคาเท่าการสแกนแบบเดิม ไม่แพงกว่า)
+  return (await getLocationIndex(column, true)).get(value) || null;
 }
 
+// serialize งานของผู้รับคนเดียวกันใน instance เดียว: ถ้าทั้งสองคำขอค้นหาแถว
+// ก่อนที่คำขอแรกจะ append สำเร็จ ต่างคนต่างเห็นว่าไม่พบและสร้างสำเนาซ้ำได้.
+const rowSyncQueues = new Map<string, Promise<void>>();
+
 /** อัปเดตแถวเดิม หรือเติมแถวที่เคยซิงก์พลาดลงแท็บของวันที่รับเอกสาร */
-export async function syncRowInSheet(preferredSheet: string, values: string[]) {
+async function syncRowInSheetOnce(preferredSheet: string, values: string[]) {
   try {
     const referenceId = values[20];
     const location = referenceId ? await findRowLocation(21, referenceId) : null;
@@ -367,6 +483,22 @@ export async function syncRowInSheet(preferredSheet: string, values: string[]) {
   } catch (error) {
     console.error('[Google Sheets] Sync row error:', error);
   }
+}
+
+export async function syncRowInSheet(preferredSheet: string, values: string[]) {
+  const referenceId = values[20];
+  if (!referenceId) return syncRowInSheetOnce(preferredSheet, values);
+
+  const key = String(referenceId);
+  const previous = rowSyncQueues.get(key);
+  const queued = (previous || Promise.resolve())
+    .catch(() => undefined)
+    .then(() => syncRowInSheetOnce(preferredSheet, values))
+    .finally(() => {
+      if (rowSyncQueues.get(key) === queued) rowSyncQueues.delete(key);
+    });
+  rowSyncQueues.set(key, queued);
+  return queued;
 }
 
 export async function getSpreadsheetUrl(): Promise<string | null> {

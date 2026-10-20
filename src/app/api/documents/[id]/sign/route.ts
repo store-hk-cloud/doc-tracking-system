@@ -35,6 +35,13 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const parentDocument = (existingRecipient as any).documents;
     const isGoodsReceiptDocument = isGoodsReceipt(parentDocument?.subject);
 
+    if (!isGoodsReceiptDocument && (!isDelivering || hasInspectorSig || hasPurchasingSig)) {
+      return NextResponse.json(
+        { success: false, error: 'Only admin_signature can deliver a non-goods-receipt document' },
+        { status: 400 }
+      );
+    }
+
     // 'user' may deliver to their own department OR any document they registered
     // themselves (cross-department); admin/super_admin are unrestricted either way.
     const recordedBy = parentDocument?.recorded_by;
@@ -159,9 +166,17 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         ...(hasPurchasingSig ? { purchasing_signature: body.purchasing_signature || null } : {}),
       })
       .eq('id', id)
+      // ต้องยืนยันสถานะใน UPDATE ด้วย เพราะคำขอเซ็นสองครั้งอาจอ่าน registered
+      // พร้อมกันได้ ถ้าเช็กแค่ก่อนเขียน คนหลังจะทับลายเซ็นและส่งแจ้งเตือนซ้ำ
+      .eq('status', 'registered')
       .select()
       .single();
-    if (error) throw error;
+    if (error || !recipient) {
+      return NextResponse.json(
+        { success: false, error: 'Only registered documents can be signed for delivery' },
+        { status: 409 }
+      );
+    }
 
     const { data: doc } = await supabase.from('documents').select('*').eq('id', recipient.document_id).single();
     if (!doc) throw new Error('Parent document not found');
