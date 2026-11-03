@@ -127,14 +127,18 @@ export async function GET() {
     }
 
     const buildValues = (doc: any, r: any) => {
-      const delivery = AWAITING_RECEIPT.has(r.status) ? null : deliveryByRecipient.get(r.id);
+      const rejectionNote = r.status === 'rejected'
+        ? r.inspector_verified === false ? `ผู้ตรวจสอบ: ${r.inspector_verification_note || ''}`
+          : r.purchasing_verified === false ? `จัดซื้อ: ${r.purchasing_verification_note || ''}` : null
+        : null;
+      const delivery = rejectionNote !== null || AWAITING_RECEIPT.has(r.status) ? null : deliveryByRecipient.get(r.id);
       const profName = profileMap.get(doc.recorded_by) || '';
       return [
         documentNo(doc), doc.received_date, doc.doc_number || '',
         doc.sender, doc.subject, deptMap.get(r.department_id) || '',
         r.status, r.admin_signature || '', r.admin_signed_at || '',
         delivery ? (profileMap.get(delivery.recipient_id) || '') : '', delivery?.recipient_signature || '', delivery?.recipient_signed_at || '',
-        delivery ? (delivery.is_verified ? 'ถูกต้อง' : 'ไม่ถูกต้อง') : '', delivery?.verification_note || '',
+        rejectionNote !== null ? 'ไม่ถูกต้อง' : delivery ? (delivery.is_verified ? 'ถูกต้อง' : 'ไม่ถูกต้อง') : '', rejectionNote ?? delivery?.verification_note ?? '',
         doc.is_damaged ? 'ใช่' : 'ไม่', doc.damage_image_url || '', doc.note || '',
         profName, r.updated_at, doc.tax_invoice_no || '', r.id,
       ];

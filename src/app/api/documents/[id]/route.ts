@@ -52,6 +52,12 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       data: {
         ...data,
         ...recipient,
+        rejection_stage: recipient.status !== 'rejected' ? null
+          : recipient.inspector_verified === false ? 'inspector'
+          : recipient.purchasing_verified === false ? 'purchasing' : 'recipient',
+        rejection_note: recipient.status !== 'rejected' ? null
+          : recipient.inspector_verified === false ? recipient.inspector_verification_note
+          : recipient.purchasing_verified === false ? recipient.purchasing_verification_note : null,
         id: recipient.id,
         document_id: data.id,
         recipient_dept_id: recipient.department_id,
@@ -156,15 +162,19 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const awaitingReceipt = new Set(['registered', 'delivered', 'awaiting_inspector', 'awaiting_purchasing', 'awaiting_recipient']);
 
     for (const r of recipients || []) {
-      const delivery = awaitingReceipt.has(r.status) ? null : deliveryByRecipient.get(r.id);
+      const rejectionNote = r.status === 'rejected'
+        ? r.inspector_verified === false ? `ผู้ตรวจสอบ: ${r.inspector_verification_note || ''}`
+          : r.purchasing_verified === false ? `จัดซื้อ: ${r.purchasing_verification_note || ''}` : null
+        : null;
+      const delivery = rejectionNote !== null || awaitingReceipt.has(r.status) ? null : deliveryByRecipient.get(r.id);
       await syncRowInSheet(data.received_date, [
           documentNo(data), data.received_date, data.doc_number || '',
           data.sender, data.subject, deptNameMap.get(r.department_id) || '',
           r.status, r.admin_signature || '', r.admin_signed_at || '',
           delivery ? (deliveryProfileMap.get(delivery.recipient_id) || '') : '',
           delivery?.recipient_signature || '', delivery?.recipient_signed_at || '',
-          delivery ? (delivery.is_verified ? 'ถูกต้อง' : 'ไม่ถูกต้อง') : '',
-          delivery?.verification_note || '',
+          rejectionNote !== null ? 'ไม่ถูกต้อง' : delivery ? (delivery.is_verified ? 'ถูกต้อง' : 'ไม่ถูกต้อง') : '',
+          rejectionNote ?? delivery?.verification_note ?? '',
           data.is_damaged ? 'ใช่' : 'ไม่', data.damage_image_url || '', data.note || '',
           profName, r.updated_at, data.tax_invoice_no || '', r.id,
       ]);

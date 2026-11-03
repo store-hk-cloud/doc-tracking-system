@@ -102,9 +102,15 @@ export interface Document {
   inspector_signature: string | null;
   inspector_signed_by?: string | null;
   inspector_signed_at?: string | null;
+  inspector_verified?: boolean | null;
+  inspector_verification_note?: string | null;
   purchasing_signature: string | null;
   purchasing_signed_by?: string | null;
   purchasing_signed_at?: string | null;
+  purchasing_verified?: boolean | null;
+  purchasing_verification_note?: string | null;
+  rejection_stage?: 'inspector' | 'purchasing' | 'recipient' | null;
+  rejection_note?: string | null;
   note: string | null;
   status: DocumentStatus;
   is_damaged: boolean;

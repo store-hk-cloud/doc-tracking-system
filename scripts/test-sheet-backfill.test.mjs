@@ -177,3 +177,12 @@ test('backfill updates every canonical duplicate and reports the duplicate refer
   assert.equal(body.duplicateReferences, 1);
   assert.equal(updates.filter((update) => update.values[20] === f.recipients[0].id).length, 2);
 });
+for (const stage of ['inspector', 'purchasing']) {
+  test(`backfill preserves ${stage} rejection origin instead of old recipient evidence`, async () => {
+    const f = fixture({deliveries:[{document_recipient_id:'recipient-2',recipient_id:'profile-1',recipient_signature:'เก่า',is_verified:false,verification_note:'เก่า'}]});
+    Object.assign(f.recipients[1],{status:'rejected',[`${stage}_verified`]:false,[`${stage}_verification_note`]:'จำนวนผิด'});
+    assert.equal((await f.route.GET()).status,200);
+    const row=f.calls.updates.flatMap(call=>call.updates).find(update=>update.values[20]==='recipient-2').values;
+    assert.deepEqual(Array.from(row.slice(9,14)),['','','','ไม่ถูกต้อง',`${stage==='inspector'?'ผู้ตรวจสอบ':'จัดซื้อ'}: จำนวนผิด`]);
+  });
+}

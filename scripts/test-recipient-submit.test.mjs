@@ -4,11 +4,11 @@ import React from 'react';
 import { create, act } from 'react-test-renderer';
 import { loadModule } from './test-support/load-module.mjs';
 
-for (const action of ['recipient', 'inspector']) {
+for (const action of ['recipient', 'inspector', 'purchasing']) {
   for (const failure of ['network', 'invalid-json']) {
     test(`${action} submission recovers from ${failure} and allows retry`, async () => {
-      const profile = { full_name: 'ผู้ลงชื่อ', department_code: action === 'inspector' ? '0-ADM04' : '0-ADM03' };
-      const doc = { subject: 'ใบรับสินค้า', status: action === 'inspector' ? 'awaiting_inspector' : 'awaiting_recipient' };
+      const profile = { full_name: 'ผู้ลงชื่อ', department_code: action === 'inspector' ? '0-ADM04' : action === 'purchasing' ? '0-BSN10' : '0-ADM03' };
+      const doc = { subject: 'ใบรับสินค้า', status: action === 'recipient' ? 'awaiting_recipient' : `awaiting_${action}` };
       const Page = loadModule('src/app/recipient/[docId]/page.tsx', {
         '@/components/auth/AuthProvider': { useAuth: () => ({ profile }) },
         'next/navigation': { useParams: () => ({ docId: 'recipient-1' }) },

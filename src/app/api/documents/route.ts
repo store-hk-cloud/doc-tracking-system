@@ -177,7 +177,10 @@ export async function GET(request: NextRequest) {
 
     const mapped = rows.map((r: any) => {
       const doc = docMap.get(r.document_id) || {};
-      const sig = AWAITING_RECEIPT.has(r.status) ? undefined : recipientSignatureMap.get(r.id);
+      const approvalRejection = r.status === 'rejected'
+        ? r.inspector_verified === false ? 'inspector' : r.purchasing_verified === false ? 'purchasing' : null
+        : null;
+      const sig = AWAITING_RECEIPT.has(r.status) || approvalRejection ? undefined : recipientSignatureMap.get(r.id);
       return {
         ...doc,
         id: r.id,
@@ -190,9 +193,17 @@ export async function GET(request: NextRequest) {
         inspector_signature: r.inspector_signature,
         inspector_signed_by: r.inspector_signed_by,
         inspector_signed_at: r.inspector_signed_at,
+        inspector_verified: r.inspector_verified ?? null,
+        inspector_verification_note: r.inspector_verification_note ?? null,
         purchasing_signature: r.purchasing_signature,
         purchasing_signed_by: r.purchasing_signed_by,
         purchasing_signed_at: r.purchasing_signed_at,
+        purchasing_verified: r.purchasing_verified ?? null,
+        purchasing_verification_note: r.purchasing_verification_note ?? null,
+        rejection_stage: r.status === 'rejected' ? approvalRejection || 'recipient' : null,
+        rejection_note: approvalRejection === 'inspector' ? r.inspector_verification_note
+          : approvalRejection === 'purchasing' ? r.purchasing_verification_note
+          : r.status === 'rejected' ? sig?.note ?? null : null,
         recorded_by_name: profileMap.get(doc.recorded_by) || null,
         recipient_signature: sig?.signature || null,
         recipient_signed_at: sig?.signedAt || null,

@@ -59,6 +59,14 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       }
 
       const stage = hasInspectorSig ? 'inspector' : 'purchasing';
+      if (body.is_verified !== undefined && typeof body.is_verified !== 'boolean') {
+        return NextResponse.json({ success: false, error: 'is_verified must be a boolean' }, { status: 400 });
+      }
+      const isVerified = body.is_verified ?? true;
+      const verificationNote = typeof body.verification_note === 'string' ? body.verification_note.trim() || null : null;
+      if (!isVerified && !verificationNote) {
+        return NextResponse.json({ success: false, error: 'Verification note is required when incorrect' }, { status: 400 });
+      }
       // ผู้ตรวจสอบ: คลังสินค้า หรือ FAC-PP (อย่างใดอย่างหนึ่ง)
       // จัดซื้อ: หน่วยงานจัดซื้อเท่านั้น — admin/super_admin ไม่มีสิทธิ์ข้าม.
       if (getGoodsReceiptWorkflowAction(auth.context!.profile.department_code, existingRecipient.status) !== stage) {
@@ -102,6 +110,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         p_actor_id: auth.context!.user.id,
         p_actor_name: actorName,
         p_allowed_status: allowedStatuses,
+        p_is_verified: isVerified,
+        p_verification_note: verificationNote,
       } as any);
 
       if (error) {
@@ -130,7 +140,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
           documentNo(doc), doc.received_date, doc.doc_number || '',
           doc.sender, doc.subject, dept?.name || '',
           recipient.status, recipient.admin_signature || '', recipient.admin_signed_at || '',
-          '', '', '', '', '',
+          '', '', '', isVerified ? '' : 'ไม่ถูกต้อง', isVerified ? '' : `${stage === 'inspector' ? 'ผู้ตรวจสอบ' : 'จัดซื้อ'}: ${verificationNote}`,
           doc.is_damaged ? 'ใช่' : 'ไม่', doc.damage_image_url || '', doc.note || '',
           profName, recipient.updated_at, doc.tax_invoice_no || '', recipient.id,
         ]);
@@ -140,6 +150,12 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         data: {
           ...doc,
           ...recipient,
+          rejection_stage: recipient.status !== 'rejected' ? null
+            : recipient.inspector_verified === false ? 'inspector'
+            : recipient.purchasing_verified === false ? 'purchasing' : null,
+          rejection_note: recipient.status !== 'rejected' ? null
+            : recipient.inspector_verified === false ? recipient.inspector_verification_note
+            : recipient.purchasing_verified === false ? recipient.purchasing_verification_note : null,
           id: recipient.id,
           document_id: recipient.document_id,
           recipient_dept_id: recipient.department_id,

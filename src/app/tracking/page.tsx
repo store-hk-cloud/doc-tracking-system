@@ -50,7 +50,7 @@ function signatureCells(doc: any) {
     { label: 'ส่งมอบ', signature: doc.admin_signature, used: true },
     { label: 'ผู้ตรวจสอบ', signature: doc.inspector_signature, used: goodsReceipt },
     { label: 'จัดซื้อ', signature: doc.purchasing_signature, used: goodsReceipt },
-    { label: 'ผู้รับ', signature: doc.recipient_signature, used: true },
+    { label: 'ผู้รับ', signature: doc.status === 'rejected' && ['inspector', 'purchasing'].includes(doc.rejection_stage) ? null : doc.recipient_signature, used: true },
   ].map((stage) => ({
     ...stage,
     title: stage.signature
@@ -256,8 +256,8 @@ export default function TrackingPage() {
         window.alert(data.error || 'เกิดข้อผิดพลาด');
         return;
       }
-      setDocs((current) => current.map((d: any) => (d.id === doc.id ? { ...d, status: data.data.status } : d)));
       setSelectedDoc(null);
+      await loadDocs();
     } catch {
       window.alert('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่');
     }
@@ -550,10 +550,10 @@ export default function TrackingPage() {
               {selectedDoc.admin_signed_at && <div><strong>ส่งมอบเมื่อ:</strong> {formatDate(selectedDoc.admin_signed_at)}</div>}
               {selectedDoc.inspector_signature && <div><strong>ผู้ตรวจสอบ:</strong> {selectedDoc.inspector_signature}</div>}
               {selectedDoc.purchasing_signature && <div><strong>จัดซื้อ:</strong> {selectedDoc.purchasing_signature}</div>}
-              {selectedDoc.recipient_signature && <div><strong>ลายเซ็นผู้รับ:</strong> {selectedDoc.recipient_signature}</div>}
+              {selectedDoc.recipient_signature && !(selectedDoc.status === 'rejected' && ['inspector', 'purchasing'].includes(selectedDoc.rejection_stage)) && <div><strong>ลายเซ็นผู้รับ:</strong> {selectedDoc.recipient_signature}</div>}
               {selectedDoc.status === 'rejected' && (
                 <div className="toast error" style={{ position: 'static' }}>
-                  <strong>เหตุผลที่แจ้งปัญหา:</strong> {selectedDoc.recipient_verification_note || 'ผู้รับไม่ได้ระบุเหตุผล'}
+                  <strong>{selectedDoc.rejection_stage === 'inspector' ? 'ผู้ตรวจสอบ' : selectedDoc.rejection_stage === 'purchasing' ? 'จัดซื้อ' : 'ผู้รับเอกสาร'}แจ้งปัญหา:</strong> {selectedDoc.rejection_note || (selectedDoc.rejection_stage === 'inspector' ? selectedDoc.inspector_verification_note : selectedDoc.rejection_stage === 'purchasing' ? selectedDoc.purchasing_verification_note : selectedDoc.recipient_verification_note) || 'ไม่ได้ระบุเหตุผล'}
                 </div>
               )}
               {selectedDoc.note && <div><strong>หมายเหตุ:</strong> {selectedDoc.note}</div>}

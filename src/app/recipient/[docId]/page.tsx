@@ -36,6 +36,7 @@ export default function RecipientPage() {
   const canReceive = isGoodsReceiptDocument ? workflowAction === 'recipient' : doc?.status === 'delivered';
   const canEditInspector = workflowAction === 'inspector' && doc?.status === 'awaiting_purchasing';
   const canEditPurchasing = workflowAction === 'purchasing' && doc?.status === 'awaiting_recipient';
+  const isApprovalNameEdit = !!editingApprovalStage || canEditInspector || canEditPurchasing;
 
   // เติมค่าเริ่มต้นเมื่อโปรไฟล์โหลดเสร็จ แต่ไม่ทับค่าที่ผู้ใช้พิมพ์แล้ว
   useEffect(() => {
@@ -52,7 +53,7 @@ export default function RecipientPage() {
           // Check if already signed via delivery logs
           const deliveryRes = await window.fetch('/api/deliveries?document_recipient_id=' + docId);
           const deliveryData = await deliveryRes.json();
-          if (deliveryData.success && deliveryData.data.length > 0) {
+          if (!(data.data.status === 'rejected' && ['inspector', 'purchasing'].includes(data.data.rejection_stage)) && deliveryData.success && deliveryData.data.length > 0) {
             setExistingDelivery(deliveryData.data[0]);
           }
         }
@@ -69,6 +70,10 @@ export default function RecipientPage() {
       setError('กรุณาระบุชื่อผู้รับเอกสาร');
       return;
     }
+    if (!verified && !verifyNote.trim()) {
+      setError('กรุณาระบุสาเหตุที่เอกสารไม่ถูกต้อง');
+      return;
+    }
     setSubmitting(true);
     setError('');
 
@@ -80,7 +85,7 @@ export default function RecipientPage() {
           document_recipient_id: docId,
           is_verified: verified,
           recipient_signature: signature.trim(),
-          verification_note: verified ? null : verifyNote,
+          verification_note: verified ? null : verifyNote.trim(),
         }),
       });
 
@@ -102,18 +107,24 @@ export default function RecipientPage() {
       setError(`กรุณาระบุชื่อ${approvalLabel}`);
       return;
     }
+    if (!isApprovalNameEdit && !verified && !verifyNote.trim()) {
+      setError('กรุณาระบุสาเหตุที่เอกสารไม่ถูกต้อง');
+      return;
+    }
     setSubmitting(true);
     setError('');
     try {
       const res = await fetch(`/api/documents/${docId}/sign`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [approvalStage]: signature.trim() }),
+        body: JSON.stringify({ [approvalStage]: signature.trim(), is_verified: isApprovalNameEdit || verified, verification_note: isApprovalNameEdit || verified ? null : verifyNote.trim() }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.success) {
         setDoc(data.data);
-        setNotice(`✅ บันทึกชื่อ${approvalLabel}แล้ว`);
+        setNotice(verified || isApprovalNameEdit ? `✅ บันทึกชื่อ${approvalLabel}แล้ว` : '⚠️ แจ้งปัญหาเรียบร้อย');
+        setVerified(true);
+        setVerifyNote('');
         setSuccess('');
         setEditingApprovalStage(null);
         setSignature(profile?.full_name || '');
@@ -141,7 +152,12 @@ export default function RecipientPage() {
           <div className="title-badge">{isRejected ? '⚠️ แจ้งปัญหาแล้ว' : '✅ ดำเนินการแล้ว'}</div>
           <h3>{isRejected ? 'เอกสารนี้ถูกแจ้งปัญหาไว้ รอหน่วยงานจัดส่งใหม่' : 'เอกสารนี้ได้รับการดำเนินการแล้ว'}</h3>
         </div>
-        {existingDelivery && (
+        {isRejected && (
+          <div className="toast error" style={{ position: 'static', marginTop: 16 }}>
+            <strong>{doc.rejection_stage === 'inspector' ? 'ผู้ตรวจสอบ' : doc.rejection_stage === 'purchasing' ? 'จัดซื้อ' : 'ผู้รับเอกสาร'}แจ้งปัญหา:</strong> {doc.rejection_note || (doc.rejection_stage === 'inspector' ? doc.inspector_verification_note : doc.rejection_stage === 'purchasing' ? doc.purchasing_verification_note : doc.recipient_verification_note || existingDelivery?.verification_note) || 'ไม่ได้ระบุเหตุผล'}
+          </div>
+        )}
+        {existingDelivery && !['inspector', 'purchasing'].includes(doc.rejection_stage) && (
           <div style={{ marginTop: 16, textAlign: 'center', color: 'var(--muted)' }}>
             ลงชื่อรับเมื่อ: {new Date(existingDelivery.recipient_signed_at).toLocaleString('th-TH')}
           </div>
@@ -241,7 +257,7 @@ export default function RecipientPage() {
 
         <hr style={{ border: 'none', borderTop: '1px solid var(--line)', margin: '16px 0' }} />
 
-        {canReceive && !approvalStage && <div className="form-group">
+        {!isApprovalNameEdit && (canReceive || approvalStage) && <div className="form-group">
           <label>✅ ตรวจสอบความถูกต้อง</label>
           <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
             <button
@@ -261,10 +277,10 @@ export default function RecipientPage() {
           </div>
         </div>}
 
-        {canReceive && !approvalStage && !verified && (
+        {!isApprovalNameEdit && (canReceive || approvalStage) && !verified && (
           <div className="issue-bar" style={{ marginTop: 12 }}>
             <div className="form-group">
-              <label>สาเหตุ</label>
+              <label>สาเหตุ *</label>
               <select value={verifyNote} onChange={(e) => setVerifyNote(e.target.value)}>
                 <option value="">-- เลือกสาเหตุ --</option>
                 <option value="จำนวนไม่ตรง">จำนวนไม่ตรง</option>
@@ -321,7 +337,7 @@ export default function RecipientPage() {
             disabled={submitting}
             style={{ marginTop: 12 }}
           >
-            {submitting ? 'กำลังดำเนินการ...' : approvalStage ? `✅ ยืนยัน${approvalLabel}` : verified ? '✅ ยืนยันรับเอกสาร' : '⚠️ แจ้งปัญหา'}
+            {submitting ? 'กำลังดำเนินการ...' : approvalStage ? (!isApprovalNameEdit && !verified ? '⚠️ แจ้งปัญหา' : `✅ ยืนยัน${approvalLabel}`) : verified ? '✅ ยืนยันรับเอกสาร' : '⚠️ แจ้งปัญหา'}
           </button>
         )}
       </div>

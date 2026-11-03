@@ -254,7 +254,7 @@ export default function RecipientListPage() {
     return window.fetch(`/api/documents/${doc.id}/sign`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ [field]: signature }),
+      body: JSON.stringify({ [field]: signature, is_verified: options.verified, verification_note: options.verified ? null : options.note }),
     });
   };
 
@@ -283,14 +283,14 @@ export default function RecipientListPage() {
       setSignError(`กรุณาระบุ${ACTION_SIGNATURE_LABELS[signAction] || 'ชื่อผู้ลงนาม'}`);
       return;
     }
-    if (signAction === 'recipient' && !signVerified && !signNote.trim()) {
+    if (!signEditing && !signVerified && !signNote.trim()) {
       setSignError('กรุณาระบุสาเหตุที่เอกสารไม่ถูกต้อง');
       return;
     }
     setSignSubmitting(true);
     setSignError('');
     try {
-      const res = await submitSignature(signTarget, signAction, signature, { verified: signVerified, note: signNote.trim() });
+      const res = await submitSignature(signTarget, signAction, signature, { verified: signEditing || signVerified, note: signNote.trim() });
       const data = await res.json().catch(() => ({}));
       if (!data?.success) {
         setSignError(data?.error || `ไม่สำเร็จ (HTTP ${res.status})`);
@@ -299,8 +299,10 @@ export default function RecipientListPage() {
       }
       setBulkFailures([]);
       setBulkMessage(
-        signAction === 'recipient'
-          ? (signVerified ? `✅ ลงชื่อรับเลขที่ ${documentNo(signTarget)} เรียบร้อย` : `⚠️ แจ้งปัญหาเลขที่ ${documentNo(signTarget)} เรียบร้อย`)
+        !signVerified
+          ? `⚠️ แจ้งปัญหาเลขที่ ${documentNo(signTarget)} เรียบร้อย`
+          : signAction === 'recipient'
+          ? `✅ ลงชื่อรับเลขที่ ${documentNo(signTarget)} เรียบร้อย`
           : `✅ บันทึก${ACTION_SIGNATURE_LABELS[signAction]}เลขที่ ${documentNo(signTarget)} แล้ว`
       );
       // ปิด popup แล้วกลับมาที่คิวงานทันที พร้อมโหลดรายการใหม่ให้สถานะตรงกับ DB
@@ -825,9 +827,7 @@ export default function RecipientListPage() {
               )}
             </div>
 
-            {/* การตรวจถูกต้อง/ไม่ถูกต้องมีเฉพาะขั้นลงชื่อรับ ขั้นผู้ตรวจสอบและจัดซื้อ
-                เป็นการรับรองลำดับงาน ไม่มีทางเดินแจ้งปัญหาในฝั่ง API */}
-            {signAction === 'recipient' && (
+            {!signEditing && (
               <div className="form-group">
                 <label>✅ ตรวจสอบความถูกต้อง</label>
                 <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
@@ -851,7 +851,7 @@ export default function RecipientListPage() {
               </div>
             )}
 
-            {signAction === 'recipient' && !signVerified && (
+            {!signEditing && !signVerified && (
               <div className="form-group">
                 <label htmlFor="single-sign-note">สาเหตุ *</label>
                 <textarea
@@ -892,6 +892,7 @@ export default function RecipientListPage() {
               <button type="submit" className="secondary-button" disabled={signSubmitting}>
                 {signSubmitting
                   ? 'กำลังดำเนินการ...'
+                  : !signEditing && !signVerified ? '⚠️ แจ้งปัญหา'
                   : signAction === 'recipient'
                     ? (signVerified ? '✅ ยืนยันรับเอกสาร' : '⚠️ แจ้งปัญหา')
                     : `✅ ยืนยัน${signAction === 'inspector' ? 'ผู้ตรวจสอบ' : 'จัดซื้อ'}`}

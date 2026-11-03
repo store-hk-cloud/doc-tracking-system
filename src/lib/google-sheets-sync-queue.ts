@@ -85,7 +85,11 @@ async function loadSheetRows(supabase: any, jobs: QueueJob[]): Promise<SheetRow[
     const document = documentById.get(recipient.document_id);
     const revision = revisionByRecipient.get(recipient.id);
     if (!document || !revision) return [];
-    const delivery = AWAITING_RECEIPT.has(recipient.status)
+    const rejectionNote = recipient.status === 'rejected'
+      ? recipient.inspector_verified === false ? `ผู้ตรวจสอบ: ${recipient.inspector_verification_note || ''}`
+        : recipient.purchasing_verified === false ? `จัดซื้อ: ${recipient.purchasing_verification_note || ''}` : null
+      : null;
+    const delivery = rejectionNote !== null || AWAITING_RECEIPT.has(recipient.status)
       ? null
       : deliveryByRecipient.get(recipient.id);
     return [{
@@ -98,8 +102,8 @@ async function loadSheetRows(supabase: any, jobs: QueueJob[]): Promise<SheetRow[
         recipient.status, recipient.admin_signature || '', recipient.admin_signed_at || '',
         delivery ? (profileNameById.get(delivery.recipient_id) || '') : '',
         delivery?.recipient_signature || '', delivery?.recipient_signed_at || '',
-        delivery ? (delivery.is_verified ? 'ถูกต้อง' : 'ไม่ถูกต้อง') : '',
-        delivery?.verification_note || '',
+        rejectionNote !== null ? 'ไม่ถูกต้อง' : delivery ? (delivery.is_verified ? 'ถูกต้อง' : 'ไม่ถูกต้อง') : '',
+        rejectionNote ?? delivery?.verification_note ?? '',
         document.is_damaged ? 'ใช่' : 'ไม่', document.damage_image_url || '', document.note || '',
         profileNameById.get(document.recorded_by) || '', recipient.updated_at || '',
         document.tax_invoice_no || '', recipient.id,

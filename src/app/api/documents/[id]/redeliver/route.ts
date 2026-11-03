@@ -35,50 +35,26 @@ export async function PUT(_request: NextRequest, { params }: { params: Promise<{
     const isGoodsReceipt = isGoodsReceiptSubject(data.subject);
     const status = isGoodsReceipt ? 'awaiting_inspector' : 'delivered';
 
-    const { data: recipient, error } = await supabase
-      .from('document_recipients')
-      .update({
-        status,
-        ...(isGoodsReceipt ? {
-          inspector_signature: null,
-          inspector_signed_by: null,
-          inspector_signed_at: null,
-          purchasing_signature: null,
-          purchasing_signed_by: null,
-          purchasing_signed_at: null,
-        } : {}),
-      })
-      .eq('id', id)
-      .eq('status', 'rejected')
-      .select('*')
-      .single();
-
-    if (error || !recipient) {
-      return NextResponse.json(
-        { success: false, error: 'Only rejected documents can be redelivered' },
-        { status: 409 }
-      );
-    }
-
-    if (isGoodsReceipt && (before.inspector_signature || before.purchasing_signature)) {
+    let recipient: any;
+    let error: any;
+    if (isGoodsReceipt) {
       const { data: actor } = await supabase.from('profiles').select('full_name').eq('id', auth.context!.user.id).single();
-      const actorName = actor?.full_name || auth.context!.user.email || 'ผู้ใช้ระบบ';
-      const entries = [
-        before.inspector_signature && {
-          document_recipient_id: id, stage: 'inspector', action: 'reset',
-          signature: null, previous_signature: before.inspector_signature,
-          actor_id: auth.context!.user.id, actor_name: actorName,
-        },
-        before.purchasing_signature && {
-          document_recipient_id: id, stage: 'purchasing', action: 'reset',
-          signature: null, previous_signature: before.purchasing_signature,
-          actor_id: auth.context!.user.id, actor_name: actorName,
-        },
-      ].filter(Boolean);
-      if (entries.length) {
-        const { error: auditError } = await supabase.from('document_approval_audit').insert(entries);
-        if (auditError) throw auditError;
-      }
+      ({ data: recipient, error } = await supabase.rpc('reset_goods_receipt_stages', {
+        p_recipient_id: id,
+        p_actor_id: auth.context!.user.id,
+        p_actor_name: actor?.full_name || auth.context!.user.email || 'ผู้ใช้ระบบ',
+      } as any));
+    } else {
+      ({ data: recipient, error } = await supabase.from('document_recipients')
+        .update({ status }).eq('id', id).eq('status', 'rejected').select('*').single());
+    }
+    if (error || !recipient) {
+      const stale = !error || /stage_changed/.test(error.message || '')
+        || (!isGoodsReceipt && error.code === 'PGRST116');
+      return NextResponse.json(
+        { success: false, error: stale ? 'Only rejected documents can be redelivered' : error.message },
+        { status: stale ? 409 : 500 }
+      );
     }
 
     let deptName = '';
