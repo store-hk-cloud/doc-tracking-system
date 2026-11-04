@@ -2,14 +2,9 @@ import { createServerClient, type SetAllCookies } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { getSupabasePublicKey, getSupabaseUrl } from '@/lib/supabase/env';
 
-// เส้นทางที่ไม่ผ่านการตรวจ session ของ middleware
-// - /api/cron/*  : Cloudflare Cron ยิงมาโดยไม่มี cookie ผู้ใช้ จึงตรวจสิทธิ์เองด้วย
-//                  CRON_SECRET ที่ตัว route (ดู api/cron/overdue-documents)
-// - /api/auth/resolve-username : ต้องเรียกก่อนล็อกอิน จึงยังไม่มี session
-const AUTH_EXEMPT_PREFIXES = ['/api/cron/', '/api/auth/'];
-
 export async function middleware(request: NextRequest) {
-  if (AUTH_EXEMPT_PREFIXES.some((p) => request.nextUrl.pathname.startsWith(p))) {
+  // API ตรวจสิทธิ์และ refresh cookie ใน route handler เอง จึงไม่เรียก Auth ซ้ำที่ middleware
+  if (request.nextUrl.pathname.startsWith('/api/')) {
     return NextResponse.next({ request });
   }
 
@@ -49,9 +44,6 @@ export async function middleware(request: NextRequest) {
 
   // Protected routes — just check auth, skip profile/role check (handled client-side via AuthProvider)
   if (!user) {
-    if (request.nextUrl.pathname.startsWith('/api/')) {
-      return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
-    }
     return NextResponse.redirect(new URL('/', request.url));
   }
 

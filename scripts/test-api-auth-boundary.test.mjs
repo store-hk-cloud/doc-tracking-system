@@ -55,17 +55,37 @@ test('authentication helpers reject inactive users and enforce roles and departm
 for (const path of routes('src/app/api')) {
   if (path.includes('/cron/') || path.includes('/auth/resolve-username/')) continue;
   test(`unauthenticated requests cannot cross the server boundary: ${path}`, async () => {
-    const route = loadModule(path, {
+    const accessAttempts = [];
+    const rejectAccess = (name) => {
+      accessAttempts.push(name);
+      assert.fail(`${name} accessed before authentication`);
+    };
+    const mocks = {
       '@/lib/supabase/server': { createServerSupabase: async () => ({ auth: {
         getUser: async () => ({ data: { user: null }, error: null }),
       } }) },
-      '@/lib/supabase/admin': { getServiceSupabase: () => assert.fail('Database accessed before authentication') },
-    }, { fetch: () => assert.fail('Unexpected network request'), Buffer });
+      '@/lib/supabase/admin': { getServiceSupabase: () => rejectAccess('Database') },
+      '@/lib/google-auth': {
+        getSheetsClient: () => rejectAccess('Sheets client'),
+        getDriveClient: () => rejectAccess('Drive client'),
+        hasGoogleCredentials: () => rejectAccess('Google credentials'),
+        resetClients: () => rejectAccess('Google clients reset'),
+      },
+      '@opennextjs/cloudflare': {
+        getCloudflareContext: () => rejectAccess('Cloudflare context'),
+      },
+    };
+    Object.defineProperty(mocks, 'googleapis', {
+      enumerable: true,
+      get() { assert.fail('Google SDK bootstrapped before authentication'); },
+    });
+    const route = loadModule(path, mocks, { fetch: () => rejectAccess('Network'), Buffer });
     for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) {
       if (!route[method]) continue;
       const response = await route[method](new Request('https://example.invalid/api/test', { method }), {
         params: Promise.resolve({ id: '00000000-0000-0000-0000-000000000000' }),
       });
+      assert.deepEqual(accessAttempts, [], `${method} accessed a protected dependency`);
       assert.ok([401, 410].includes(response.status), `${method} returned ${response.status}`);
     }
   });

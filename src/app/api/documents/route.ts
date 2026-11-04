@@ -57,8 +57,26 @@ export async function GET(request: NextRequest) {
     const byDeliveredDate = searchParams.get('date_field') === 'delivered';
     const limit = parseInt(searchParams.get('limit') || '0', 10);
 
-    // Phase 1: filter on shared document-level fields.
-    const docs = await fetchAllRows((from, to) => {
+    const isMineScope = scope === 'mine' && auth.context?.profile.role === 'user';
+    const filterRecipients = (q: any) => {
+      if (statuses.length === 1) q = q.eq('status', statuses[0]);
+      else if (statuses.length > 1) q = q.in('status', statuses);
+      if (dept_id) q = q.eq('department_id', dept_id);
+      // วันที่ผู้ใช้เลือกเป็นวันไทย จึงต้องระบุ offset ให้ขอบวันตรงกัน.
+      if (byDeliveredDate && date_from) q = q.gte('admin_signed_at', `${date_from}T00:00:00+07:00`);
+      if (byDeliveredDate && date_to) q = q.lte('admin_signed_at', `${date_to}T23:59:59.999+07:00`);
+      return q;
+    };
+    const hasRecipientFilters = statuses.length > 0 || dept_id || (byDeliveredDate && (date_from || date_to));
+    const hasDocumentFilters = keyword || (!byDeliveredDate && (date_from || date_to));
+    // อ่านรายการที่ตรงตัวกรองก่อน เพื่อไม่โหลดเอกสารประวัติทั้งหมดสำหรับคิวงานสั้น ๆ.
+    const filteredRecipients = hasRecipientFilters && !hasDocumentFilters
+      ? await fetchAllRows((from, to) => filterRecipients(supabase.from('document_recipients').select('*').order('id').range(from, to)))
+      : null;
+    const candidateIds = filteredRecipients ? [...new Set<string>(filteredRecipients.map((r: any) => r.document_id))] : null;
+    if (candidateIds?.length === 0) return NextResponse.json({ success: true, data: [] });
+
+    const documentQuery = (from: number, to: number, restrict = true) => {
       let q = supabase.from('documents').select('*').order('running_no', { ascending: false }).order('id').range(from, to);
       if (keyword) {
         const pattern = ilikePattern(keyword);
@@ -66,57 +84,82 @@ export async function GET(request: NextRequest) {
       }
       if (!byDeliveredDate && date_from) q = q.gte('received_date', date_from);
       if (!byDeliveredDate && date_to) q = q.lte('received_date', date_to);
+      if (restrict && isMineScope) q = q.eq('recorded_by', auth.context!.user.id);
+      // คิวที่กว้างยังใช้ pagination เดิม ไม่แตก .in() เป็น URL ยาวหรือเพิ่มคำขอทีละก้อน.
+      if (restrict && candidateIds && candidateIds.length <= ID_CHUNK) q = q.in('id', candidateIds);
       return q;
-    });
-    const docMap = new Map(docs.map((d: any) => [d.id, d]));
-    if (docMap.size === 0) return NextResponse.json({ success: true, data: [] });
+    };
+    const docMap = new Map<string, any>();
+    const visibleRows = (recipientsData: any[]) => {
+      let rows = recipientsData;
+      if (isMineScope) {
+        rows = rows.filter((r: any) => docMap.get(r.document_id)?.recorded_by === auth.context!.user.id);
+      } else if (auth.context?.profile.role === 'user') {
+        // ใบรับสินค้าเป็น routing กลางหนึ่งชุด: หน่วยงานที่เลือกประกอบเอกสาร
+        // ไม่ได้เป็นปลายทางงาน จึงมองเห็นได้เฉพาะผู้ที่ถึงคิวของตนจริง.
+        rows = rows.filter((r: any) => {
+          const doc = docMap.get(r.document_id);
+          // ผู้บันทึกคือคนที่เซ็นส่งมอบเอกสารนั้นเอง ต้องตามงานของตัวเองต่อได้
+          // แม้ปลายทางจะเป็นหน่วยงานอื่น (ซึ่งเป็นกรณีปกติของการส่งมอบ)
+          if (doc?.recorded_by === auth.context!.user.id) return true;
+          // คนที่เซ็นด่านตรวจสอบ/จัดซื้อไปแล้วต้องตามดูต่อได้ว่างานเดินไปถึงไหน
+          // ไม่ใช่หลุดจากสายตาทันทีที่ส่งต่อด่านถัดไป (สิทธิ์ตามขั้นด้านล่างเปิดให้
+          // เห็นเฉพาะช่วงที่ยังอยู่ในคิวของหน่วยงานตัวเองเท่านั้น)
+          if (r.inspector_signed_by === auth.context!.user.id) return true;
+          if (r.purchasing_signed_by === auth.context!.user.id) return true;
+          if (isGoodsReceipt(doc?.subject)) {
+            return canViewGoodsReceiptWorkflow(auth.context!.profile.department_code, r.status);
+          }
+          return r.department_id === auth.context!.profile.department_id;
+        });
+      }
+      return rows;
+    };
 
-    // scope=mine (used by the delivery page) shows documents the user themself
-    // registered, across all departments — not the usual own-department filter.
-    const isMineScope = scope === 'mine' && auth.context?.profile.role === 'user';
-
-    // Phase 2: filter per-department recipient rows, scoped to the matched documents.
-    const recipientsData = (
-      await Promise.all(
-        chunk(Array.from(docMap.keys())).map((ids) =>
-          fetchAllRows((from, to) => {
-            // ต้องเรียงคงที่เสมอ ไม่งั้นการไล่ range() ทีละหน้าจะได้แถวซ้ำหรือตกหล่น
-            let q = supabase.from('document_recipients').select('*').in('document_id', ids).order('id').range(from, to);
-            if (statuses.length === 1) q = q.eq('status', statuses[0]);
-            else if (statuses.length > 1) q = q.in('status', statuses);
-            if (dept_id) q = q.eq('department_id', dept_id);
-            // admin_signed_at เป็น timestamptz แต่ผู้ใช้เลือกเป็น "วัน" ตามเวลาไทย
-            // จึงต้องระบุ offset +07:00 ตรง ๆ ไม่งั้นขอบวันจะเพี้ยนไป 7 ชั่วโมง
-            if (byDeliveredDate && date_from) q = q.gte('admin_signed_at', `${date_from}T00:00:00+07:00`);
-            if (byDeliveredDate && date_to) q = q.lte('admin_signed_at', `${date_to}T23:59:59.999+07:00`);
-            return q;
-          })
-        )
-      )
-    ).flat();
-
-    let rows = recipientsData;
-    if (isMineScope) {
-      rows = rows.filter((r: any) => docMap.get(r.document_id)?.recorded_by === auth.context!.user.id);
-    } else if (auth.context?.profile.role === 'user') {
-      // ใบรับสินค้าเป็น routing กลางหนึ่งชุด: หน่วยงานที่เลือกประกอบเอกสาร
-      // ไม่ได้เป็นปลายทางงาน จึงมองเห็นได้เฉพาะผู้ที่ถึงคิวของตนจริง.
-      rows = rows.filter((r: any) => {
-        const doc = docMap.get(r.document_id);
-        // ผู้บันทึกคือคนที่เซ็นส่งมอบเอกสารนั้นเอง ต้องตามงานของตัวเองต่อได้
-        // แม้ปลายทางจะเป็นหน่วยงานอื่น (ซึ่งเป็นกรณีปกติของการส่งมอบ)
-        if (doc?.recorded_by === auth.context!.user.id) return true;
-        // คนที่เซ็นด่านตรวจสอบ/จัดซื้อไปแล้วต้องตามดูต่อได้ว่างานเดินไปถึงไหน
-        // ไม่ใช่หลุดจากสายตาทันทีที่ส่งต่อด่านถัดไป (สิทธิ์ตามขั้นด้านล่างเปิดให้
-        // เห็นเฉพาะช่วงที่ยังอยู่ในคิวของหน่วยงานตัวเองเท่านั้น)
-        if (r.inspector_signed_by === auth.context!.user.id) return true;
-        if (r.purchasing_signed_by === auth.context!.user.id) return true;
-        if (isGoodsReceipt(doc?.subject)) {
-          return canViewGoodsReceiptWorkflow(auth.context!.profile.department_code, r.status);
-        }
-        return r.department_id === auth.context!.profile.department_id;
+    const recipientsFor = async (docs: any[]) => {
+      const ids = docs.map((d: any) => d.id);
+      if (filteredRecipients) {
+        const idSet = new Set(ids);
+        return filteredRecipients.filter((r: any) => idSet.has(r.document_id));
+      }
+      return (await Promise.all(chunk(ids).map((part) => fetchAllRows((from, to) =>
+        filterRecipients(supabase.from('document_recipients').select('*').in('document_id', part).order('id').range(from, to))
+      )))).flat();
+    };
+    let rows: any[] = [];
+    const batchSize = limit > 0 ? ID_CHUNK : PAGE_SIZE;
+    const restrictedDocuments = isMineScope || (candidateIds && candidateIds.length <= ID_CHUNK);
+    for (let from = 0; ; from += batchSize) {
+      const { data, error } = limit > 0
+        ? await documentQuery(from, from + batchSize - 1 + (restrictedDocuments ? 1 : 0))
+        : { data: await fetchAllRows(documentQuery), error: null };
+      if (error) throw error;
+      const fetchedDocs = data || [];
+      // เลขซ้ำอาจคร่อมหน้า จึงอ่านเผื่อหนึ่งใบโดยไม่เพิ่มคำขอในกรณีเลขไม่ซ้ำ.
+      const seenNumbers = new Set(Array.from(docMap.values()).map((doc) => doc.running_no));
+      const hasDuplicateNumber = fetchedDocs.some((doc: any) => {
+        if (seenNumbers.has(doc.running_no)) return true;
+        seenNumbers.add(doc.running_no);
+        return false;
       });
+      if (restrictedDocuments && hasDuplicateNumber) {
+        // เลขซ้ำต้องใช้ตำแหน่งเอกสารทั้งหมดแบบเดิม เพื่อคงลำดับ recipient ในก้อนละ 200 ใบ.
+        const originalDocs = await fetchAllRows((start, end) => documentQuery(start, end, false));
+        docMap.clear();
+        for (const doc of originalDocs) docMap.set(doc.id, doc);
+        rows = visibleRows(await recipientsFor(originalDocs));
+        break;
+      }
+      const docs = limit > 0 ? fetchedDocs.slice(0, batchSize) : fetchedDocs;
+      for (const doc of docs) docMap.set(doc.id, doc);
+      rows.push(...visibleRows(await recipientsFor(docs)));
+      if (!(limit > 0) || rows.length >= limit || docs.length < batchSize) break;
     }
+    // คงลำดับเดิมเมื่อ running_no เท่ากัน: recipient id ภายในก้อนเอกสารละ 200 ใบ.
+    const documentOrder = new Map(Array.from(docMap.keys()).map((id, index) => [id, index]));
+    rows.sort((a: any, b: any) =>
+      Math.floor(documentOrder.get(a.document_id)! / ID_CHUNK) - Math.floor(documentOrder.get(b.document_id)! / ID_CHUNK)
+      || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     rows.sort((a: any, b: any) => (docMap.get(b.document_id)?.running_no || 0) - (docMap.get(a.document_id)?.running_no || 0));
     if (limit > 0) rows = rows.slice(0, limit);
 
