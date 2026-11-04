@@ -469,7 +469,10 @@ body {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+/* กฎ 3 คอลัมน์ของ .tracking-date-row ด้านล่างมี specificity เท่ากับ .segmented-2
+   และมาทีหลัง จึงต้องระบุ 2 คอลัมน์ซ้ำที่นี่ */
 .tracking-date-row .segmented-control.segmented-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   min-width: 200px;
 }
 
@@ -493,9 +496,8 @@ body {
   font-weight: 700;
 }
 
-/* ปุ่มลัด 4 ปุ่ม — .segmented-control ตั้งไว้ 3 คอลัมน์ ปุ่มที่ 4 จึงตกบรรทัดถ้าไม่สั่ง */
 .tracking-date-row .segmented-control {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-left: auto;
   min-width: 320px;
 }

@@ -5,9 +5,16 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { getGoodsReceiptWorkflowAction, isGoodsReceipt } from '@/lib/document-workflow';
 import { documentNo } from '@/lib/document-no';
 
+const MIN_KEYWORD_LENGTH = 3;
+
 const pad = (n: number) => String(n).padStart(2, '0');
 const dateInput = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const todayStr = () => dateInput(new Date());
+const weekStartStr = () => {
+  const day = new Date();
+  day.setDate(day.getDate() - 6);
+  return dateInput(day);
+};
 const monthStartStr = () => {
   const now = new Date();
   return dateInput(new Date(now.getFullYear(), now.getMonth(), 1));
@@ -83,7 +90,9 @@ export default function RecipientListPage() {
   const [closedLoading, setClosedLoading] = useState(false);
   const [closedLoaded, setClosedLoaded] = useState(false);
   const [closedError, setClosedError] = useState('');
+  const [closedFilterError, setClosedFilterError] = useState('');
   const closedRequestSeq = useRef(0);
+  const appliedClosed = useRef<typeof closedFilter | null>(null);
   const [closedFilter, setClosedFilter] = useState({ keyword: '', dept_id: '', date_from: '', date_to: '' });
   const [departments, setDepartments] = useState<any[]>([]);
 
@@ -103,8 +112,28 @@ export default function RecipientListPage() {
   };
 
   const loadClosed = useCallback(async (override?: Partial<typeof closedFilter>) => {
-    const seq = ++closedRequestSeq.current;
     const active = { ...closedFilter, ...override };
+    active.keyword = active.keyword.trim();
+    if ((active.date_from && !active.date_to) || (!active.date_from && active.date_to)) {
+      setClosedFilterError('กรุณาระบุวันที่เริ่มต้นและสิ้นสุดให้ครบ');
+      return;
+    }
+    if (active.date_from > active.date_to) {
+      setClosedFilterError('วันที่เริ่มต้นต้องไม่เกินวันที่สิ้นสุด');
+      return;
+    }
+    if (!active.keyword && !active.date_from) {
+      setClosedFilterError('เลือกช่วงวันที่หรือระบุคำค้น แล้วกดค้นหา');
+      return;
+    }
+    // คำค้นสั้นมากอย่าง "1" ตรงกับแทบทุกใบ ถ้าไม่มีช่วงวันที่ก็เท่ากับดึงประวัติทั้งหมด
+    if (!active.date_from && active.keyword.length < MIN_KEYWORD_LENGTH) {
+      setClosedFilterError(`พิมพ์คำค้นอย่างน้อย ${MIN_KEYWORD_LENGTH} ตัวอักษร หรือเลือกช่วงวันที่`);
+      return;
+    }
+    setClosedFilterError('');
+    appliedClosed.current = active;
+    const seq = ++closedRequestSeq.current;
     setClosedLoading(true);
     setClosedError('');
     try {
@@ -143,10 +172,6 @@ export default function RecipientListPage() {
       if (data.success) setDepartments(data.data);
     });
   }, []);
-
-  useEffect(() => {
-    if (tab === 'closed' && !closedLoaded && !closedLoading) loadClosed();
-  }, [tab, closedLoaded, closedLoading, loadClosed]);
 
   const workflowAction = (doc: any) => isGoodsReceipt(doc.subject)
     ? getGoodsReceiptWorkflowAction(profile?.department_code, doc.status)
@@ -310,7 +335,7 @@ export default function RecipientListPage() {
       setSignAction('');
       setSignSubmitting(false);
       await loadPending();
-      setClosedLoaded(false);
+      if (appliedClosed.current) loadClosed(appliedClosed.current);
     } catch (e: any) {
       setSignError(e?.message || 'ส่งคำขอไม่สำเร็จ');
       setSignSubmitting(false);
@@ -382,7 +407,7 @@ export default function RecipientListPage() {
     setBulkSigning(false);
     setBulkProgress({ done: 0, total: 0 });
     await loadPending();
-    setClosedLoaded(false);
+    if (appliedClosed.current) loadClosed(appliedClosed.current);
   };
 
   return (
@@ -636,14 +661,21 @@ export default function RecipientListPage() {
                     onChange={(e) => setClosedFilter({ ...closedFilter, date_to: e.target.value })}
                     aria-label="ถึงวันที่"
                   />
-                  <div className="segmented-control segmented-2">
+                  <div className="segmented-control">
                     <button
-                      className={!closedFilter.date_from && !closedFilter.date_to ? 'active' : ''}
-                      onClick={() => { const next = { ...closedFilter, date_from: '', date_to: '' }; setClosedFilter(next); loadClosed(next); }}
+                      className={closedFilter.date_from === todayStr() && closedFilter.date_to === todayStr() ? 'active' : ''}
+                      onClick={() => { const next = { ...closedFilter, date_from: todayStr(), date_to: todayStr() }; setClosedFilter(next); loadClosed(next); }}
                     >
-                      ทั้งหมด
+                      วันนี้
                     </button>
                     <button
+                      className={closedFilter.date_from === weekStartStr() && closedFilter.date_to === todayStr() ? 'active' : ''}
+                      onClick={() => { const next = { ...closedFilter, date_from: weekStartStr(), date_to: todayStr() }; setClosedFilter(next); loadClosed(next); }}
+                    >
+                      7 วัน
+                    </button>
+                    <button
+                      className={closedFilter.date_from === monthStartStr() && closedFilter.date_to === todayStr() ? 'active' : ''}
                       onClick={() => { const next = { ...closedFilter, date_from: monthStartStr(), date_to: todayStr() }; setClosedFilter(next); loadClosed(next); }}
                     >
                       เดือนนี้
@@ -656,13 +688,16 @@ export default function RecipientListPage() {
 
           <div className="table-toolbar">
             <span className="table-toolbar-count">
-              ปิดงานล่าสุดอยู่บนสุด · {closedDocs.length} รายการ
+              {closedLoaded ? `ปิดงานล่าสุดอยู่บนสุด · ${closedDocs.length} รายการ` : 'ยังไม่ได้ค้นหาประวัติ'}
             </span>
           </div>
 
+          {closedFilterError && <div className="toast error" role="alert" style={{ position: 'static' }}>{closedFilterError}</div>}
           {closedError && <div className="toast error" role="alert" style={{ position: 'static' }}>{closedError}</div>}
           {closedLoading ? (
             <div className="empty-search">กำลังโหลด...</div>
+          ) : !closedLoaded ? (
+            <div className="empty-search">เลือกช่วงวันที่หรือระบุคำค้น แล้วกดค้นหา</div>
           ) : closedDocs.length === 0 ? (
             <div className="empty-search">ไม่พบเอกสารที่ปิดงานแล้ว</div>
           ) : (

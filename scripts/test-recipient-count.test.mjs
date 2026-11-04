@@ -24,6 +24,7 @@ async function mount(fetchClosed) {
   let renderer;
   await act(async () => { renderer = create(React.createElement(Page)); });
   await act(async () => { button(renderer, 'ปิดงานแล้ว').props.onClick(); });
+  await act(async () => { button(renderer, 'เดือนนี้').props.onClick(); });
   return renderer;
 }
 
@@ -40,7 +41,7 @@ test('late one-document response cannot overwrite the latest six-document result
   const renderer = await mount(() => ++calls === 1
     ? new Promise((resolve) => { finishOld = resolve; }) : response(docs));
   try {
-    await act(async () => { button(renderer, 'ทั้งหมด').props.onClick(); });
+    await act(async () => { button(renderer, 'เดือนนี้').props.onClick(); });
     await act(async () => { finishOld(response([docs[0]])); });
     assert.match(text(renderer.toJSON()), /ปิดงานล่าสุดอยู่บนสุด · 6 รายการ/);
   } finally { renderer.unmount(); }
@@ -50,7 +51,7 @@ test('failed search clears previous results and shows an error instead of a stal
   let calls = 0;
   const renderer = await mount(() => response(docs, ++calls === 1));
   try {
-    await act(async () => { button(renderer, 'ทั้งหมด').props.onClick(); });
+    await act(async () => { button(renderer, 'เดือนนี้').props.onClick(); });
     assert.doesNotMatch(text(renderer.toJSON()), /ปิดงานล่าสุดอยู่บนสุด · 6 รายการ/);
     assert.match(text(renderer.toJSON()), /โหลดไม่สำเร็จ/);
   } finally { renderer.unmount(); }

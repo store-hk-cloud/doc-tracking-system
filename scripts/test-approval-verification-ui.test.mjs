@@ -115,6 +115,7 @@ for (const stage of ['inspector', 'purchasing']) {
     let renderer;
     await act(async () => { renderer = create(React.createElement(Page)); });
     try {
+      await act(async () => { renderer.root.findAllByType('button').find(button => button.children.includes('เดือนนี้')).props.onClick(); });
       await act(async () => { renderer.root.findAllByType('tr').find((row) => row.props.role === 'button').props.onClick(); });
       assert.match(text(renderer), new RegExp(stage === 'inspector' ? 'ผู้ตรวจสอบ' : 'จัดซื้อ'));
       assert.match(text(renderer), /เหตุผลรอบปัจจุบัน/);
@@ -134,6 +135,7 @@ for (const mode of ['direct', 'tracking']) {
         let renderer;
         await act(async () => { renderer = create(React.createElement(Page)); });
         try {
+          if (mode === 'tracking') await act(async () => { renderer.root.findAllByType('button').find(button => button.children.includes('เดือนนี้')).props.onClick(); });
           if (mode === 'tracking') await act(async () => { renderer.root.findAllByType('tr').find((row) => row.props.role === 'button').props.onClick(); });
           assert.match(text(renderer), new RegExp(ownNote || 'ไม่ได้ระบุเหตุผล'));
           assert.doesNotMatch(text(renderer), /เหตุผลผู้รับรอบเก่า|เหตุผลจาก delivery เก่า/);
@@ -156,6 +158,7 @@ test('tracking redelivery reloads reset row before reopening details', async () 
   await act(async () => { renderer = create(React.createElement(Page)); });
   const open = async () => { await act(async () => { renderer.root.findAllByType('tr').find((row) => row.props.role === 'button').props.onClick(); }); };
   try {
+    await act(async () => { renderer.root.findAllByType('button').find(button => button.children.includes('เดือนนี้')).props.onClick(); });
     await open();
     assert.match(text(renderer), /เหตุผลรอบเก่า/);
     await act(async () => { await renderer.root.findAllByType('button').find((button) => button.children.includes('📮 ส่งเซ็นใหม่')).props.onClick(); });

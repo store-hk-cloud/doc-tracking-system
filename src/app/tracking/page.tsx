@@ -5,6 +5,8 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { isGoodsReceipt } from '@/lib/document-workflow';
 import { documentNo } from '@/lib/document-no';
 
+const MIN_KEYWORD_LENGTH = 3;
+
 const STATUS_OPTIONS = ['ทั้งหมด', 'registered', 'delivered', 'awaiting_inspector', 'awaiting_purchasing', 'awaiting_recipient', 'signed', 'closed', 'rejected'];
 const STATUS_LABELS: Record<string, string> = {
   'ทั้งหมด': 'ทั้งหมด',
@@ -76,16 +78,18 @@ function presetRanges() {
     { key: 'today', label: 'วันนี้', from: toDateInput(today), to: toDateInput(today) },
     { key: 'week', label: '7 วัน', from: toDateInput(weekAgo), to: toDateInput(today) },
     { key: 'month', label: 'เดือนนี้', from: toDateInput(monthStart), to: toDateInput(today) },
-    { key: 'all', label: 'ทั้งหมด', from: '', to: '' },
   ];
 }
 
 export default function TrackingPage() {
   const { profile, user } = useAuth();
   const [docs, setDocs] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [searched, setSearched] = useState(false);
+  const [filterError, setFilterError] = useState('');
   const [loadError, setLoadError] = useState('');
   const [filter, setFilter] = useState({ status: '', keyword: '', dept_id: '', date_field: 'received', date_from: '', date_to: '' });
+  const appliedFilter = useRef<typeof filter | null>(null);
   const [onlyMine, setOnlyMine] = useState(false);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [departments, setDepartments] = useState<any[]>([]);
@@ -123,6 +127,27 @@ export default function TrackingPage() {
   // ซึ่ง state ยังไม่อัปเดตให้ใช้
   const loadDocs = useCallback(async (override?: Partial<typeof filter>) => {
     const active = { ...filter, ...override };
+    active.keyword = active.keyword.trim();
+    if ((active.date_from && !active.date_to) || (!active.date_from && active.date_to)) {
+      setFilterError('กรุณาระบุวันที่เริ่มต้นและสิ้นสุดให้ครบ');
+      return;
+    }
+    if (active.date_from > active.date_to) {
+      setFilterError('วันที่เริ่มต้นต้องไม่เกินวันที่สิ้นสุด');
+      return;
+    }
+    if (!active.keyword && !active.date_from) {
+      setFilterError('เลือกช่วงวันที่หรือระบุคำค้น แล้วกดค้นหา');
+      return;
+    }
+    // คำค้นสั้นมากอย่าง "1" ตรงกับแทบทุกใบ ถ้าไม่มีช่วงวันที่ก็เท่ากับดึงประวัติทั้งหมด
+    if (!active.date_from && active.keyword.length < MIN_KEYWORD_LENGTH) {
+      setFilterError(`พิมพ์คำค้นอย่างน้อย ${MIN_KEYWORD_LENGTH} ตัวอักษร หรือเลือกช่วงวันที่`);
+      return;
+    }
+    setFilterError('');
+    appliedFilter.current = active;
+    setSearched(true);
     const seq = ++requestSeq.current;
     setLoading(true);
     setLoadError('');
@@ -156,10 +181,13 @@ export default function TrackingPage() {
     }
   }, [filter]);
 
-  // โหลดใหม่อัตโนมัติเมื่อเปลี่ยนสถานะหรือหน่วยงาน ส่วนคำค้นรอให้กดค้นหาเอง จึงไม่
-  // ใส่ loadDocs (ซึ่งเปลี่ยนตัวตนทุกครั้งที่พิมพ์) ลงใน deps
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { loadDocs(); }, [filter.status, filter.dept_id]);
+  // ค้นไปแล้วค่อยโหลดใหม่ทันที ไม่งั้นปุ่มที่ไฮไลต์จะไม่ตรงกับผลในตาราง
+  // แต่ก่อนค้นครั้งแรกห้ามยิง เพื่อไม่ให้เปิดหน้าแล้วดึงประวัติทั้งหมด
+  const applyFilter = (change: Partial<typeof filter>) => {
+    const next = { ...filter, ...change };
+    setFilter(next);
+    if (appliedFilter.current) loadDocs(next);
+  };
 
   const applyPreset = (from: string, to: string) => {
     const next = { ...filter, date_from: from, date_to: to };
@@ -244,7 +272,7 @@ export default function TrackingPage() {
     );
     setClosingAll(false);
     await loadSignedCount();
-    await loadDocs();
+    if (appliedFilter.current) await loadDocs(appliedFilter.current);
   };
 
   const handleRedeliver = async (doc: any) => {
@@ -257,7 +285,7 @@ export default function TrackingPage() {
         return;
       }
       setSelectedDoc(null);
-      await loadDocs();
+      if (appliedFilter.current) await loadDocs(appliedFilter.current);
     } catch {
       window.alert('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่');
     }
@@ -300,7 +328,7 @@ export default function TrackingPage() {
               />
             </div>
             {isAdmin && (
-              <select value={filter.dept_id} onChange={(e) => setFilter({ ...filter, dept_id: e.target.value })} style={{ minHeight: 42, borderRadius: 8, border: '1px solid var(--line-strong)', padding: '0 10px' }}>
+              <select value={filter.dept_id} onChange={(e) => applyFilter({ dept_id: e.target.value })} style={{ minHeight: 42, borderRadius: 8, border: '1px solid var(--line-strong)', padding: '0 10px' }}>
                 <option value="">ทุกหน่วยงาน</option>
                 {departments.map((d: any) => (
                   <option key={d.id} value={d.id}>{d.name}</option>
@@ -362,7 +390,7 @@ export default function TrackingPage() {
                 <button
                   key={s}
                   className={filter.status === (s === 'ทั้งหมด' ? '' : s) ? 'active' : ''}
-                  onClick={() => setFilter({ ...filter, status: s === 'ทั้งหมด' ? '' : s })}
+                  onClick={() => applyFilter({ status: s === 'ทั้งหมด' ? '' : s })}
                 >
                   {STATUS_LABELS[s]}
                 </button>
@@ -380,6 +408,8 @@ export default function TrackingPage() {
         </div>
       </div>
 
+      {filterError && <div className="toast error" role="alert" style={{ position: 'static', marginBottom: 12 }}>{filterError}</div>}
+
       {/* Results */}
       <div className="report-panel">
         {loading ? (
@@ -387,13 +417,13 @@ export default function TrackingPage() {
         ) : loadError ? (
           <div className="toast error" style={{ position: 'static' }}>
             {loadError}{' '}
-            <button className="ghost-button" style={{ width: 'auto', minHeight: 32, marginLeft: 8 }} onClick={() => loadDocs()}>ลองใหม่</button>
+            <button className="ghost-button" style={{ width: 'auto', minHeight: 32, marginLeft: 8 }} onClick={() => appliedFilter.current && loadDocs(appliedFilter.current)}>ลองใหม่</button>
           </div>
         ) : (
           <>
             <div className="table-toolbar">
               <span className="table-toolbar-count">
-                พบทั้งหมด {visibleDocs.length} รายการ
+                {searched ? `พบทั้งหมด ${visibleDocs.length} รายการ` : 'ยังไม่ได้ค้นหาประวัติ'}
                 {visibleDocs.length > pagedDocs.length && ` · แสดง ${pagedDocs.length} รายการแรก`}
               </span>
               {isAdmin && signedCount !== null && signedCount > 0 && (
@@ -410,7 +440,9 @@ export default function TrackingPage() {
                 {closeAllMessage}
               </div>
             )}
-            {visibleDocs.length === 0 ? (
+            {!searched ? (
+              <div className="empty-search">เลือกช่วงวันที่หรือระบุคำค้น แล้วกดค้นหา</div>
+            ) : visibleDocs.length === 0 ? (
               <div className="empty-search">{onlyMine ? 'ไม่พบเอกสารที่คุณส่งมอบ' : 'ไม่พบเอกสาร'}</div>
             ) : (
               <>
