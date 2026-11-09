@@ -291,7 +291,7 @@ export async function getSheetValues(sheet: string): Promise<string[][]> {
 }
 
 /** Read multiple daily tabs in one API request to keep maintenance below Sheets read quota. */
-export async function getSheetValuesBatch(sheetNames: string[]): Promise<Map<string, string[][]>> {
+export async function getSheetValuesBatch(sheetNames: string[], columns = 'A:U'): Promise<Map<string, string[][]>> {
   const names = [...new Set(sheetNames.filter(isDailySheetName))];
   const rowsBySheet = new Map<string, string[][]>();
   if (names.length === 0) return rowsBySheet;
@@ -302,7 +302,7 @@ export async function getSheetValuesBatch(sheetNames: string[]): Promise<Map<str
     const chunk = names.slice(start, start + 100);
     const { data } = await withSheetsSlot<any>(() => sheets.spreadsheets.values.batchGet({
       spreadsheetId,
-      ranges: chunk.map((sheet) => `${sheet}!A:U`),
+      ranges: chunk.map((sheet) => `${sheet}!${columns}`),
     }));
     const valueRanges = data?.valueRanges || [];
     for (let index = 0; index < chunk.length; index += 1) {
@@ -421,14 +421,17 @@ async function buildLocationIndex(column: number): Promise<Map<string, RowLocati
   const targetSheets = allSheets.includes(today)
     ? [today, ...allSheets.filter((s: string) => s !== today)]
     : allSheets;
-  const rowsBySheet = await getSheetValuesBatch(targetSheets);
+  // อ่านเฉพาะคอลัมน์ที่ใช้เป็นกุญแจ: ทุกแท็บรวมกันหลายพันแถว ถ้าดึง A:U มาแปลง JSON
+  // ทั้งก้อน CPU ของคำขอที่สร้างดัชนีจะเกินเพดาน 10ms ของ Workers แผนฟรี
+  // ไม่ต้องข้ามหัวตาราง เพราะชื่อหัวคอลัมน์ไม่มีทางตรงกับรหัสอ้างอิงที่ค้น
+  const letter = String.fromCharCode(64 + column);
+  const rowsBySheet = await getSheetValuesBatch(targetSheets, `${letter}:${letter}`);
 
   const byValue = new Map<string, RowLocation>();
   for (const sheet of targetSheets) {
     const rows = rowsBySheet.get(sheet) || [];
-    const firstDataRow = hasExpectedHeader(rows[0] || []) || looksLikeHeader(rows[0] || []) ? 1 : 0;
-    for (let i = firstDataRow; i < rows.length; i++) {
-      const key = rows[i][column - 1]?.toString();
+    for (let i = 0; i < rows.length; i++) {
+      const key = rows[i]?.[0]?.toString();
       if (key && !byValue.has(key)) byValue.set(key, { sheet, row: i + 1 });
     }
   }

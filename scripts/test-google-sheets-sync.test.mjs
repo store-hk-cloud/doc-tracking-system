@@ -19,6 +19,19 @@ function loadModule(client) {
       ranges.map(async (range) => (await values.get({ range })).data),
     ) } });
   }
+  // fixture ส่งแถวเต็ม A:U เสมอ แต่ Sheets จริงตอบเฉพาะคอลัมน์ที่ขอ
+  const fullBatchGet = values?.batchGet;
+  if (fullBatchGet) {
+    values.batchGet = async (call) => {
+      const result = await fullBatchGet(call);
+      const column = /!([A-Z]):\1$/.exec(call.ranges[0] || '')?.[1];
+      if (!column) return result;
+      const index = column.charCodeAt(0) - 65;
+      return { data: { valueRanges: (result.data.valueRanges || []).map((range) => ({
+        ...range, values: (range.values || []).map((row) => [row[index] ?? '']),
+      })) } };
+    };
+  }
   const exports = {};
   vm.runInNewContext(output, {
     exports,
@@ -186,7 +199,7 @@ test('row lookup finds an existing recipient from one batched daily-tab read', a
   assert.deepEqual(updateRanges, ['2026-09-03!A2:U2']);
   assert.deepEqual(appendRanges, []);
   assert.equal(batchGetCalls.length, 1);
-  assert.deepEqual(JSON.parse(JSON.stringify(batchGetCalls[0].ranges)), ['2026-09-03!A:U', '2026-09-05!A:U']);
+  assert.deepEqual(JSON.parse(JSON.stringify(batchGetCalls[0].ranges)), ['2026-09-03!U:U', '2026-09-05!U:U']);
 });
 
 test('row sync updates an existing reference and restores a missing row', async () => {

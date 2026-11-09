@@ -1,4 +1,3 @@
-import { Readable } from 'stream';
 import { getDriveClient } from './google-auth';
 
 const subfolderCache = new Map<string, string>();
@@ -56,7 +55,7 @@ export async function uploadToDrive(
       },
       media: {
         mimeType,
-        body: Readable.from(fileBuffer),
+        body: fileBuffer,
       },
     });
     const fileId = res.data.id!;

@@ -32,6 +32,11 @@
 		"SUPER_ADMIN_EMAIL": "store-hk@hillkoff.com",
 		"SUPABASE_STORAGE_BUCKET": "doc-attachments"
 	},
+	// แผนฟรีตัดคำขอที่ใช้ CPU เกิน 10ms (exceededResources) ต้องมี log ราย path
+	// ถึงจะรู้ว่าหน้าไหนกิน CPU ส่วน analytics แยกได้แค่ระดับทั้ง Worker
+	"observability": {
+		"enabled": true
+	},
 	"kv_namespaces": [
 		{
 			"binding": "NOTIFICATIONS_KV",
