@@ -75,8 +75,8 @@ export function Topbar() {
         <Link href="/policies" className="topbar-help-link">📚 คู่มือ</Link>
         {profile && (
           <a className="topbar-help-link desktop-download"
-            href="https://github.com/store-hk-cloud/doc-tracking-system/releases/download/desktop-v0.2.0/Hillkoff-Document-Tracking-Setup-0.2.0-x64.exe">
-            ดาวน์โหลดแอป Windows
+            href="https://store-hk-cloud.github.io/doc-tracking-system/" target="_blank" rel="noopener noreferrer">
+            ติดตั้งแอป Windows
           </a>
         )}
         <button

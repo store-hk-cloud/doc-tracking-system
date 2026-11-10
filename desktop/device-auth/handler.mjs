@@ -1,6 +1,6 @@
 import { APP_ORIGIN, getChallenge, isDeviceSecret } from './shared.mjs';
 
-export function createDeviceAuthHandler({ webOrigin, identify, isActive, register, approve, claim, issue }) {
+export function createDeviceAuthHandler({ webOrigin, clientOrigins = [APP_ORIGIN], identify, isActive, register, approve, claim, issue }) {
   return async function handle(request) {
     const origin = request.headers.get('Origin');
     const headers = {
@@ -8,7 +8,8 @@ export function createDeviceAuthHandler({ webOrigin, identify, isActive, registe
       Vary: 'Origin',
     };
     const respond = (status) => new Response(null, { status, headers });
-    if (origin !== webOrigin && origin !== APP_ORIGIN) return respond(403);
+    const isClient = clientOrigins.includes(origin);
+    if (origin !== webOrigin && !isClient) return respond(403);
     headers['Access-Control-Allow-Origin'] = origin;
     headers['Access-Control-Allow-Headers'] = 'authorization, apikey, content-type';
     headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS';
@@ -20,7 +21,7 @@ export function createDeviceAuthHandler({ webOrigin, identify, isActive, registe
     try {
       switch (body.action) {
         case 'register':
-          if (origin !== APP_ORIGIN) return respond(403);
+          if (!isClient) return respond(403);
           if (!isDeviceSecret(body.challenge)) return respond(400);
           return respond(await register(body.challenge) ? 201 : 409);
         case 'approve': {
@@ -33,7 +34,7 @@ export function createDeviceAuthHandler({ webOrigin, identify, isActive, registe
           return respond(await approve(body.challenge, id) ? 204 : 409);
         }
         case 'claim': {
-          if (origin !== APP_ORIGIN) return respond(403);
+          if (!isClient) return respond(403);
           if (!isDeviceSecret(body.verifier)) return respond(400);
           const id = await claim(await getChallenge(body.verifier));
           if (!id) return respond(202);

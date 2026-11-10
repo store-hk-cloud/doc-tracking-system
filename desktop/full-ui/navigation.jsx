@@ -1,16 +1,18 @@
 import { useSyncExternalStore } from 'react';
 import { matchRoute } from './routes.mjs';
 import routes from 'desktop:routes';
+import { pwaHref, pwaPath } from '../pwa/runtime.mjs';
 
 const subscribe = (callback) => {
   window.addEventListener('popstate', callback);
-  return () => window.removeEventListener('popstate', callback);
+  if (__PWA__) window.addEventListener('hashchange', callback);
+  return () => {window.removeEventListener('popstate', callback); if (__PWA__) window.removeEventListener('hashchange', callback);};
 };
-const getPath = () => window.location.pathname;
+const getPath = () => __PWA__ ? pwaPath(window.location.hash) : window.location.pathname;
 const routePaths = Object.keys(routes);
 
 function navigate(href, replace = false) {
-  window.history[replace ? 'replaceState' : 'pushState'](null, '', href);
+  window.history[replace ? 'replaceState' : 'pushState'](null, '', __PWA__ ? pwaHref(href, __PWA_BASE__) : href);
   window.dispatchEvent(new PopStateEvent('popstate'));
   window.scrollTo(0, 0);
 }

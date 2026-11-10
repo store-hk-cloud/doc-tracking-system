@@ -2,7 +2,7 @@ import routeMap from 'desktop-api:routes';
 import { NextRequest } from './next-server.mjs';
 import { withRequestClient } from './supabase-server.mjs';
 
-const desktopOrigin = 'app://desktop';
+const clientOrigins = new Set(['app://desktop', 'https://store-hk-cloud.github.io']);
 const paths = routeMap.map(([route, handlers]) => [route.split('/'), handlers]);
 paths.sort(([first], [second]) => first.filter(part => part.startsWith('[')).length -
   second.filter(part => part.startsWith('[')).length);
@@ -37,8 +37,8 @@ function desktopHeaders(response, origin) {
   const headers = new Headers(response.headers);
   headers.set('Cache-Control', 'private, no-store');
   headers.append('Vary', 'Origin, Authorization');
-  if (origin === desktopOrigin) {
-    headers.set('Access-Control-Allow-Origin', desktopOrigin);
+  if (clientOrigins.has(origin)) {
+    headers.set('Access-Control-Allow-Origin', origin);
     headers.set('Access-Control-Expose-Headers', 'Allow');
   }
   return new Response(response.body, { status: response.status, headers });
@@ -66,7 +66,7 @@ async function dispatch(request, origin) {
   if (!isLogin && !token) return fail(401, 'Not authenticated');
 
   let nextRequest = new NextRequest(request);
-  if (route.suffix === 'admin/backfill-sheets' && request.method === 'POST' && origin === desktopOrigin) {
+  if (route.suffix === 'admin/backfill-sheets' && request.method === 'POST' && clientOrigins.has(origin)) {
     // ต้นทาง Desktop ผ่านการตรวจแล้ว ให้ route เดิมตรวจ same-origin ต่อได้
     const headers = new Headers(request.headers);
     headers.set('Origin', url.origin);
@@ -84,7 +84,7 @@ async function dispatch(request, origin) {
 
 export async function handleRequest(request) {
   const origin = request.headers.get('Origin');
-  if (origin !== null && origin !== desktopOrigin) return desktopHeaders(fail(403, 'Forbidden'), origin);
+  if (origin !== null && !clientOrigins.has(origin)) return desktopHeaders(fail(403, 'Forbidden'), origin);
   try {
     return desktopHeaders(await dispatch(request, origin), origin);
   } catch (error) {

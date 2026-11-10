@@ -74,6 +74,21 @@ test('desktop CORS only permits the app origin and hides maintenance endpoints',
   }
 });
 
+test('installed browser app has exact-origin CORS and still requires verified identity', async () => {
+  mockSupabase(() => assert.fail('no database access without a session'));
+  const pwa = 'https://store-hk-cloud.github.io';
+  const allowed = await handle(request('documents', { site: pwa, method: 'OPTIONS' }));
+  assert.equal(allowed.status, 204);
+  assert.equal(allowed.headers.get('access-control-allow-origin'), pwa);
+  assert.equal((await handle(request('profile', { site: pwa }))).status, 401);
+  assert.equal((await handle(request('profile', { site: pwa, token: 'forged' }))).status, 401);
+  for (const site of ['https://store-hk-cloud.github.io.evil.test', 'http://store-hk-cloud.github.io', 'https://other.github.io']) {
+    const denied = await handle(request('profile', { site, method: 'OPTIONS' }));
+    assert.equal(denied.status, 403);
+    assert.equal(denied.headers.get('access-control-allow-origin'), null);
+  }
+});
+
 test('bearer verification is required before handlers and username POST is public', async () => {
   mockSupabase(() => assert.fail('no API access'));
   assert.equal((await handle(request('profile'))).status, 401);

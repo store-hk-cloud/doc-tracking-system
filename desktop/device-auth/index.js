@@ -17,6 +17,7 @@ async function rpc(name, params) {
 
 Deno.serve(createDeviceAuthHandler({
   webOrigin,
+  clientOrigins: ['app://desktop', 'https://store-hk-cloud.github.io'],
   async identify(token) {
     const { data, error } = await publicClient.auth.getUser(token);
     return error ? null : data.user?.id;

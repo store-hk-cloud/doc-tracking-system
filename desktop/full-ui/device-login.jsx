@@ -6,6 +6,8 @@ import { createClient } from './supabase-client.mjs';
 
 export function DeviceLogin() {
   const [card, setCard] = useState(null);
+  const [approval, setApproval] = useState(null);
+  const popup = useRef(null);
   const [status, setStatus] = useState(null);
   const active = useRef(null);
 
@@ -13,10 +15,13 @@ export function DeviceLogin() {
     setCard(document.querySelector('.auth-card'));
   }, []);
 
-  useEffect(() => () => active.current?.abort(), []);
+  useEffect(() => () => { active.current?.abort(); popup.current?.close(); }, []);
 
   async function begin() {
     if (active.current) return;
+    if (__PWA__) popup.current = window.open('about:blank', '_blank');
+    if (popup.current) popup.current.opener = null;
+    setApproval(null);
     const controller = new AbortController();
     active.current = controller;
     setStatus({ pending: true });
@@ -31,7 +36,11 @@ export function DeviceLogin() {
           setStatus({ applying: true });
           return createClient().auth.setSession(tokens);
         },
-        openBrowser: (url) => window.open(url, '_blank', 'noopener,noreferrer'),
+        openBrowser: (url) => {
+          if (!__PWA__) return window.open(url, '_blank', 'noopener,noreferrer');
+          setApproval(url);
+          if (popup.current && !popup.current.closed) popup.current.location.replace(url);
+        },
         signal: controller.signal,
         onCode: (code) => {
           if (!controller.signal.aborted) setStatus({ pending: true, code });
@@ -39,6 +48,8 @@ export function DeviceLogin() {
       });
       window.location.replace('/dashboard');
     } catch {
+      popup.current?.close();
+      setApproval(null);
       if (!controller.signal.aborted) {
         setStatus({ error: 'เข้าสู่ระบบผ่านเว็บไม่สำเร็จ กรุณาลองอีกครั้ง' });
       }
@@ -48,6 +59,8 @@ export function DeviceLogin() {
   }
 
   function cancel() {
+    popup.current?.close();
+    setApproval(null);
     active.current?.abort();
     active.current = null;
     setStatus(null);
@@ -62,6 +75,7 @@ export function DeviceLogin() {
             {status.code ? <>ตรวจสอบรหัส <strong>{status.code}</strong> บนเว็บ แล้วกดอนุมัติการเข้าสู่ระบบ</>
               : 'กำลังเปิดหน้าสำหรับยืนยันการเข้าสู่ระบบ…'}
           </p>
+          {approval && <p><a href={approval} target="_blank" rel="noopener noreferrer">เปิดหน้ายืนยันการเข้าสู่ระบบ</a></p>}
           <button type="button" className="ghost-button" onClick={cancel}>ยกเลิก</button>
         </>
       ) : (

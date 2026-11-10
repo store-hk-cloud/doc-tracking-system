@@ -20,7 +20,8 @@ async function findPages(directory) {
   return pages.flat();
 }
 
-export async function buildFullUi({ outdir, supabaseOrigin, publicKey, webOrigin }) {
+export async function buildFullUi({ outdir, supabaseOrigin, publicKey, webOrigin, platform = 'desktop', basePath = '/' }) {
+  if (!/^\/(?:[a-zA-Z0-9_-]+\/)*$/.test(basePath)) throw new Error('basePath ต้องเป็น path ที่ลงท้ายด้วย /');
   const origin = new URL(supabaseOrigin);
   if (!/^https:\/\/[a-z0-9]+\.supabase\.co\/?$/.test(origin.href) ||
       !/^sb_publishable_[\w-]+$/.test(publicKey)) {
@@ -59,6 +60,8 @@ export async function buildFullUi({ outdir, supabaseOrigin, publicKey, webOrigin
       target: 'chrome130',
       jsx: 'automatic',
       define: {
+        __PWA__: JSON.stringify(platform === 'browser'),
+        __PWA_BASE__: JSON.stringify(basePath),
         __SUPABASE_ORIGIN__: JSON.stringify(origin.origin),
         __SUPABASE_PUBLISHABLE_KEY__: JSON.stringify(publicKey),
         __DESKTOP_WEB_ORIGIN__: JSON.stringify(web?.origin ?? ''),
@@ -74,6 +77,11 @@ export async function buildFullUi({ outdir, supabaseOrigin, publicKey, webOrigin
       plugins: [{
         name: 'desktop-routes',
         setup(builder) {
+          if (platform === 'browser') builder.onLoad({ filter: /\.(tsx|jsx)$/ }, async (args) => {
+            const contents = await readFile(args.path, 'utf8');
+            const scoped = contents.replace(/window\.location\.href = '(\/[^']*)';/g, (_, path) => `window.location.href = ${JSON.stringify(basePath + '#')} + ${JSON.stringify(path)}; window.location.reload();`).replace(/window\.location\.replace\('(\/[^']*)'\)/g, (_, path) => `window.location.replace(${JSON.stringify(basePath + '#' + path)}); window.location.reload()`);
+            return {contents: scoped, loader: args.path.endsWith('.tsx') ? 'tsx' : 'jsx'};
+          });
           builder.onResolve({ filter: /^desktop:routes$/ }, () => ({ path: 'routes', namespace: 'desktop' }));
           builder.onLoad({ filter: /.*/, namespace: 'desktop' }, () => ({
             contents: `${imports.join('\n')}\nexport default {${exports.join(',')}};`,

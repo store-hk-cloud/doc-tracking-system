@@ -14,6 +14,7 @@ function setup() {
   let expired = false;
   const handle = createDeviceAuthHandler({
     webOrigin: web,
+    clientOrigins: [app, 'https://store-hk-cloud.github.io'],
     identify: async (token) => token === 'browser' ? 'actor' : null,
     isActive: async () => active,
     register: async () => { pending = true; return true; },
@@ -50,6 +51,18 @@ test('rejects unknown origins, disabled actors, and expired challenges', async (
   await post(app, { action: 'register', challenge });
   expire();
   assert.equal((await post(app, { action: 'claim', verifier })).status, 202);
+});
+test('PWA pairs with an existing website session and cannot approve its own device request', async () => {
+  const pwa = 'https://store-hk-cloud.github.io';
+  const { post } = setup();
+  assert.equal((await post(pwa, { action: 'register', challenge })).status, 201);
+  assert.equal((await post(pwa, { action: 'approve', challenge }, 'browser')).status, 403);
+  assert.equal((await post(web, { action: 'approve', challenge }, 'browser')).status, 204);
+  const claimed = await post(pwa, { action: 'claim', verifier });
+  assert.equal(claimed.status, 200);
+  assert.equal(claimed.headers.get('access-control-allow-origin'), pwa);
+  assert.deepEqual(await claimed.json(), { access_token: 'access', refresh_token: 'refresh' });
+  assert.equal((await post(pwa, { action: 'claim', verifier })).status, 202);
 });
 test('desktop registers before opening the website and keeps the verifier out of the browser URL', async (t) => {
   const { startDeviceLogin } = await import('../desktop/device-auth/client.mjs');

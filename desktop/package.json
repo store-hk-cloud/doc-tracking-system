@@ -8,6 +8,7 @@
   "main": "main.cjs",
   "type": "module",
   "scripts": {
+    "build:pwa": "node build-pwa.mjs",
     "build:web": "node build.mjs",
     "package:win": "npm run build:web && electron-builder --win nsis --x64",
     "package:full:win": "node build-full.mjs && electron-builder --config full-builder.json --win nsis --x64"

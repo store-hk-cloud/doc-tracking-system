@@ -9,7 +9,21 @@ import { createApiFetch } from './api-fetch.mjs';
 import { usePathname, useRoute, useRouter } from './navigation.jsx';
 import { runSheetsAction } from './sheets.mjs';
 import routes from 'desktop:routes';
+import { PwaInstall } from '../pwa/install.jsx';
+import { pwaHref, followFragment } from '../pwa/runtime.mjs';
 import { DeviceLogin } from './device-login.jsx';
+
+if (__PWA__) document.addEventListener('click', (event) => {
+  const link = event.target.closest?.('a[href]');
+  const href = link?.getAttribute('href');
+  if (followFragment(href, document)) { event.preventDefault(); return; }
+  if (!href?.startsWith('/') || href.startsWith('//') || href.startsWith('/api/')) return;
+  if (!event.defaultPrevented && !link.target && event.button === 0 && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
+    const scoped = pwaHref(href, __PWA_BASE__);
+    if (scoped === href || href.startsWith(__PWA_BASE__ + '#')) return;
+    event.preventDefault(); window.location.href = scoped;
+  }
+});
 
 window.fetch = createApiFetch({
   fetch: window.fetch.bind(window),
@@ -32,7 +46,7 @@ function DesktopPage() {
 
   if (loading || destination) return <div className="loading-screen">Loading...</div>;
   if (!match) {
-    return <div className="search-panel">ไม่พบหน้านี้ <a href="/dashboard">กลับไปหน้า Dashboard</a></div>;
+    return <div className="search-panel">ไม่พบหน้านี้ <a href={__PWA__ ? pwaHref('/dashboard', __PWA_BASE__) : '/dashboard'}>กลับไปหน้า Dashboard</a></div>;
   }
   const Page = routes[match.route];
   const page = <Page key={path} />;
@@ -50,14 +64,22 @@ function SheetsActions() {
     async function run(path) {
       if (pending) return;
       pending = true;
+      const popup = __PWA__ && path === '/api/setup-sheets' ? window.open('about:blank', '_blank') : null;
+      if (popup) popup.opener = null;
+      let fallback;
       setNotice({ message: 'กำลังเชื่อมต่อ Google Sheets…' });
       try {
         const message = await runSheetsAction(path, {
           fetch: window.fetch,
-          open: (url) => window.open(url, '_blank', 'noopener,noreferrer'),
+          open: (url) => {
+            if (!__PWA__) return window.open(url, '_blank', 'noopener,noreferrer');
+            if (popup && !popup.closed) popup.location.replace(url);
+            else fallback = url;
+          },
         });
-        setNotice(message ? { message } : null);
+        setNotice(fallback ? {message: 'เปิด Google Sheets', url: fallback} : message ? { message } : null);
       } catch (error) {
+        popup?.close();
         setNotice({ message: error.message, error: true });
       } finally {
         pending = false;
@@ -85,7 +107,7 @@ function SheetsActions() {
 
   return notice ? (
     <div role="status" className={notice.error ? 'toast error' : 'toast success'}>
-      {notice.message} <button type="button" className="ghost-button" onClick={() => setNotice(null)}>ปิด</button>
+      {notice.message} {notice.url && <a href={notice.url} target="_blank" rel="noopener noreferrer">เปิดตาราง</a>} <button type="button" className="ghost-button" onClick={() => setNotice(null)}>ปิด</button>
     </div>
   ) : null;
 }
@@ -94,5 +116,6 @@ createRoot(document.getElementById('root')).render(
   <AuthProvider>
     <AppLayout><DesktopPage /></AppLayout>
     <SheetsActions />
+    {__PWA__ && <PwaInstall />}
   </AuthProvider>,
 );
