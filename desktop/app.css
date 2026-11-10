@@ -1,0 +1,89 @@
+:root {
+  --font-kanit: "Leelawadee UI";
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.desktop-header, .desktop-main {
+  width: min(100% - 40px, 1280px);
+  margin-inline: auto;
+}
+
+.desktop-header, .desktop-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.desktop-header {
+  padding-block: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.desktop-header button {
+  margin-left: auto;
+}
+
+.desktop-header h1, .desktop-main h2 {
+  margin: 0;
+}
+
+.desktop-main {
+  padding-block: 20px;
+}
+
+.desktop-login, .desktop-section {
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.desktop-login {
+  max-width: 430px;
+  margin-inline: auto;
+}
+
+.desktop-login form, .desktop-login label {
+  display: grid;
+  gap: 8px;
+}
+
+.desktop-login form {
+  margin-top: 16px;
+}
+
+.desktop-section > * + * {
+  margin-top: 12px;
+}
+
+.desktop-main input:not([type="checkbox"]) {
+  font: inherit;
+  padding: 8px 10px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+}
+
+.desktop-main input[type="checkbox"] {
+  accent-color: var(--primary);
+}
+
+.desktop-main [role="status"]:empty {
+  display: none;
+}
+
+.desktop-error {
+  color: var(--danger);
+}
+
+#queue-results details + details {
+  margin-top: 10px;
+}
+
+#queue-results summary {
+  cursor: pointer;
+  font-weight: 600;
+}

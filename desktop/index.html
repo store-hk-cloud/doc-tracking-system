@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hillkoff · รับเอกสาร ACC</title>
+  <link rel="stylesheet" href="./ui-kit.css">
+  <link rel="stylesheet" href="./app.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <header class="desktop-header">
+    <img src="./hillkoff-emblem.png" width="40" height="40" alt="Hillkoff">
+    <h1>รับเอกสาร ACC</h1>
+    <button type="button" class="ghost-button" id="logout" hidden>ออกจากระบบ</button>
+  </header>
+  <main class="desktop-main">
+    <section class="side-panel desktop-login" id="login-panel" aria-labelledby="login-title">
+      <h2 id="login-title">เข้าสู่ระบบ</h2>
+      <form id="login-form">
+        <label>อีเมล <input id="email" type="email" autocomplete="username" required></label>
+        <label>รหัสผ่าน <input id="password" type="password" autocomplete="current-password" required></label>
+        <button type="submit" id="login-button" class="secondary-button">เข้าสู่ระบบ</button>
+      </form>
+      <p id="login-status" role="status"></p>
+    </section>
+    <div id="workspace" hidden>
+      <section class="side-panel desktop-section" aria-labelledby="pending-title">
+        <h2 id="pending-title">เอกสารรอรับ</h2>
+        <form class="desktop-controls" id="search-form">
+          <label for="search">ค้นหาเอกสาร</label>
+          <input type="search" id="search" placeholder="เลขที่เอกสาร ผู้ส่ง หรือเรื่อง">
+          <button class="ghost-button" type="submit" id="search-button">ค้นหา / โหลดใหม่</button>
+        </form>
+        <p id="pending-status" role="status"></p>
+        <div class="table-wrap" tabindex="0" aria-label="ตารางเอกสารรอรับ">
+          <table>
+            <thead><tr>
+              <th scope="col"><input type="checkbox" id="select-all" aria-label="เลือกเอกสารในหน้านี้ สูงสุด 50 รายการ"></th>
+              <th scope="col">เลขที่เอกสาร</th><th scope="col">ผู้ส่ง</th><th scope="col">เรื่อง</th>
+              <th scope="col">วันที่ส่ง</th><th scope="col">ฝ่าย</th><th scope="col">ขั้นตอน</th>
+            </tr></thead>
+            <tbody id="pending-rows"></tbody>
+          </table>
+        </div>
+        <form class="desktop-controls" id="receipt-form">
+          <label for="signature">ชื่อผู้ลงนาม</label>
+          <input id="signature" maxlength="120" required>
+          <button type="submit" class="secondary-button" id="submit-receipt" disabled>ลงนามรับเอกสาร</button>
+          <span id="selection-count" role="status"></span>
+        </form>
+        <p id="receipt-status" role="status"></p>
+      </section>
+      <section class="side-panel desktop-section" aria-labelledby="queue-title">
+        <div class="desktop-controls">
+          <h2 id="queue-title">ผลการรับเอกสาร</h2>
+          <button type="button" class="ghost-button" id="refresh-queue">อัปเดตผล</button>
+        </div>
+        <p id="queue-status" role="status"></p>
+        <div id="queue-results"></div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

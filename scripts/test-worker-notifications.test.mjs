@@ -6,7 +6,7 @@ import { loadModule } from './test-support/load-module.mjs';
 
 const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
 const jwt = id => `${encode({ alg: 'HS256' })}.${encode({ sub: id, exp: Math.floor(Date.now() / 1000) + 3600 })}.signature`;
-function fixture({ inactive = false, missing = false, rejectUser = false, revoked = false, expiresIn = 3600, expired = false, chunked = false } = {}) {
+function fixture({ inactive = false, missing = false, rejectUser = false, revoked = false, expiresIn = 3600, expired = false, chunked = false, shared = false } = {}) {
   const calls = [], writes = [], values = new Map([
     ['notify:dept:dept-a:001', JSON.stringify({ title: 'new' })],
     ['notify:dept:dept-a', JSON.stringify([{ title: 'legacy' }])],
@@ -18,6 +18,7 @@ function fixture({ inactive = false, missing = false, rejectUser = false, revoke
     async get(key) { calls.push('kv-get'); return values.get(key) || null; },
     async delete(key) { writes.push(key); values.delete(key); },
   } };
+  if (shared) env.SHARED_NOTIFICATIONS_DB = 'true';
   const fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : input);
     calls.push(url.pathname);
@@ -26,6 +27,13 @@ function fixture({ inactive = false, missing = false, rejectUser = false, revoke
       assert.match(new Headers(init.headers).get('authorization') || '', /^Bearer [^.]+\.[^.]+\.signature$/);
       if (revoked) return Response.json({ message: 'Session removed', code: 'session_not_found' }, { status: 403, headers: { 'X-Supabase-Api-Version': '2024-01-01' } });
       return rejectUser ? Response.json({ message: 'invalid', code: 'bad_jwt' }, { status: 401 }) : Response.json({ id: 'user-a' });
+    }
+    if (shared) {
+      assert.equal(url.pathname, '/rest/v1/rpc/access_owned_notifications');
+      assert.equal(new Headers(init.headers).get('apikey'), 'private');
+      const { p_actor_id, p_clear } = JSON.parse(init.body);
+      assert.equal(p_actor_id, 'user-a');
+      return Response.json(inactive || missing ? null : p_clear ? [] : [{ title: 'shared' }]);
     }
     assert.equal(url.pathname, '/rest/v1/profiles');
     assert.equal(url.searchParams.get('id'), 'eq.user-a');
@@ -71,6 +79,15 @@ test('notification delete clears only the verified department', async () => {
   const f = fixture(); assert.equal((await f.handle(f.request('DELETE'))).status, 200);
   assert.ok(f.writes.every(key => key.startsWith('notify:dept:dept-a')));
   assert.equal(f.values.has('notify:dept:dept-b:001'), true);
+});
+test('shared inbox uses one database RPC after verified identity and keeps responses private', async () => {
+  const f = fixture({ shared: true });
+  const response = await f.handle(f.request());
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { success: true, data: [{ title: 'shared' }] });
+  assert.equal((await f.handle(f.request('DELETE'))).status, 200);
+  assert.deepEqual(f.calls, ['/auth/v1/user', '/rest/v1/rpc/access_owned_notifications', '/auth/v1/user', '/rest/v1/rpc/access_owned_notifications']);
+  assert.equal((await fixture({ shared: true, inactive: true }).handle(f.request())).status, 401);
 });
 test('expired cookie refresh uses server SDK and returns renewed cookies', async () => {
   const f = fixture({ expired: true }); const response = await f.handle(f.request());

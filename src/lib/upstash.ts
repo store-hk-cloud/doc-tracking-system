@@ -2,6 +2,7 @@ import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { randomUUID } from 'crypto';
 
 import { readNotifications, removeNotifications, type Notification, type NotificationKv } from './notification-store';
+import * as shared from './supabase-notifications';
 
 function getNotificationsKv(): NotificationKv | null {
   try {
@@ -18,6 +19,7 @@ export async function notifyDepartment(
   departmentId: string,
   message: Notification
 ) {
+  if (process.env.SHARED_NOTIFICATIONS_DB === 'true') return shared.notifyDepartment(departmentId, message);
   const kv = getNotificationsKv();
   if (!kv) return;
 
@@ -33,9 +35,11 @@ export async function notifyDepartment(
 }
 
 export async function getNotifications(departmentId: string) {
+  if (process.env.SHARED_NOTIFICATIONS_DB === 'true') return shared.getNotifications(departmentId);
   return readNotifications(getNotificationsKv(), departmentId);
 }
 
 export async function clearNotifications(departmentId: string) {
+  if (process.env.SHARED_NOTIFICATIONS_DB === 'true') return shared.clearNotifications(departmentId);
   return removeNotifications(getNotificationsKv(), departmentId);
 }

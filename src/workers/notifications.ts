@@ -20,6 +20,19 @@ export async function handleNotifications(request: Request, env: NotificationsEn
     const user = await getWorkerUser(request, new URL(url.endsWith('/') ? url : `${url}/`), publicKey, headers);
     if (!user) return reply({ success: false, error: 'Not authenticated' }, 401);
 
+    if (env.SHARED_NOTIFICATIONS_DB === 'true') {
+      const clear = request.method === 'DELETE';
+      const inbox = await fetch(`${url.replace(/\/$/, '')}/rest/v1/rpc/access_owned_notifications`, {
+        method: 'POST',
+        headers: { apikey: secretKey, Authorization: `Bearer ${secretKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_actor_id: user.id, p_clear: clear }),
+      });
+      if (!inbox.ok) return reply({ success: false, error: 'Unable to load notifications' }, 503);
+      const messages = await inbox.json();
+      if (!Array.isArray(messages)) return reply({ success: false, error: 'Not authenticated' }, 401);
+      return reply(clear ? { success: true } : { success: true, data: messages });
+    }
+
     // หน่วยงานต้องอ่านจาก profile สดบน server เช่นเดียวกับ API เดิม ไม่เชื่อ cookie หรือ headers ที่ผู้ใช้ส่งมา
     const profileResponse = await fetch(`${url.replace(/\/$/, '')}/rest/v1/profiles?select=id,department_id,is_active&id=eq.${encodeURIComponent(user.id)}`, {
       headers: { apikey: secretKey, Authorization: `Bearer ${secretKey}` },

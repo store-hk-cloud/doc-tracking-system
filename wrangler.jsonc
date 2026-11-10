@@ -32,6 +32,7 @@
 		"SUPER_ADMIN_EMAIL": "store-hk@hillkoff.com",
 		"GOOGLE_SHEETS_SYNC_MODE": "apps_script",
 		"DOCUMENT_RECEIPT_FAST_PATH": "true",
+		"SHARED_NOTIFICATIONS_DB": "true",
 		"SUPABASE_STORAGE_BUCKET": "doc-attachments"
 	},
 	// แผนฟรีตัดคำขอที่ใช้ CPU เกิน 10ms (exceededResources) ต้องมี log ราย path

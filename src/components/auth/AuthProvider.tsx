@@ -105,7 +105,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: 'local' });
     // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- โหลดใหม่เพื่อล้าง state และข้อมูลหน้าที่ป้องกันด้วย session
     window.location.href = '/';
   };

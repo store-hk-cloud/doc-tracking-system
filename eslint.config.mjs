@@ -2,7 +2,8 @@ import nextCoreWebVitals from "eslint-config-next/core-web-vitals";
 import nextTypescript from "eslint-config-next/typescript";
 
 export default [
-  { ignores: ['.open-next/**', '.wrangler/**', 'cloudflare-env.d.ts'] },
+  { ignores: ['.open-next/**', '.wrangler/**', 'cloudflare-env.d.ts', 'desktop/web/**', 'desktop/full-web/**', 'build/desktop/**',
+    'supabase/functions/desktop-api/**', 'supabase/functions/desktop-device-auth/**'] },
   ...nextCoreWebVitals,
   ...nextTypescript,
   {

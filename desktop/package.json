@@ -1,0 +1,29 @@
+{
+  "name": "hillkoff-doc-receipt",
+  "productName": "Hillkoff Document Receipt",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hillkoff ACC desktop receipt pilot",
+  "author": "Hillkoff",
+  "main": "main.cjs",
+  "type": "module",
+  "scripts": {
+    "build:web": "node build.mjs",
+    "package:win": "npm run build:web && electron-builder --win nsis --x64",
+    "package:full:win": "node build-full.mjs && electron-builder --config full-builder.json --win nsis --x64"
+  },
+  "devDependencies": {
+    "@supabase/supabase-js": "2.110.0",
+    "electron": "45.2.3",
+    "electron-builder": "26.18.0",
+    "esbuild": "0.28.2"
+  },
+  "build": {
+    "appId": "com.hillkoff.docreceipt",
+    "artifactName": "Hillkoff-Document-Receipt-Setup-${version}-${arch}.${ext}",
+    "directories": { "output": "../build/desktop" },
+    "files": ["main.cjs", "web/**", "package.json"],
+    "win": { "target": "nsis", "icon": "web/icon-512.png" },
+    "nsis": { "oneClick": false, "perMachine": false, "allowElevation": false }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "appId": "com.hillkoff.docreceipt",
+  "productName": "Hillkoff Document Tracking",
+  "artifactName": "Hillkoff-Document-Tracking-Setup-${version}-${arch}.${ext}",
+  "directories": { "output": "../build/desktop" },
+  "extraMetadata": { "main": "main-full.cjs", "version": "0.2.0" },
+  "files": ["main-full.cjs", "full-policy.cjs", "full-preload.cjs", "full-web/**", "package.json"],
+  "win": { "target": "nsis", "icon": "full-web/icons/icon-512.png" },
+  "nsis": { "oneClick": false, "perMachine": false, "allowElevation": false, "script": "full-installer.nsi" }
+}
