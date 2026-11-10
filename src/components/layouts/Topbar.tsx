@@ -75,8 +75,8 @@ export function Topbar() {
         <Link href="/policies" className="topbar-help-link">📚 คู่มือ</Link>
         {profile && (
           <a className="topbar-help-link desktop-download"
-            href="https://store-hk-cloud.github.io/doc-tracking-system/" target="_blank" rel="noopener noreferrer">
-            ติดตั้งแอป Windows
+            href="https://store-hk-cloud.github.io/doc-tracking-system/?install=1" target="_blank" rel="noopener noreferrer">
+            ติดตั้งแอป
           </a>
         )}
         <button

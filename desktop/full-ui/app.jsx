@@ -9,7 +9,7 @@ import { createApiFetch } from './api-fetch.mjs';
 import { usePathname, useRoute, useRouter } from './navigation.jsx';
 import { runSheetsAction } from './sheets.mjs';
 import routes from 'desktop:routes';
-import { PwaInstall } from '../pwa/install.jsx';
+import { PwaInstall, PwaInstallPage } from '../pwa/install.jsx';
 import { pwaHref, followFragment } from '../pwa/runtime.mjs';
 import { DeviceLogin } from './device-login.jsx';
 
@@ -113,6 +113,7 @@ function SheetsActions() {
 }
 
 createRoot(document.getElementById('root')).render(
+  __PWA__ && new URL(window.location.href).searchParams.get('install') === '1' ? <PwaInstallPage /> :
   <AuthProvider>
     <AppLayout><DesktopPage /></AppLayout>
     <SheetsActions />
