@@ -5,7 +5,7 @@
   "scripts": {
     "build": "next build",
     "test": "node --test scripts/test-*.test.mjs scripts/test-delivery-verification.mjs && npm run test:money",
-    "typecheck": "tsc --noEmit --incremental false",
+    "typecheck": "tsc --noEmit --incremental false && tsc --project tsconfig.worker.json",
     "dev": "next dev",
     "start": "next start",
     "lint": "eslint . --max-warnings 0",
@@ -22,7 +22,9 @@
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "upload": "opennextjs-cloudflare build && opennextjs-cloudflare upload",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
-    "deploy:cron": "wrangler deploy --config wrangler.cron.jsonc"
+    "deploy:cron": "wrangler deploy --config wrangler.cron.jsonc",
+    "pretypecheck": "npm run cf-typegen",
+    "verify:notification-worker": "wrangler deploy --dry-run --outdir .wrangler/notification-runtime && node scripts/verify-notification-worker.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^7.0.0",

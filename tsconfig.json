@@ -40,6 +40,8 @@
     ".open-next",
     ".wrangler",
     ".next/standalone",
-    "cloudflare-env.d.ts"
+    "cloudflare-env.d.ts",
+    "worker.ts",
+    "src/workers"
   ]
 }
