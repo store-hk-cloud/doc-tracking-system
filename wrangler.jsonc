@@ -31,6 +31,7 @@
 		"NEXT_PUBLIC_APP_URL": "https://doc-tracking-system.store-hk.workers.dev",
 		"SUPER_ADMIN_EMAIL": "store-hk@hillkoff.com",
 		"GOOGLE_SHEETS_SYNC_MODE": "apps_script",
+		"DOCUMENT_RECEIPT_FAST_PATH": "true",
 		"SUPABASE_STORAGE_BUCKET": "doc-attachments"
 	},
 	// แผนฟรีตัดคำขอที่ใช้ CPU เกิน 10ms (exceededResources) ต้องมี log ราย path
