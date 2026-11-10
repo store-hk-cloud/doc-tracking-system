@@ -11,8 +11,9 @@ async function mount(kind, fetchHistory = () => response([])) {
   const requests = [];
   const Page = loadModule(`src/app/${kind}/page.tsx`, {
     '@/components/auth/AuthProvider': { useAuth: () => ({ profile: { role: 'admin' }, user: { id: 'me' } }) },
-  }, { window: { addEventListener() {}, removeEventListener() {}, fetch: async url => {
+  }, { AbortController, document: { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} }, window: { addEventListener() {}, removeEventListener() {}, fetch: async url => {
     requests.push(url);
+    if (url === '/api/deliveries/queue') return Response.json({ success: true, data: [] });
     return url.startsWith('/api/departments') || url === '/api/documents?status=signed' || url.includes('status=delivered') ? response([]) : fetchHistory(url);
   } } }).default;
   let renderer;

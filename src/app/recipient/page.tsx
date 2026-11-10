@@ -5,6 +5,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { getGoodsReceiptWorkflowAction, isGoodsReceipt } from '@/lib/document-workflow';
 import { documentNo } from '@/lib/document-no';
 import { submitReceipt } from '@/lib/receipt-submit';
+import { RECEIPT_QUEUE_BATCH_LIMIT, RECEIPT_QUEUE_URL, receiptQueueError, type ReceiptQueueBatch } from '@/lib/receipt-queue';
 
 const MIN_KEYWORD_LENGTH = 3;
 
@@ -74,6 +75,18 @@ export default function RecipientListPage() {
   const [showBulkSignModal, setShowBulkSignModal] = useState(false);
   const [bulkSignature, setBulkSignature] = useState('');
   const [bulkSignError, setBulkSignError] = useState('');
+  const [queueView, setQueueView] = useState<{ owner: string; batches: ReceiptQueueBatch[] } | null>(null);
+  const [queueRefresh, setQueueRefresh] = useState(0);
+  const [queueReadError, setQueueReadError] = useState('');
+  const queueOwner = user?.id;
+  const queueBatches = queueView?.owner === queueOwner ? queueView?.batches || [] : [];
+  const queueItems = queueBatches.flatMap(batch => batch.items);
+  const cycleKey = (id: string, timestamp?: string) => `${id}|${timestamp?.replace(/Z$/, '+00:00')}`;
+  const queuedCycles = new Set(queueItems.filter(item => item.status === 'queued').map(item => cycleKey(item.recipient_id, item.expected_updated_at)));
+  const succeededCycles = new Set(queueItems.filter(item => item.status === 'succeeded').map(item => cycleKey(item.recipient_id, item.expected_updated_at)));
+  const queueActive = queuedCycles.size > 0;
+  const queueWasActive = useRef(false);
+  const isQueuedReceipt = (doc: any) => queuedCycles.has(cycleKey(doc.id, doc.recipient_updated_at));
 
   // popup ลงนามรายการเดียว: เดิมกดปุ่มในตารางแล้วเด้งไป /recipient/[id] ซึ่งทำให้
   // เสียคิวงานที่เลื่อนหาไว้ แล้วต้องกด back กลับมาเองทุกใบ
@@ -99,7 +112,7 @@ export default function RecipientListPage() {
 
   // API ตัดสิทธิ์ตามขั้น workflow แล้ว ห้ามกรองด้วย recipient_dept_id ที่หน้าเว็บ
   // เพราะใบรับสินค้าเก็บ recipient เป็นบัญชี แม้ผู้ตรวจสอบ/จัดซื้ออยู่คนละหน่วยงาน.
-  const loadPending = async () => {
+  const loadPending = useCallback(async () => {
     setPendingLoading(true);
     try {
       const statusQuery = PENDING_STATUSES.map((status) => `status=${status}`).join('&');
@@ -110,7 +123,7 @@ export default function RecipientListPage() {
       console.error('fetch pending docs error:', e);
     }
     setPendingLoading(false);
-  };
+  }, []);
 
   const loadClosed = useCallback(async (override?: Partial<typeof closedFilter>) => {
     const active = { ...closedFilter, ...override };
@@ -166,7 +179,51 @@ export default function RecipientListPage() {
     }
   }, [closedFilter]);
 
-  useEffect(() => { loadPending(); }, []);
+  useEffect(() => { loadPending(); }, [loadPending]);
+
+  useEffect(() => {
+    if (!queueOwner) return;
+    const owner = queueOwner;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    let busy = false;
+    async function refresh() {
+      if (busy || controller.signal.aborted || document.visibilityState !== 'visible') return;
+      busy = true;
+      let next = 0;
+      try {
+        const response = await window.fetch(RECEIPT_QUEUE_URL, { cache: 'no-store', signal: controller.signal });
+        const result = await response.json();
+        if (!response.ok || !result.success || !Array.isArray(result.data) || !result.data.every((batch: ReceiptQueueBatch) => Array.isArray(batch.items))) {
+          throw new Error('โหลดสถานะคิวไม่ได้');
+        }
+        if (controller.signal.aborted) return;
+        const batches = result.data as ReceiptQueueBatch[];
+        setQueueView({ owner, batches });
+        setQueueReadError('');
+        if (batches.some(batch => batch.items.some(item => item.status === 'queued'))) next = 5000;
+      } catch {
+        if (controller.signal.aborted) return;
+        setQueueReadError('โหลดสถานะคิวไม่ได้ ระบบจะลองตรวจอีกครั้ง');
+        next = 20000;
+      } finally {
+        busy = false;
+        if (next && !controller.signal.aborted && document.visibilityState === 'visible') timer = setTimeout(refresh, next);
+      }
+    }
+    const onVisibility = () => { clearTimeout(timer); void refresh(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    void refresh();
+    return () => { controller.abort(); clearTimeout(timer); document.removeEventListener('visibilitychange', onVisibility); };
+  }, [queueOwner, queueRefresh]);
+
+  useEffect(() => {
+    if (queueWasActive.current && !queueActive && queueView?.owner === queueOwner) {
+      void loadPending();
+      if (appliedClosed.current) void loadClosed(appliedClosed.current);
+    }
+    queueWasActive.current = queueActive;
+  }, [loadClosed, loadPending, queueActive, queueOwner, queueView?.owner]);
 
   useEffect(() => {
     window.fetch('/api/departments').then((r) => r.json()).then((data) => {
@@ -179,6 +236,7 @@ export default function RecipientListPage() {
     : profile?.department_id === doc.recipient_dept_id && doc.status === 'delivered' ? 'recipient' : null;
 
   const visiblePending = pendingDocs.filter((d: any) => {
+    if (succeededCycles.has(cycleKey(d.id, d.recipient_updated_at))) return false;
     if (pendingDate && (d.admin_signed_at || '').split('T')[0] !== pendingDate) return false;
     if (pendingStage && d.status !== pendingStage) return false;
     if (pendingKeyword) {
@@ -193,6 +251,7 @@ export default function RecipientListPage() {
   // "เลือกทั้งหมด" การกดครั้งเดียวจะทับลายเซ็นที่เก็บมาแล้วทั้งกอง — เลือกเป็นชุดได้
   // เฉพาะขั้นที่ยังรอตัวเองจริง ส่วนการย้อนแก้ยังทำได้ทีละใบจากปุ่มในตาราง
   const isPendingOwnStage = (doc: any) => {
+    if (isQueuedReceipt(doc)) return false;
     const action = workflowAction(doc);
     if (action === 'inspector') return doc.status === 'awaiting_inspector';
     if (action === 'purchasing') return doc.status === 'awaiting_purchasing';
@@ -378,33 +437,58 @@ export default function RecipientListPage() {
       }
     };
 
-    // ยิงทุกใบพร้อมกัน ให้เหมือนหน้าส่งมอบ (ตามที่ผู้ใช้สั่ง)
-    //
-    // เดิมจำกัดไว้ 4 คำขอเพราะฝั่งเซิร์ฟเวอร์ต้องอ่านทุกแท็บของ Google Sheets ต่อ
-    // หนึ่งใบเพื่อหาแถวของเอกสารนั้น ยิงพร้อมกันหลายสิบใบจึงชนโควตาได้ แต่ตอนนี้การ
-    // sync Sheets เป็น best-effort แล้ว (api/deliveries/route.ts) ถ้าชนโควตาเอกสารยัง
-    // ถูกรับสำเร็จ เสียแค่แถวใน Sheets ไม่ถูกอัปเดต ความเสียหายจึงจำกัดอยู่ที่กระจก
-    // ไม่ใช่ฐานข้อมูล — ส่วนใบที่ไม่สำเร็จจริงยังถูกรายงานรายใบด้านล่าง
     const failures: { id: string; label: string; error: string }[] = [];
     let okCount = 0;
-    await Promise.all(targets.map(async (doc: any) => {
+    let submittedCount = 0;
+    const receipts = targets.filter((doc: any) => workflowAction(doc) === 'recipient');
+    const queuedTargets = receipts.length > 1 ? receipts : [];
+    for (let offset = 0; offset < queuedTargets.length; offset += RECEIPT_QUEUE_BATCH_LIMIT) {
+      const chunk = queuedTargets.slice(offset, offset + RECEIPT_QUEUE_BATCH_LIMIT);
+      try {
+        const body = JSON.stringify({
+          batch_id: window.crypto.randomUUID(), signature: recipientSignature,
+          items: chunk.map((doc: any) => ({ recipient_id: doc.id, expected_updated_at: doc.recipient_updated_at })),
+        });
+        const send = () => window.fetch(RECEIPT_QUEUE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+        // คำตอบอาจขาดหายหลังเข้าคิวแล้ว ใช้รหัสชุดเดิมเมื่อส่งซ้ำเพื่อไม่ให้เกิดชุดใหม่
+        let response = await send().catch(() => null);
+        if (!response || [502, 503, 504].includes(response.status)) response = await send();
+        const result = await response.json();
+        if (!response.ok || !result.success || !Array.isArray(result.data?.items)) throw new Error(result.error || 'ยืนยันการเข้าคิวไม่ได้');
+        const batch = result.data as ReceiptQueueBatch;
+        submittedCount += batch.items.filter(item => item.status !== 'failed').length;
+        for (const item of batch.items.filter(item => item.status === 'failed')) {
+          failures.push({ id: item.recipient_id, label: `เลขที่ ${item.document_no || '—'}`, error: receiptQueueError(item.error) });
+        }
+        if (queueOwner) setQueueView(current => ({ owner: queueOwner, batches: [batch, ...(current?.owner === queueOwner ? current.batches.filter(item => item.id !== batch.id) : [])] }));
+      } catch (error) {
+        for (const doc of chunk) failures.push({ id: doc.id, label: `เลขที่ ${documentNo(doc)}`, error: error instanceof Error ? error.message : 'ยืนยันการเข้าคิวไม่ได้' });
+      }
+      setBulkProgress(current => ({ ...current, done: current.done + chunk.length }));
+    }
+    if (queuedTargets.length) setQueueRefresh(current => current + 1);
+
+    const immediateTargets = queuedTargets.length ? targets.filter((doc: any) => workflowAction(doc) !== 'recipient') : targets;
+    await Promise.all(immediateTargets.map(async (doc: any) => {
       const result = await receiveOne(doc);
       if (result.ok) okCount += 1;
       else failures.push({ id: result.id!, label: result.label!, error: result.error! });
       setBulkProgress((current) => ({ ...current, done: current.done + 1 }));
     }));
 
-    setBulkMessage(
-      failures.length > 0
-        ? `ลงนามสำเร็จ ${okCount} รายการ · ไม่สำเร็จ ${failures.length} รายการ`
-        : `✅ ลงนามสำเร็จ ${okCount} รายการ`
-    );
+    const messages = [];
+    if (submittedCount) messages.push(`ส่งเข้าคิวรับเอกสาร ${submittedCount} ใบ ติดตามผลได้ด้านบน`);
+    if (okCount) messages.push(`ลงนามสำเร็จ ${okCount} รายการ`);
+    if (failures.length) messages.push(`มีรายการต้องตรวจ ${failures.length} ใบ`);
+    setBulkMessage(messages.join(' · '));
     setBulkFailures(failures);
     setSelectedIds(new Set());
     setBulkSigning(false);
     setBulkProgress({ done: 0, total: 0 });
-    await loadPending();
-    if (appliedClosed.current) loadClosed(appliedClosed.current);
+    if (immediateTargets.length) {
+      await loadPending();
+      if (appliedClosed.current) loadClosed(appliedClosed.current);
+    }
   };
 
   return (
@@ -414,6 +498,34 @@ export default function RecipientListPage() {
         <h2>เอกสารรอดำเนินการ</h2>
         <div className="title-accent" />
       </div>
+
+      {queueOwner && (queueBatches.length > 0 || queueReadError) && (
+        <section className="scan-panel" aria-label="คิวรับเอกสาร" style={{ marginBottom: 12 }}>
+          <h3>คิวรับเอกสารของคุณ</h3>
+          <p>แสดงคิวที่กำลังทำและผลล่าสุด รวมไม่เกิน 10 ชุด</p>
+          {queueReadError && <p role="status">{queueReadError}</p>}
+          {queueBatches.map(batch => {
+            const pending = batch.items.filter(item => item.status === 'queued').length;
+            const succeeded = batch.items.filter(item => item.status === 'succeeded').length;
+            const failed = batch.items.length - pending - succeeded;
+            const status = [pending && `รอบันทึก ${pending} ใบ`, succeeded && `รับสำเร็จ ${succeeded} ใบ`, failed && `ไม่สำเร็จ ${failed} ใบ`].filter(Boolean).join(' · ');
+            return (
+              <details key={batch.id} style={{ marginTop: 8 }}>
+                <summary>
+                  {formatDateTime(batch.created_at)} · <span role="status">{status}</span>
+                </summary>
+                <ul style={{ paddingInlineStart: 20 }}>
+                  {batch.items.map(item => (
+                    <li key={item.recipient_id}>
+                      {item.document_no || 'เอกสาร'} · {item.status === 'queued' ? 'รอบันทึก' : item.status === 'succeeded' ? 'รับสำเร็จ' : receiptQueueError(item.error)}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            );
+          })}
+        </section>
+      )}
 
       <div className="segmented-control segmented-2" style={{ marginBottom: 16 }}>
         <button className={tab === 'pending' ? 'active' : ''} onClick={() => setTab('pending')}>
@@ -588,7 +700,9 @@ export default function RecipientListPage() {
                         <td>{doc.purchasing_signature || '-'}</td>
                         <td>{doc.recipient_dept_name}</td>
                         <td>
-                          {action ? (
+                          {isQueuedReceipt(doc) ? (
+                            <span className="status-badge">อยู่ในคิวรับเอกสาร</span>
+                          ) : action ? (
                             <button
                               type="button"
                               className="table-action-button"

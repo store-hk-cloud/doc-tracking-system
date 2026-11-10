@@ -1,11 +1,13 @@
 import { handleNotifications } from './src/workers/notifications';
 import { handleDocumentReceipt } from './src/workers/document-receipt';
+import { handleReceiptQueue } from './src/workers/receipt-queue';
 import type { NotificationsEnvironment } from './src/workers/env';
 
 export default {
   async fetch(request: Request, env: NotificationsEnvironment, ctx: ExecutionContext) {
     const path = new URL(request.url).pathname;
     if (path === '/api/notifications') return handleNotifications(request, env);
+    if (path === '/api/deliveries/queue') return handleReceiptQueue(request, env);
     if (path === '/api/deliveries' && request.method === 'POST' &&
         env.DOCUMENT_RECEIPT_FAST_PATH === 'true' && env.GOOGLE_SHEETS_SYNC_MODE === 'apps_script') {
       return handleDocumentReceipt(request, env);

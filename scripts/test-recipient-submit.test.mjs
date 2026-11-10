@@ -43,6 +43,7 @@ for (const mode of ['direct', 'popup', 'bulk']) {
         assert.equal(JSON.parse(options.body).recipient_signature, 'ผู้ลงชื่อ');
         return Response.json({ error: 'upstream' }, { status: 503 });
       }
+      if (url === '/api/deliveries/queue') return Response.json({ success: true, data: [] });
       if (url.startsWith('/api/deliveries')) {
         if (options?.method === 'GET') calls.push('GET');
         return Response.json({ success: true, data: committed ? [{ document_recipient_id: 'recipient-1', recipient_id: 'actor', recipient_signature: 'ผู้ลงชื่อ', is_verified: true, verification_note: null, recipient_signed_at: '2026-11-10T02:49:55Z', document_recipients: { id: 'recipient-1', status: 'closed' } }] : [] });
@@ -52,7 +53,7 @@ for (const mode of ['direct', 'popup', 'bulk']) {
     const Page = loadModule(mode === 'direct' ? 'src/app/recipient/[docId]/page.tsx' : 'src/app/recipient/page.tsx', {
       '@/components/auth/AuthProvider': { useAuth: () => ({ user: { id: 'actor' }, profile: { full_name: 'ผู้ลงชื่อ', department_code: '0-ADM03' } }) },
       'next/navigation': { useParams: () => ({ docId: 'recipient-1' }) },
-    }, { window: { fetch: read }, fetch: read, AbortController }).default;
+    }, { window: { fetch: read }, fetch: read, AbortController, document: { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} } }).default;
     let renderer;
     await act(async () => { renderer = create(React.createElement(Page)); });
     try {
