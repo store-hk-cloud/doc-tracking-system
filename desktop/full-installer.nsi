@@ -11,7 +11,6 @@ ShowInstDetails show
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "English"
-!insertmacro MUI_LANGUAGE "Thai"
 
 Function .onInit
   StrCpy $INSTDIR "$LOCALAPPDATA\Programs\Hillkoff Document Tracking"
