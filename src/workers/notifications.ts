@@ -1,6 +1,47 @@
-import { createServerClient, parseCookieHeader, serializeCookieHeader, type SetAllCookies } from '@supabase/ssr';
+import { combineChunks, createServerClient, parseCookieHeader, serializeCookieHeader, stringFromBase64URL, type SetAllCookies } from '@supabase/ssr';
 import { readNotifications, removeNotifications } from '../lib/notification-store';
 import type { NotificationsEnvironment } from './env';
+
+async function getNotificationUser(request: Request, url: URL, publicKey: string, headers: Headers) {
+  const cookies = parseCookieHeader(request.headers.get('cookie') || '').map(({ name, value }) => ({ name, value: value || '' }));
+  const storageKey = `sb-${url.hostname.split('.')[0]}-auth-token`;
+  const encoded = await combineChunks(storageKey, (name) => cookies.find((cookie) => cookie.name === name)?.value);
+  if (!encoded) return null;
+
+  let session: { access_token?: unknown; refresh_token?: unknown; expires_at?: unknown } | null = null;
+  try {
+    session = JSON.parse(encoded.startsWith('base64-') ? stringFromBase64URL(encoded.slice(7)) : encoded);
+  } catch {
+    // ให้ SDK จัดการ cookie เดิมหรือ cookie ที่อ่านไม่ได้ตามพฤติกรรมเดิม
+  }
+
+  // อายุใน cookie ใช้เลือกวิธีเรียก Auth เท่านั้น ยืนยันตัวตนกับ Supabase ทุกครั้ง
+  if (typeof session?.access_token === 'string' && session.access_token &&
+    typeof session.refresh_token === 'string' && typeof session.expires_at === 'number' &&
+    session.expires_at * 1000 - Date.now() > 90_000) {
+    const response = await fetch(new URL('auth/v1/user', url), {
+      headers: { apikey: publicKey, Authorization: `Bearer ${session.access_token}`, 'X-Supabase-Api-Version': '2024-01-01' },
+    }).catch(() => null);
+    if (!response) return null;
+    if (response.ok) {
+      const data = await response.json().catch(() => null) as { id?: string; user?: { id?: string } } | null;
+      return (data?.user ?? data)?.id ?? null;
+    }
+    await response.body?.cancel();
+  }
+
+  const auth = createServerClient(url.href, publicKey, {
+    global: { fetch },
+    cookies: {
+      getAll: () => cookies,
+      setAll: (updated: Parameters<SetAllCookies>[0]) => {
+        for (const { name, value, options } of updated) headers.append('Set-Cookie', serializeCookieHeader(name, value, options));
+      },
+    },
+  });
+  const { data: { user }, error } = await auth.auth.getUser();
+  return error ? null : user?.id ?? null;
+}
 
 export async function handleNotifications(request: Request, env: NotificationsEnvironment): Promise<Response> {
   const headers = new Headers({ 'Cache-Control': 'private, no-store', Vary: 'Cookie' });
@@ -17,20 +58,11 @@ export async function handleNotifications(request: Request, env: NotificationsEn
     const publicKey = env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     const secretKey = env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY;
     if (!url || !publicKey || !secretKey) return reply({ success: false, error: 'Service not configured' }, 503);
-    const auth = createServerClient(url, publicKey, {
-      global: { fetch },
-      cookies: {
-        getAll: () => parseCookieHeader(request.headers.get('cookie') || '').map(({ name, value }) => ({ name, value: value || '' })),
-        setAll: (cookies: Parameters<SetAllCookies>[0]) => {
-          for (const { name, value, options } of cookies) headers.append('Set-Cookie', serializeCookieHeader(name, value, options));
-        },
-      },
-    });
-    const { data: { user }, error } = await auth.auth.getUser();
-    if (error || !user) return reply({ success: false, error: 'Not authenticated' }, 401);
+    const userId = await getNotificationUser(request, new URL(url.endsWith('/') ? url : `${url}/`), publicKey, headers);
+    if (!userId) return reply({ success: false, error: 'Not authenticated' }, 401);
 
     // หน่วยงานต้องอ่านจาก profile สดบน server เช่นเดียวกับ API เดิม ไม่เชื่อ cookie หรือ headers ที่ผู้ใช้ส่งมา
-    const profileResponse = await fetch(`${url}/rest/v1/profiles?select=id,department_id,is_active&id=eq.${encodeURIComponent(user.id)}`, {
+    const profileResponse = await fetch(`${url.replace(/\/$/, '')}/rest/v1/profiles?select=id,department_id,is_active&id=eq.${encodeURIComponent(userId)}`, {
       headers: { apikey: secretKey, Authorization: `Bearer ${secretKey}` },
     });
     const profiles = profileResponse.ok ? await profileResponse.json() as { id: string; department_id: string | null; is_active: boolean }[] : [];

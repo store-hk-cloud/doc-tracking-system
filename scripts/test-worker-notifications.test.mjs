@@ -1,40 +1,48 @@
 import assert from 'node:assert/strict';
+import * as supabaseSsr from '@supabase/ssr';
 import test from 'node:test';
 import { existsSync } from 'node:fs';
 import { loadModule } from './test-support/load-module.mjs';
 
 const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
 const jwt = id => `${encode({ alg: 'HS256' })}.${encode({ sub: id, exp: Math.floor(Date.now() / 1000) + 3600 })}.signature`;
-function fixture({ inactive = false, missing = false, rejectUser = false, expired = false, chunked = false } = {}) {
+function fixture({ inactive = false, missing = false, rejectUser = false, revoked = false, expiresIn = 3600, expired = false, chunked = false } = {}) {
   const calls = [], writes = [], values = new Map([
     ['notify:dept:dept-a:001', JSON.stringify({ title: 'new' })],
     ['notify:dept:dept-a', JSON.stringify([{ title: 'legacy' }])],
     ['notify:dept:dept-b:001', JSON.stringify({ title: 'other' })],
   ]);
+  let sdkStarts = 0;
   const env = { NEXT_PUBLIC_SUPABASE_URL: 'https://example.supabase.co', NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: 'public', SUPABASE_SECRET_KEY: 'private', NOTIFICATIONS_KV: {
     async list({ prefix }) { calls.push('kv-list'); return { keys: [...values.keys()].filter(k => k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; },
     async get(key) { calls.push('kv-get'); return values.get(key) || null; },
     async delete(key) { writes.push(key); values.delete(key); },
   } };
   const fetch = async (input, init) => {
-    const url = new URL(typeof input === 'string' ? input : input.url);
+    const url = new URL(input instanceof Request ? input.url : input);
     calls.push(url.pathname);
     if (url.pathname === '/auth/v1/token') return Response.json({ access_token: jwt('user-a'), refresh_token: 'new-refresh', expires_in: 3600, token_type: 'bearer', user: { id: 'user-a' } });
-    if (url.pathname === '/auth/v1/user') return rejectUser ? Response.json({ message: 'invalid', code: 'bad_jwt' }, { status: 401 }) : Response.json({ id: 'user-a' });
+    if (url.pathname === '/auth/v1/user') {
+      assert.match(new Headers(init.headers).get('authorization') || '', /^Bearer [^.]+\.[^.]+\.signature$/);
+      if (revoked) return Response.json({ message: 'Session removed', code: 'session_not_found' }, { status: 403, headers: { 'X-Supabase-Api-Version': '2024-01-01' } });
+      return rejectUser ? Response.json({ message: 'invalid', code: 'bad_jwt' }, { status: 401 }) : Response.json({ id: 'user-a' });
+    }
     assert.equal(url.pathname, '/rest/v1/profiles');
     assert.equal(url.searchParams.get('id'), 'eq.user-a');
     assert.equal(new Headers(init.headers).get('apikey'), 'private');
     return Response.json(missing ? [] : [{ id: 'user-a', department_id: 'dept-a', is_active: !inactive }]);
   };
-  const session = { access_token: jwt('user-a'), refresh_token: 'refresh', expires_at: Math.floor(Date.now() / 1000) + (expired ? -100 : 3600), user: { id: 'user-a' } };
+  const session = { access_token: jwt('user-a'), refresh_token: 'refresh', expires_at: Math.floor(Date.now() / 1000) + (expired ? -100 : expiresIn), user: { id: 'unverified-cookie-user' } };
   const encoded = `base64-${encode(session)}`;
   const cookie = chunked ? `sb-example-auth-token.0=${encoded.slice(0, 80)}; sb-example-auth-token.1=${encoded.slice(80)}` : `sb-example-auth-token=${encoded}`;
   assert.ok(existsSync('src/workers/notifications.ts'), 'notification Worker handler must exist');
-  const { handleNotifications } = loadModule('src/workers/notifications.ts', {}, { fetch, Headers });
+  const { handleNotifications } = loadModule('src/workers/notifications.ts', {
+    '@supabase/ssr': { ...supabaseSsr, createServerClient(...args) { sdkStarts++; return supabaseSsr.createServerClient(...args); } },
+  }, { fetch, Headers });
   const request = (method = 'GET', authenticated = true) => new Request('https://app.invalid/api/notifications?dept_id=dept-b', {
     method, headers: { ...(authenticated ? { cookie } : {}), 'x-user-id': 'forged', 'x-user-role': 'super_admin' },
   });
-  return { env, calls, writes, values, request, handle: request => handleNotifications(request, env) };
+  return { env, calls, writes, values, request, sdkStarts: () => sdkStarts, handle: request => handleNotifications(request, env) };
 }
 
 test('notification fast path rejects forged identity before KV access', async () => {
@@ -53,6 +61,12 @@ test('verified profile controls notification department and private response hea
   assert.match(response.headers.get('vary'), /Cookie/i);
   assert.equal(f.calls.filter(call => call === '/auth/v1/user').length, 1);
 });
+for (const chunked of [false, true]) test(`fresh notification cookie avoids constructing a Supabase client (chunked=${chunked})`, async () => {
+  const f = fixture({ chunked });
+  assert.equal((await f.handle(f.request())).status, 200);
+  assert.equal(f.sdkStarts(), 0);
+  assert.deepEqual(f.calls.filter(call => call.startsWith('/')), ['/auth/v1/user', '/rest/v1/profiles']);
+});
 test('notification delete clears only the verified department', async () => {
   const f = fixture(); assert.equal((await f.handle(f.request('DELETE'))).status, 200);
   assert.ok(f.writes.every(key => key.startsWith('notify:dept:dept-a')));
@@ -63,6 +77,20 @@ test('expired cookie refresh uses server SDK and returns renewed cookies', async
   assert.equal(response.status, 200); assert.ok(f.calls.includes('/auth/v1/token'));
   assert.match(response.headers.get('set-cookie') || '', /sb-example-auth-token/);
   assert.match(response.headers.get('set-cookie') || '', /Path=\//);
+});
+test('a session within the refresh margin still renews before verifying the user', async () => {
+  const f = fixture({ expiresIn: 60 });
+  const response = await f.handle(f.request());
+  assert.equal(response.status, 200);
+  assert.deepEqual(f.calls.filter(call => call.startsWith('/')), ['/auth/v1/token', '/auth/v1/user', '/rest/v1/profiles']);
+  assert.ok(response.headers.get('set-cookie'));
+});
+test('a revoked session is denied and its cookie is cleared', async () => {
+  const f = fixture({ revoked: true });
+  const response = await f.handle(f.request());
+  assert.equal(response.status, 401);
+  assert.match(response.headers.get('set-cookie') || '', /Max-Age=0/);
+  assert.ok(!f.calls.includes('/rest/v1/profiles'));
 });
 test('refresh preserves separate Set-Cookie headers when replacing chunked cookies', async () => {
   const f = fixture({ expired: true, chunked: true }); const response = await f.handle(f.request());
