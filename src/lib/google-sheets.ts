@@ -472,6 +472,33 @@ export async function findRowLocation(column: number, value: string): Promise<Ro
   return (await getLocationIndex(column, true)).get(value) || null;
 }
 
+async function findPreferredRowLocation(sheet: string, referenceId: string): Promise<RowLocation | null> {
+  if (!isDailySheetName(sheet)) return null;
+  const spreadsheetId = await getSpreadsheetId();
+  const sheets = getSheetsClient();
+  let generation: number;
+  let rows: string[][];
+  do {
+    generation = locationIndexGeneration;
+    try {
+      const { data } = await withSheetsSlot<any>(() => sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: `${sheet}!U:U`,
+      }));
+      rows = data?.values || [];
+    } catch (error: any) {
+      const status = Number(error?.code ?? error?.status ?? error?.response?.status);
+      const message = error?.response?.data?.error?.message ?? error?.message ?? '';
+      // แท็บที่ไม่มีตอบ 400 แบบนี้เท่านั้น ข้อผิดพลาดอื่นยังสรุปว่าไม่มีแถวไม่ได้
+      if (status === 400 && message.startsWith('Unable to parse range:')
+        && message.includes(`${sheet}!U:U`)) return null;
+      throw error;
+    }
+  } while (generation !== locationIndexGeneration);
+  const index = rows.findIndex((row) => row[0]?.toString() === referenceId);
+  return index < 0 ? null : { sheet, row: index + 1 };
+}
+
 // serialize งานของผู้รับคนเดียวกันใน instance เดียว: ถ้าทั้งสองคำขอค้นหาแถว
 // ก่อนที่คำขอแรกจะ append สำเร็จ ต่างคนต่างเห็นว่าไม่พบและสร้างสำเนาซ้ำได้.
 const rowSyncQueues = new Map<string, Promise<void>>();
@@ -480,7 +507,9 @@ const rowSyncQueues = new Map<string, Promise<void>>();
 async function syncRowInSheetOnce(preferredSheet: string, values: string[]) {
   try {
     const referenceId = values[20];
-    const location = referenceId ? await findRowLocation(21, referenceId) : null;
+    const location = referenceId
+      ? await findPreferredRowLocation(preferredSheet, referenceId) || await findRowLocation(21, referenceId)
+      : null;
     if (location) await updateRowInSheetOrThrow(location.sheet, location.row, values);
     else await appendRowsOrThrow(preferredSheet, [values]);
   } catch (error) {

@@ -61,6 +61,13 @@ test('filtered pending list fetches full documents only for matching recipient c
   assert.equal(f.calls.filter(c => c.table === 'documents').reduce((n, c) => n + c.rows, 0), 2);
 });
 
+test('list exposes recipient version independently from the parent document timestamp', async () => {
+  const f = fixture(1);
+  f.tables.documents[0].updated_at = '2026-11-09T00:00:00Z';
+  f.tables.document_recipients[0].updated_at = '2026-11-10T02:40:00Z';
+  assert.equal((await f.get()).data[0].recipient_updated_at, '2026-11-10T02:40:00Z');
+});
+
 test('empty recipient candidates avoid fetching full documents', async () => {
   const f = fixture(); assert.deepEqual((await f.get('status=rejected')).data, []);
   assert.equal(f.calls.filter(c => c.table === 'documents').length, 0);

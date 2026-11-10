@@ -5,9 +5,10 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { useParams } from 'next/navigation';
 import { getGoodsReceiptWorkflowAction, isGoodsReceipt } from '@/lib/document-workflow';
 import { documentNo } from '@/lib/document-no';
+import { submitReceipt } from '@/lib/receipt-submit';
 
 export default function RecipientPage() {
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
   const params = useParams();
   const docId = params.docId as string;
   const [doc, setDoc] = useState<any>(null);
@@ -78,16 +79,12 @@ export default function RecipientPage() {
     setError('');
 
     try {
-      const res = await fetch('/api/deliveries', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          document_recipient_id: docId,
-          is_verified: verified,
-          recipient_signature: signature.trim(),
-          verification_note: verified ? null : verifyNote.trim(),
-        }),
-      });
+      const res = await submitReceipt({
+        document_recipient_id: docId,
+        is_verified: verified,
+        recipient_signature: signature.trim(),
+        verification_note: verified ? null : verifyNote.trim(),
+      }, user?.id, doc.updated_at);
 
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.success) {

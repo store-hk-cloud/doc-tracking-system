@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { getGoodsReceiptWorkflowAction, isGoodsReceipt } from '@/lib/document-workflow';
 import { documentNo } from '@/lib/document-no';
+import { submitReceipt } from '@/lib/receipt-submit';
 
 const MIN_KEYWORD_LENGTH = 3;
 
@@ -51,7 +52,7 @@ const STAGE_LABELS: Record<string, string> = {
 };
 
 export default function RecipientListPage() {
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
 
   const [tab, setTab] = useState<'pending' | 'closed'>('pending');
 
@@ -264,16 +265,12 @@ export default function RecipientListPage() {
     options: { verified: boolean; note: string },
   ) => {
     if (action === 'recipient') {
-      return window.fetch('/api/deliveries', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          document_recipient_id: doc.id,
-          is_verified: options.verified,
-          recipient_signature: signature,
-          verification_note: options.verified ? null : options.note,
-        }),
-      });
+      return submitReceipt({
+        document_recipient_id: doc.id,
+        is_verified: options.verified,
+        recipient_signature: signature,
+        verification_note: options.verified ? null : options.note,
+      }, user?.id, doc.recipient_updated_at);
     }
     const field = action === 'inspector' ? 'inspector_signature' : 'purchasing_signature';
     return window.fetch(`/api/documents/${doc.id}/sign`, {

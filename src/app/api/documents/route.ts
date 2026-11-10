@@ -231,6 +231,7 @@ export async function GET(request: NextRequest) {
         recipient_dept_id: r.department_id,
         recipient_dept_name: deptMap.get(r.department_id) || null,
         status: r.status,
+        recipient_updated_at: r.updated_at,
         admin_signature: r.admin_signature,
         admin_signed_at: r.admin_signed_at,
         inspector_signature: r.inspector_signature,

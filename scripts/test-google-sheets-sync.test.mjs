@@ -14,9 +14,10 @@ const output = transpileModule(source, {
 function loadModule(client) {
   // fixture รุ่นเดิมจำลองการอ่านทีละแท็บ ให้ batchGet ใช้ข้อมูลชุดเดียวกัน
   const values = client.spreadsheets.values;
+  const fixtureGet = values?.get;
   if (values?.get && !values.batchGet) {
     values.batchGet = async ({ ranges }) => ({ data: { valueRanges: await Promise.all(
-      ranges.map(async (range) => (await values.get({ range })).data),
+      ranges.map(async (range) => (await fixtureGet({ range })).data),
     ) } });
   }
   // fixture ส่งแถวเต็ม A:U เสมอ แต่ Sheets จริงตอบเฉพาะคอลัมน์ที่ขอ
@@ -30,6 +31,14 @@ function loadModule(client) {
       return { data: { valueRanges: (result.data.valueRanges || []).map((range) => ({
         ...range, values: (range.values || []).map((row) => [row[index] ?? '']),
       })) } };
+    };
+  }
+  const fullGet = values?.get;
+  if (fullGet) {
+    values.get = async (call) => {
+      const result = await fullGet(call);
+      if (!call.range.endsWith('!U:U')) return result;
+      return { data: { ...result.data, values: (result.data.values || []).map((row) => [row[20] ?? '']) } };
     };
   }
   const exports = {};
@@ -182,8 +191,9 @@ test('row lookup finds an existing recipient from one batched daily-tab read', a
             },
           };
         },
-        async get() {
-          throw new Error('row lookup must not issue a request per daily tab');
+        async get({ range }) {
+          assert.equal(range, '2026-09-05!U:U');
+          return { data: { values: [headers] } };
         },
         async update({ range }) { updateRanges.push(range); return { data: {} }; },
         async append({ range }) { appendRanges.push(range); return { data: {} }; },
@@ -454,7 +464,7 @@ test('row lookup rebuilds after a concurrent header repair shifts a cached row',
   const sheets = loadModule(client);
   headers = sheets.HEADERS;
 
-  const syncing = sheets.syncRowInSheet('2026-09-05', [...documentRow]);
+  const syncing = sheets.findRowLocation(21, reference).then((location) => sheets.updateRowInSheetOrThrow(location.sheet, location.row, documentRow));
   await firstReadBegun;
   await sheets.ensureDailySheetReady('2026-09-05');
   releaseFirstRead();
@@ -536,4 +546,96 @@ test('an existing daily header is not shifted or rewritten', async () => {
   await sheets.appendRowsOrThrow('2026-09-05', [['new document']]);
 
   assert.deepEqual(calls.map((call) => call.kind), ['append']);
+});
+
+for (const lookupError of [null, 'Unable to parse range: 2026-09-05!U:U', 'invalid request', 'backend unavailable']) {
+  test(`preferred daily lookup handles ${lookupError || 'existing reference'} without duplicate append`, async () => {
+    let metadataReads = 0;
+    const readRanges = [];
+    const updateRanges = [];
+    const appendRanges = [];
+    const client = { spreadsheets: {
+      async get() {
+        metadataReads += 1;
+        return { data: { sheets: [{ properties: { title: '2026-09-03' } }] } };
+      },
+      values: {
+        async get({ range }) {
+          readRanges.push(range);
+          if (lookupError) {
+            const error = new Error(lookupError);
+            error.code = lookupError === 'backend unavailable' ? 503 : 400;
+            throw error;
+          }
+          return { data: { values: [[], [...Array(20).fill(''), 'reference']] } };
+        },
+        async batchGet() { return { data: { valueRanges: [{ values: [[], [...Array(20).fill(''), 'reference']] }] } }; },
+        async update({ range }) { updateRanges.push(range); return { data: {} }; },
+        async append({ range }) { appendRanges.push(range); return { data: {} }; },
+      },
+    } };
+    const sheets = loadModule(client);
+    await sheets.syncRowInSheet('2026-09-05', [...Array(20).fill(''), 'reference']);
+    assert.deepEqual(appendRanges, []);
+    if (lookupError === 'Unable to parse range: 2026-09-05!U:U') {
+      assert.equal(metadataReads, 1);
+      assert.deepEqual(updateRanges, ['2026-09-03!A2:U2']);
+    } else {
+      assert.equal(metadataReads, 0);
+      assert.deepEqual(updateRanges, lookupError ? [] : ['2026-09-05!A2:U2']);
+    }
+    assert.ok(readRanges.length >= 1);
+    assert.ok(readRanges.every((range) => range === '2026-09-05!U:U'));
+  });
+}
+
+test('preferred lookup rereads after a concurrent header repair shifts its row', async () => {
+  const reference = 'recipient-reference';
+  const documentRow = [...Array(20).fill(''), reference];
+  const updateRanges = [];
+  let headers = [];
+  let rows = [documentRow];
+  let batchReads = 0;
+  let beginFirstRead;
+  let releaseFirstRead;
+  const firstReadBegun = new Promise((resolve) => { beginFirstRead = resolve; });
+  const firstReadReleased = new Promise((resolve) => { releaseFirstRead = resolve; });
+  const client = {
+    spreadsheets: {
+      async get() {
+        return { data: { sheets: [{ properties: { sheetId: 123, title: '2026-09-05', index: 0 } }] } };
+      },
+      async batchUpdate(call) {
+        if (call.requestBody.requests.some((request) => request.insertDimension)) {
+          rows = [headers, ...rows];
+        }
+        return { data: {} };
+      },
+      values: {
+        async get({ range }) {
+          if (range.endsWith('A1:U1')) return { data: { values: [rows[0]] } };
+          const snapshot = rows.map((row) => [...row]);
+          batchReads += 1;
+          if (batchReads === 1) {
+            beginFirstRead();
+            await firstReadReleased;
+          }
+          return { data: { values: snapshot } };
+        },
+        async update({ range }) { updateRanges.push(range); return { data: {} }; },
+        async append() { return { data: {} }; },
+      },
+    },
+  };
+  const sheets = loadModule(client);
+  headers = sheets.HEADERS;
+
+  const syncing = sheets.syncRowInSheet('2026-09-05', [...documentRow]);
+  await firstReadBegun;
+  await sheets.ensureDailySheetReady('2026-09-05');
+  releaseFirstRead();
+  await syncing;
+
+  assert.equal(batchReads, 2);
+  assert.deepEqual(updateRanges, ['2026-09-05!A2:U2']);
 });

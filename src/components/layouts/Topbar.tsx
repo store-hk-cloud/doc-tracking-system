@@ -1,34 +1,72 @@
 'use client';
 
 import { useAuth } from '@/components/auth/AuthProvider';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 
 export function Topbar() {
   const { profile, signOut } = useAuth();
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showPanel, setShowPanel] = useState(false);
+  const inFlight = useRef(false);
+  const clearing = useRef(false);
+  const generation = useRef(0);
+  const mounted = useRef(false);
+  const lastRefresh = useRef(-Infinity);
 
-  const loadNotifications = async () => {
+  const loadNotifications = useCallback(async () => {
+    if (document.visibilityState !== 'visible' || inFlight.current || clearing.current
+      || Date.now() - lastRefresh.current < 1000) return;
+    inFlight.current = true;
+    lastRefresh.current = Date.now();
+    const version = generation.current;
     try {
       const res = await window.fetch('/api/notifications');
       const data = await res.json();
-      if (data.success) setNotifications(data.data);
+      if (data.success && mounted.current && version === generation.current) setNotifications(data.data);
     } catch (e) {
       console.error('fetch notifications error:', e);
+    } finally {
+      inFlight.current = false;
     }
-  };
-
-  useEffect(() => {
-    loadNotifications();
-    const interval = setInterval(loadNotifications, 30000);
-    return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    mounted.current = true;
+    let interval: ReturnType<typeof setInterval> | undefined;
+    const updateVisibility = () => {
+      if (interval !== undefined) clearInterval(interval);
+      interval = undefined;
+      if (document.visibilityState === 'visible') {
+        loadNotifications();
+        interval = setInterval(loadNotifications, 60000);
+      }
+    };
+    updateVisibility();
+    document.addEventListener('visibilitychange', updateVisibility);
+    window.addEventListener('focus', loadNotifications);
+    return () => {
+      mounted.current = false;
+      if (interval !== undefined) clearInterval(interval);
+      document.removeEventListener('visibilitychange', updateVisibility);
+      window.removeEventListener('focus', loadNotifications);
+    };
+  }, [loadNotifications]);
+
   const handleClear = async () => {
-    await window.fetch('/api/notifications', { method: 'DELETE' });
-    setNotifications([]);
-    setShowPanel(false);
+    if (clearing.current) return;
+    clearing.current = true;
+    // ผลอ่านที่เริ่มก่อนล้างต้องไม่เติมรายการเก่ากลับมาหลัง DELETE สำเร็จ
+    generation.current += 1;
+    try {
+      await window.fetch('/api/notifications', { method: 'DELETE' });
+      if (mounted.current) {
+        setNotifications([]);
+        setShowPanel(false);
+      }
+    } finally {
+      clearing.current = false;
+    }
   };
 
   return (
