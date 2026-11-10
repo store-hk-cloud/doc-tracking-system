@@ -30,6 +30,7 @@
 		"NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_ku63Ee2FNIJ4yqHbb3gc_Q_ajNbRpCC",
 		"NEXT_PUBLIC_APP_URL": "https://doc-tracking-system.store-hk.workers.dev",
 		"SUPER_ADMIN_EMAIL": "store-hk@hillkoff.com",
+		"GOOGLE_SHEETS_SYNC_MODE": "apps_script",
 		"SUPABASE_STORAGE_BUCKET": "doc-attachments"
 	},
 	// แผนฟรีตัดคำขอที่ใช้ CPU เกิน 10ms (exceededResources) ต้องมี log ราย path
