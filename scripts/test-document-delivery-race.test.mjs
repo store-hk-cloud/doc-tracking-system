@@ -14,7 +14,7 @@ function responseJson(body, init = {}) {
   });
 }
 
-function fixture(requiredReaders = 2) {
+function fixture(requiredReaders = 2, env = {}) {
   let readers = 0;
   let releaseReaders;
   const bothReadersReady = new Promise((resolve) => { releaseReaders = resolve; });
@@ -91,7 +91,7 @@ function fixture(requiredReaders = 2) {
     '@/lib/upstash': { notifyDepartment: async () => { state.notifications += 1; } },
     '@/lib/document-workflow': { isGoodsReceipt: () => false, getGoodsReceiptWorkflowAction: () => null },
     '@/lib/document-no': { documentNo: () => '2026-09/001' },
-  });
+  }, { process: { env } });
 
   const call = (body) => route.PUT(
     new Request('https://example.invalid/api/documents/sign', {
@@ -124,5 +124,16 @@ test('ordinary documents reject approval-stage signatures before delivery', asyn
   assert.equal(response.status, 400);
   assert.equal(f.state.status, 'registered');
   assert.equal(f.state.notifications, 0);
+  assert.equal(f.state.sheetSyncs, 0);
+});
+
+test('Apps Script mode delivers and notifies without a Sheets write', async () => {
+  const f = fixture(1, { GOOGLE_SHEETS_SYNC_MODE: 'apps_script' });
+  const response = await f.call({ admin_signature: 'ผู้ส่ง' });
+
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).data.recipient_dept_name, 'หน่วยงานทดสอบ');
+  assert.equal(f.state.status, 'delivered');
+  assert.equal(f.state.notifications, 1);
   assert.equal(f.state.sheetSyncs, 0);
 });

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
-import { appendRows } from '@/lib/google-sheets';
 import { requireRoles } from '@/lib/supabase/auth-helpers';
 import { accountingDestinationFor, canViewGoodsReceiptWorkflow, GOODS_RECEIPT_SUBJECT, isGoodsReceipt } from '@/lib/document-workflow';
 import { documentNo } from '@/lib/document-no';
@@ -364,36 +363,41 @@ export async function POST(request: NextRequest) {
       const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', doc.recorded_by).single();
       profName = prof?.full_name || '';
     }
-    const { data: depts } = await supabase.from('departments').select('id, name').in('id', deptIds);
+    const primary = recipients?.[0];
+    const syncLegacySheets = process.env.GOOGLE_SHEETS_SYNC_MODE !== 'apps_script';
+    const responseDeptIds = primary ? [primary.department_id] : [];
+    const { data: depts } = await supabase.from('departments').select('id, name').in('id', syncLegacySheets ? deptIds : responseDeptIds);
     const deptNameMap = new Map((depts || []).map((d: any) => [d.id, d.name]));
 
-    // เขียนทุกปลายทางของเอกสารเดียวกันในคำขอเดียว ลดโอกาสซิงก์สำเร็จเพียงบางแถว
-    // และลดจำนวนคำขอ Google Sheets เมื่อมีหลายหน่วยงานปลายทาง
-    await appendRows(doc.received_date, (recipients || []).map((r) => [
-        documentNo(doc),            // A: Running No.
-        doc.received_date,                 // B: วันที่รับ
-        doc.doc_number || '',              // C: เลขที่เอกสาร
-        doc.sender,                        // D: ผู้ส่ง
-        doc.subject,                       // E: เรื่อง
-        deptNameMap.get(r.department_id) || '', // F: หน่วยงาน
-        'registered',                       // G: สถานะ
-        '',                                 // H: ลายเซ็น Admin
-        '',                                 // I: เวลา Admin ลงนาม
-        '',                                 // J: ชื่อผู้รับ
-        '',                                 // K: ลายเซ็นผู้รับ
-        '',                                 // L: เวลาผู้รับลงนาม
-        '',                                 // M: ผลการตรวจสอบ
-        '',                                 // N: หมายเหตุ (ผู้รับ)
-        doc.is_damaged ? 'ใช่' : 'ไม่',       // O: เสียหาย
-        doc.damage_image_url || '',          // P: รูปความเสียหาย
-        doc.note || '',                      // Q: หมายเหตุ
-        profName,                            // R: ผู้บันทึก
-        '',                                  // S: updated_at
-        doc.tax_invoice_no || '',            // T: เลขใบกำกับภาษี
-        r.id,                                // U: รหัสอ้างอิง (document_recipients.id)
-    ]));
+    if (syncLegacySheets) {
+      const { appendRows } = await import('@/lib/google-sheets');
+      // เขียนทุกปลายทางของเอกสารเดียวกันในคำขอเดียว ลดโอกาสซิงก์สำเร็จเพียงบางแถว
+      // และลดจำนวนคำขอ Google Sheets เมื่อมีหลายหน่วยงานปลายทาง
+      await appendRows(doc.received_date, (recipients || []).map((r) => [
+          documentNo(doc),            // A: Running No.
+          doc.received_date,                 // B: วันที่รับ
+          doc.doc_number || '',              // C: เลขที่เอกสาร
+          doc.sender,                        // D: ผู้ส่ง
+          doc.subject,                       // E: เรื่อง
+          deptNameMap.get(r.department_id) || '', // F: หน่วยงาน
+          'registered',                       // G: สถานะ
+          '',                                 // H: ลายเซ็น Admin
+          '',                                 // I: เวลา Admin ลงนาม
+          '',                                 // J: ชื่อผู้รับ
+          '',                                 // K: ลายเซ็นผู้รับ
+          '',                                 // L: เวลาผู้รับลงนาม
+          '',                                 // M: ผลการตรวจสอบ
+          '',                                 // N: หมายเหตุ (ผู้รับ)
+          doc.is_damaged ? 'ใช่' : 'ไม่',       // O: เสียหาย
+          doc.damage_image_url || '',          // P: รูปความเสียหาย
+          doc.note || '',                      // Q: หมายเหตุ
+          profName,                            // R: ผู้บันทึก
+          '',                                  // S: updated_at
+          doc.tax_invoice_no || '',            // T: เลขใบกำกับภาษี
+          r.id,                                // U: รหัสอ้างอิง (document_recipients.id)
+      ]));
+    }
 
-    const primary = recipients?.[0];
     return NextResponse.json({
       success: true,
       data: {

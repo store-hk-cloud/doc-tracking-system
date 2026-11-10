@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
-import { syncRowInSheet } from '@/lib/google-sheets';
 import { canAccessDepartment, forbiddenResponse, requireRoles } from '@/lib/supabase/auth-helpers';
 import { ACCOUNTING_DEPARTMENT_CODE, isGoodsReceipt } from '@/lib/document-workflow';
 import { documentNo } from '@/lib/document-no';
@@ -146,44 +145,47 @@ export async function POST(request: NextRequest) {
     // เห็นชัดตอนรับหลายรายการพร้อมกัน เพราะ findRowLocation อ่านทุกแท็บทุกแถวต่อ
     // หนึ่งรายการ รับ 50 รายการจึงยิง Sheets API หลายร้อยครั้งและชนโควตาได้ง่าย
     // ความล้มเหลวของกระจกข้อมูลต้องไม่กลายเป็นความล้มเหลวของงานจริง
-    try {
-    const { data: doc } = await supabase.from('documents').select('*').eq('id', recipient.document_id).single();
-    if (doc) {
-      let deptName = '';
-      const { data: dept } = await supabase.from('departments').select('name').eq('id', recipient.department_id).single();
-      deptName = dept?.name || '';
-      let profName = '';
-      if (doc.recorded_by) {
-        const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', doc.recorded_by).single();
-        profName = prof?.full_name || '';
-      }
+    if (process.env.GOOGLE_SHEETS_SYNC_MODE !== 'apps_script') {
+      try {
+        const { syncRowInSheet } = await import('@/lib/google-sheets');
+        const { data: doc } = await supabase.from('documents').select('*').eq('id', recipient.document_id).single();
+        if (doc) {
+          let deptName = '';
+          const { data: dept } = await supabase.from('departments').select('name').eq('id', recipient.department_id).single();
+          deptName = dept?.name || '';
+          let profName = '';
+          if (doc.recorded_by) {
+            const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', doc.recorded_by).single();
+            profName = prof?.full_name || '';
+          }
 
-      await syncRowInSheet(doc.received_date, [
-          documentNo(doc),           // A: Running No.
-          doc.received_date,                // B: วันที่รับ
-          doc.doc_number || '',             // C: เลขที่เอกสาร
-          doc.sender,                       // D: ผู้ส่ง
-          doc.subject,                      // E: เรื่อง
-          deptName,                         // F: หน่วยงาน
-          newStatus,                        // G: สถานะ (closed/rejected)
-          recipient.admin_signature || '',  // H: ลายเซ็น Admin
-          recipient.admin_signed_at || '',  // I: เวลา Admin ลงนาม
-          accountName,                       // J: บัญชีที่กดยืนยัน (จาก session ปลอมไม่ได้)
-          recipientName,                     // K: ลายเซ็นผู้รับ (พิมพ์ได้ ถ้าไม่พิมพ์ใช้ชื่อบัญชี)
-          delivery.recipient_signed_at,     // L: เวลาผู้รับลงนาม
-          isVerified ? 'ถูกต้อง' : 'ไม่ถูกต้อง', // M: ผลการตรวจสอบ
-          body.verification_note || '',     // N: หมายเหตุ (ผู้รับ)
-          doc.is_damaged ? 'ใช่' : 'ไม่',    // O: เสียหาย
-          doc.damage_image_url || '',        // P: รูปความเสียหาย
-          doc.note || '',                    // Q: หมายเหตุ
-          profName,                         // R: ผู้บันทึก
-          recipient.updated_at,             // S: updated_at
-          doc.tax_invoice_no || '',         // T: เลขใบกำกับภาษี
-          recipient.id,                     // U: รหัสอ้างอิง
-      ]);
-    }
-    } catch (sheetsError: any) {
-      console.error('[Deliveries] sync Google Sheets ไม่สำเร็จ (เอกสารถูกบันทึกแล้ว):', sheetsError?.message || sheetsError);
+          await syncRowInSheet(doc.received_date, [
+              documentNo(doc),           // A: Running No.
+              doc.received_date,                // B: วันที่รับ
+              doc.doc_number || '',             // C: เลขที่เอกสาร
+              doc.sender,                       // D: ผู้ส่ง
+              doc.subject,                      // E: เรื่อง
+              deptName,                         // F: หน่วยงาน
+              newStatus,                        // G: สถานะ (closed/rejected)
+              recipient.admin_signature || '',  // H: ลายเซ็น Admin
+              recipient.admin_signed_at || '',  // I: เวลา Admin ลงนาม
+              accountName,                       // J: บัญชีที่กดยืนยัน (จาก session ปลอมไม่ได้)
+              recipientName,                     // K: ลายเซ็นผู้รับ (พิมพ์ได้ ถ้าไม่พิมพ์ใช้ชื่อบัญชี)
+              delivery.recipient_signed_at,     // L: เวลาผู้รับลงนาม
+              isVerified ? 'ถูกต้อง' : 'ไม่ถูกต้อง', // M: ผลการตรวจสอบ
+              body.verification_note || '',     // N: หมายเหตุ (ผู้รับ)
+              doc.is_damaged ? 'ใช่' : 'ไม่',    // O: เสียหาย
+              doc.damage_image_url || '',        // P: รูปความเสียหาย
+              doc.note || '',                    // Q: หมายเหตุ
+              profName,                         // R: ผู้บันทึก
+              recipient.updated_at,             // S: updated_at
+              doc.tax_invoice_no || '',         // T: เลขใบกำกับภาษี
+              recipient.id,                     // U: รหัสอ้างอิง
+          ]);
+        }
+      } catch (sheetsError: any) {
+        console.error('[Deliveries] sync Google Sheets ไม่สำเร็จ (เอกสารถูกบันทึกแล้ว):', sheetsError?.message || sheetsError);
+      }
     }
 
     return NextResponse.json({ success: true, data: delivery });

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
-import { syncRowInSheet } from '@/lib/google-sheets';
 import { canAccessDepartment, forbiddenResponse, requireRoles } from '@/lib/supabase/auth-helpers';
 import { canViewGoodsReceiptWorkflow, isGoodsReceipt } from '@/lib/document-workflow';
 import { documentNo } from '@/lib/document-no';
@@ -127,57 +126,60 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     if (error) throw error;
 
     // Get profile name
-    let profName = '';
-    if (data.recorded_by) {
-      const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', data.recorded_by).single();
-      profName = prof?.full_name || '';
-    }
-
-    // Sync to Sheets: this document may be linked to multiple departments, each
-    // with its own sheet row (found via its own document_recipients.id).
-    const { data: recipients } = await supabase.from('document_recipients').select('*').eq('document_id', data.id);
-    const deptIds = [...new Set((recipients || []).map((r: any) => r.department_id).filter(Boolean))];
-    const recipientIds = (recipients || []).map((r: any) => r.id);
-    const [{ data: depts }, { data: deliveries }] = await Promise.all([
-      supabase.from('departments').select('id, name').in('id', deptIds.length ? deptIds : ['00000000-0000-0000-0000-000000000000']),
-      supabase
-        .from('delivery_logs')
-        .select('*')
-        .in('document_recipient_id', recipientIds.length ? recipientIds : ['00000000-0000-0000-0000-000000000000'])
-        .order('created_at', { ascending: false }),
-    ]);
-    const deptNameMap = new Map((depts || []).map((d: any) => [d.id, d.name]));
-    const deliveryByRecipient = new Map<string, any>();
-    for (const delivery of deliveries || []) {
-      if (!deliveryByRecipient.has(delivery.document_recipient_id)) {
-        deliveryByRecipient.set(delivery.document_recipient_id, delivery);
+    if (process.env.GOOGLE_SHEETS_SYNC_MODE !== 'apps_script') {
+      const { syncRowInSheet } = await import('@/lib/google-sheets');
+      let profName = '';
+      if (data.recorded_by) {
+        const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', data.recorded_by).single();
+        profName = prof?.full_name || '';
       }
-    }
-    const deliveryProfileIds = [...new Set((deliveries || []).map((delivery: any) => delivery.recipient_id).filter(Boolean))];
-    const { data: deliveryProfiles } = await supabase
-      .from('profiles')
-      .select('id, full_name')
-      .in('id', deliveryProfileIds.length ? deliveryProfileIds : ['00000000-0000-0000-0000-000000000000']);
-    const deliveryProfileMap = new Map((deliveryProfiles || []).map((profile: any) => [profile.id, profile.full_name]));
-    const awaitingReceipt = new Set(['registered', 'delivered', 'awaiting_inspector', 'awaiting_purchasing', 'awaiting_recipient']);
 
-    for (const r of recipients || []) {
-      const rejectionNote = r.status === 'rejected'
-        ? r.inspector_verified === false ? `ผู้ตรวจสอบ: ${r.inspector_verification_note || ''}`
-          : r.purchasing_verified === false ? `จัดซื้อ: ${r.purchasing_verification_note || ''}` : null
-        : null;
-      const delivery = rejectionNote !== null || awaitingReceipt.has(r.status) ? null : deliveryByRecipient.get(r.id);
-      await syncRowInSheet(data.received_date, [
-          documentNo(data), data.received_date, data.doc_number || '',
-          data.sender, data.subject, deptNameMap.get(r.department_id) || '',
-          r.status, r.admin_signature || '', r.admin_signed_at || '',
-          delivery ? (deliveryProfileMap.get(delivery.recipient_id) || '') : '',
-          delivery?.recipient_signature || '', delivery?.recipient_signed_at || '',
-          rejectionNote !== null ? 'ไม่ถูกต้อง' : delivery ? (delivery.is_verified ? 'ถูกต้อง' : 'ไม่ถูกต้อง') : '',
-          rejectionNote ?? delivery?.verification_note ?? '',
-          data.is_damaged ? 'ใช่' : 'ไม่', data.damage_image_url || '', data.note || '',
-          profName, r.updated_at, data.tax_invoice_no || '', r.id,
+      // Sync to Sheets: this document may be linked to multiple departments, each
+      // with its own sheet row (found via its own document_recipients.id).
+      const { data: recipients } = await supabase.from('document_recipients').select('*').eq('document_id', data.id);
+      const deptIds = [...new Set((recipients || []).map((r: any) => r.department_id).filter(Boolean))];
+      const recipientIds = (recipients || []).map((r: any) => r.id);
+      const [{ data: depts }, { data: deliveries }] = await Promise.all([
+        supabase.from('departments').select('id, name').in('id', deptIds.length ? deptIds : ['00000000-0000-0000-0000-000000000000']),
+        supabase
+          .from('delivery_logs')
+          .select('*')
+          .in('document_recipient_id', recipientIds.length ? recipientIds : ['00000000-0000-0000-0000-000000000000'])
+          .order('created_at', { ascending: false }),
       ]);
+      const deptNameMap = new Map((depts || []).map((d: any) => [d.id, d.name]));
+      const deliveryByRecipient = new Map<string, any>();
+      for (const delivery of deliveries || []) {
+        if (!deliveryByRecipient.has(delivery.document_recipient_id)) {
+          deliveryByRecipient.set(delivery.document_recipient_id, delivery);
+        }
+      }
+      const deliveryProfileIds = [...new Set((deliveries || []).map((delivery: any) => delivery.recipient_id).filter(Boolean))];
+      const { data: deliveryProfiles } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', deliveryProfileIds.length ? deliveryProfileIds : ['00000000-0000-0000-0000-000000000000']);
+      const deliveryProfileMap = new Map((deliveryProfiles || []).map((profile: any) => [profile.id, profile.full_name]));
+      const awaitingReceipt = new Set(['registered', 'delivered', 'awaiting_inspector', 'awaiting_purchasing', 'awaiting_recipient']);
+
+      for (const r of recipients || []) {
+        const rejectionNote = r.status === 'rejected'
+          ? r.inspector_verified === false ? `ผู้ตรวจสอบ: ${r.inspector_verification_note || ''}`
+            : r.purchasing_verified === false ? `จัดซื้อ: ${r.purchasing_verification_note || ''}` : null
+          : null;
+        const delivery = rejectionNote !== null || awaitingReceipt.has(r.status) ? null : deliveryByRecipient.get(r.id);
+        await syncRowInSheet(data.received_date, [
+            documentNo(data), data.received_date, data.doc_number || '',
+            data.sender, data.subject, deptNameMap.get(r.department_id) || '',
+            r.status, r.admin_signature || '', r.admin_signed_at || '',
+            delivery ? (deliveryProfileMap.get(delivery.recipient_id) || '') : '',
+            delivery?.recipient_signature || '', delivery?.recipient_signed_at || '',
+            rejectionNote !== null ? 'ไม่ถูกต้อง' : delivery ? (delivery.is_verified ? 'ถูกต้อง' : 'ไม่ถูกต้อง') : '',
+            rejectionNote ?? delivery?.verification_note ?? '',
+            data.is_damaged ? 'ใช่' : 'ไม่', data.damage_image_url || '', data.note || '',
+            profName, r.updated_at, data.tax_invoice_no || '', r.id,
+        ]);
+      }
     }
 
     return NextResponse.json({ success: true, data });

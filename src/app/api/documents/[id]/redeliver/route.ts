@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
-import { syncRowInSheet } from '@/lib/google-sheets';
 import { requireRoles } from '@/lib/supabase/auth-helpers';
 import { isGoodsReceipt as isGoodsReceiptSubject } from '@/lib/document-workflow';
 import { documentNo } from '@/lib/document-no';
@@ -67,14 +66,17 @@ export async function PUT(_request: NextRequest, { params }: { params: Promise<{
       profName = prof?.full_name || '';
     }
 
-    await syncRowInSheet(data.received_date, [
-        documentNo(data), data.received_date, data.doc_number || '',
-        data.sender, data.subject, deptName,
-        status, recipient.admin_signature || '', recipient.admin_signed_at || '',
-        '', '', '', '', '',
-        data.is_damaged ? 'ใช่' : 'ไม่', data.damage_image_url || '', data.note || '',
-        profName, recipient.updated_at, data.tax_invoice_no || '', recipient.id,
-    ]);
+    if (process.env.GOOGLE_SHEETS_SYNC_MODE !== 'apps_script') {
+      const { syncRowInSheet } = await import('@/lib/google-sheets');
+      await syncRowInSheet(data.received_date, [
+          documentNo(data), data.received_date, data.doc_number || '',
+          data.sender, data.subject, deptName,
+          status, recipient.admin_signature || '', recipient.admin_signed_at || '',
+          '', '', '', '', '',
+          data.is_damaged ? 'ใช่' : 'ไม่', data.damage_image_url || '', data.note || '',
+          profName, recipient.updated_at, data.tax_invoice_no || '', recipient.id,
+      ]);
+    }
 
     return NextResponse.json({
       success: true,

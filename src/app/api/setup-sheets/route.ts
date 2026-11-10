@@ -7,10 +7,7 @@ export async function GET() {
     const auth = await requireRoles(['super_admin']);
     if (auth.response) return auth.response;
 
-    // Always resolve through the same logic the app uses to actually read/write
-    // (env var first, then Supabase app_settings, then auto-create) — this used
-    // to have its own separate Supabase-only lookup here, which could point at
-    // a stale spreadsheet ID different from the one the app was really syncing to.
+    // ใช้ ID จาก env หรือค่าเริ่มต้นเดียวกับงานซิงก์ โดยไม่เรียก Google API
     const url = await getSpreadsheetUrl();
     if (!url) throw new Error('ไม่พบ Google Sheet และสร้างใหม่ไม่สำเร็จ');
 

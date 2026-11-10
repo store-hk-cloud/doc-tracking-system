@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase/admin';
-import { syncRowInSheet } from '@/lib/google-sheets';
 import { notifyDepartment } from '@/lib/upstash';
 import { forbiddenResponse, requireRoles } from '@/lib/supabase/auth-helpers';
 import { getGoodsReceiptWorkflowAction, isGoodsReceipt } from '@/lib/document-workflow';
@@ -130,12 +129,13 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
       const { data: doc } = await supabase.from('documents').select('*').eq('id', recipient.document_id).single();
       const { data: dept } = await supabase.from('departments').select('name').eq('id', recipient.department_id).single();
-      let profName = '';
-      if (doc?.recorded_by) {
-        const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', doc.recorded_by).single();
-        profName = prof?.full_name || '';
-      }
-      if (doc) {
+      if (doc && process.env.GOOGLE_SHEETS_SYNC_MODE !== 'apps_script') {
+        const { syncRowInSheet } = await import('@/lib/google-sheets');
+        let profName = '';
+        if (doc.recorded_by) {
+          const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', doc.recorded_by).single();
+          profName = prof?.full_name || '';
+        }
         await syncRowInSheet(doc.received_date, [
           documentNo(doc), doc.received_date, doc.doc_number || '',
           doc.sender, doc.subject, dept?.name || '',
@@ -217,15 +217,18 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       });
     }
 
-    // Sync to Sheets (update this department's row only, wherever its tab actually is)
-    await syncRowInSheet(doc.received_date, [
-        documentNo(doc), doc.received_date, doc.doc_number || '',
-        doc.sender, doc.subject, deptName,
-        recipient.status, recipient.admin_signature || '', recipient.admin_signed_at || '',
-        '', '', '', '', '',
-        doc.is_damaged ? 'ใช่' : 'ไม่', doc.damage_image_url || '', doc.note || '',
-        profName, recipient.updated_at, doc.tax_invoice_no || '', recipient.id,
-    ]);
+    if (process.env.GOOGLE_SHEETS_SYNC_MODE !== 'apps_script') {
+      const { syncRowInSheet } = await import('@/lib/google-sheets');
+      // Sync to Sheets (update this department's row only, wherever its tab actually is)
+      await syncRowInSheet(doc.received_date, [
+          documentNo(doc), doc.received_date, doc.doc_number || '',
+          doc.sender, doc.subject, deptName,
+          recipient.status, recipient.admin_signature || '', recipient.admin_signed_at || '',
+          '', '', '', '', '',
+          doc.is_damaged ? 'ใช่' : 'ไม่', doc.damage_image_url || '', doc.note || '',
+          profName, recipient.updated_at, doc.tax_invoice_no || '', recipient.id,
+      ]);
+    }
 
     return NextResponse.json({
       success: true,

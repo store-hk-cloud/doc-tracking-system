@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
 import { getServiceSupabase } from '@/lib/supabase/admin';
 import { requireRoles } from '@/lib/supabase/auth-helpers';
-import { ensureDailySheetReady, HEADERS, listSheetTabs, getSheetValuesBatch, batchUpdateRowsOrThrow, appendRowsOrThrow, getSpreadsheetUrl } from '@/lib/google-sheets';
 import { documentNo } from '@/lib/document-no';
 
 const PAGE_SIZE = 1000;
@@ -10,8 +9,8 @@ const AWAITING_RECEIPT = new Set([
   'registered', 'delivered', 'awaiting_inspector', 'awaiting_purchasing', 'awaiting_recipient',
 ]);
 
-function hasExpectedHeader(row: unknown): boolean {
-  return Array.isArray(row) && HEADERS.every((header, index) => row[index] === header);
+function hasExpectedHeader(row: unknown, headers: string[]): boolean {
+  return Array.isArray(row) && headers.every((header, index) => row[index] === header);
 }
 
 async function fetchAllRows(build: (from: number, to: number) => any): Promise<any[]> {
@@ -32,10 +31,18 @@ async function fetchAllRows(build: (from: number, to: number) => any): Promise<a
 //  2. Documents/recipients that never made it into Sheets at all (e.g. an append
 //     silently failed) — these get appended to the tab matching received_date.
 export async function GET() {
-  try {
-    const auth = await requireRoles(['super_admin']);
-    if (auth.response) return auth.response;
+  const auth = await requireRoles(['super_admin']);
+  if (auth.response) return auth.response;
+  if (process.env.GOOGLE_SHEETS_SYNC_MODE === 'apps_script') {
+    return NextResponse.json({ success: false, error: 'ใช้ POST เพื่อเข้าคิวซิงก์' }, {
+      status: 405, headers: { Allow: 'POST' },
+    });
+  }
+  return backfillLegacySheets();
+}
 
+async function backfillLegacySheets() {
+  try {
     const supabase = getServiceSupabase();
     const lockToken = randomUUID();
     const { data: acquired, error: lockError } = await supabase.rpc('try_acquire_sheet_backfill_lock', {
@@ -50,13 +57,15 @@ export async function GET() {
     }
 
     try {
+    const { ensureDailySheetReady, HEADERS, listSheetTabs, getSheetValuesBatch, batchUpdateRowsOrThrow, appendRowsOrThrow, getSpreadsheetUrl } =
+      await import('@/lib/google-sheets');
     const tabs = await listSheetTabs();
     const rowsBySheet = await getSheetValuesBatch(tabs);
 
     // อ่านข้อมูลแต่ละแท็บเพียงรอบเดียวก่อน แล้วซ่อมโครงสร้างเฉพาะแท็บที่หัวตาราง
     // หาย เพื่อไม่ยิง metadata/header request ซ้ำทุกวันจนเกิน quota ของ Sheets.
     for (const sheet of tabs) {
-      if (hasExpectedHeader(rowsBySheet.get(sheet)?.[0])) continue;
+      if (hasExpectedHeader(rowsBySheet.get(sheet)?.[0], HEADERS)) continue;
       await ensureDailySheetReady(sheet);
       rowsBySheet.set(sheet, (await getSheetValuesBatch([sheet])).get(sheet) || []);
     }
@@ -222,4 +231,20 @@ export async function GET() {
     console.error('[Backfill Sheets] Error:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
+}
+
+export async function POST(request: Request) {
+  const auth = await requireRoles(['super_admin']);
+  if (auth.response) return auth.response;
+  if (request.headers.get('origin') !== new URL(request.url).origin) {
+    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+  }
+  if (process.env.GOOGLE_SHEETS_SYNC_MODE !== 'apps_script') return backfillLegacySheets();
+
+  const { data: queued, error } = await getServiceSupabase().rpc('enqueue_all_apps_script_sheet_jobs');
+  if (error) {
+    console.error('[Backfill Sheets] Enqueue error:', error);
+    return NextResponse.json({ success: false, error: 'เข้าคิวซิงก์ไม่สำเร็จ' }, { status: 500 });
+  }
+  return NextResponse.json({ success: true, queued }, { status: 202 });
 }

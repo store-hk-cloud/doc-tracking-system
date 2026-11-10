@@ -36,7 +36,7 @@ function makeRows() {
   return { documents, recipients };
 }
 
-function fixture({ referenceIdFor143 = '2026-09/128', locked = false, duplicateFirstReference = false, deliveries = [], lookupError = null } = {}) {
+function fixture({ referenceIdFor143 = '2026-09/128', locked = false, duplicateFirstReference = false, deliveries = [], lookupError = null, env = {} } = {}) {
   const { documents, recipients } = makeRows();
   const calls = { normalized: [], updates: [], appends: [], locks: [], reads: [] };
   const legacyRows = [
@@ -52,6 +52,7 @@ function fixture({ referenceIdFor143 = '2026-09/128', locked = false, duplicateF
       calls.locks.push({ name, args });
       if (name === 'try_acquire_sheet_backfill_lock') return Promise.resolve({ data: !locked, error: null });
       if (name === 'release_sheet_backfill_lock') return Promise.resolve({ data: true, error: null });
+      if (name === 'enqueue_all_apps_script_sheet_jobs') return Promise.resolve({ data: recipients.length, error: null });
       throw new Error(`Unexpected RPC: ${name}`);
     },
     from(table) {
@@ -90,9 +91,25 @@ function fixture({ referenceIdFor143 = '2026-09/128', locked = false, duplicateF
       getSpreadsheetUrl: async () => 'https://example.invalid/sheet',
     },
     '@/lib/document-no': { documentNo: (document) => document.displayNo },
-  });
+  }, { process: { env } });
   return { calls, route, recipients };
 }
+
+test('Apps Script backfill queues database recipient IDs without reading or writing Sheets', async () => {
+  const f = fixture({ env: { GOOGLE_SHEETS_SYNC_MODE: 'apps_script' } });
+  assert.equal((await f.route.GET()).status, 405);
+  assert.deepEqual(f.calls.locks, []);
+  const url = 'https://doc.example/api/admin/backfill-sheets';
+  const response = await f.route.POST(new Request(url, { method: 'POST', headers: { Origin: 'https://doc.example' } }));
+
+  assert.equal(response.status, 202);
+  assert.equal((await response.json()).queued, f.recipients.length);
+  assert.deepEqual(f.calls.locks.map(({ name }) => name), ['enqueue_all_apps_script_sheet_jobs']);
+  assert.deepEqual(f.calls.reads, []);
+  assert.deepEqual(f.calls.normalized, []);
+  assert.deepEqual(f.calls.updates, []);
+  assert.deepEqual(f.calls.appends, []);
+});
 
 test('backfill refuses a second concurrent run before reading or writing Sheets', async () => {
   const f = fixture({ locked: true });

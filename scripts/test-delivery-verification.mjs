@@ -74,7 +74,7 @@ async function fixture({ sheetsFailure = false } = {}) {
   const output = transpileModule(source, { compilerOptions: { module: ModuleKind.CommonJS, target: 99 } }).outputText;
   const exports = {};
   vm.runInNewContext(output, {
-    exports, console,
+    exports, console, process: { env: {} },
     require(name) {
       if (name === '@/lib/supabase/admin') return { getServiceSupabase: () => supabase };
       if (name === '@/lib/supabase/auth-helpers') return { requireRoles: async (roles) => {
