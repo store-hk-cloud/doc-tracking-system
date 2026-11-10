@@ -124,3 +124,11 @@ test('ambiguous legacy rows stay pending without adding or changing rows', () =>
   assert.equal(f.writes.length, 0);
   assert.equal(f.calls[1].p_success, false);
 });
+
+test('a matching recipient ID with a different document number stays pending', () => {
+  const wrongDocument = ['2026-11/999', ...values.slice(1)];
+  const f = fixture({ tab: day, initialRows: [[], wrongDocument] });
+  assert.equal(f.run().failed, 1);
+  assert.equal(f.writes.length, 0);
+  assert.equal(f.calls[1].p_success, false);
+});

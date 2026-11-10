@@ -121,7 +121,17 @@ function writeSheetJob_(spreadsheet, index, nextRows, runningNumbers, job) {
       location = match;
     }
   }
-  if (!location) location = findLegacySheetRow_(index, runningNumbers, job);
+  if (location) {
+    const { name, row } = location;
+    const response = Sheets.Spreadsheets.Values.get(SYNC_SPREADSHEET_ID, sheetRange_(name, 'A' + row + ':U' + row));
+    const previous = response.values?.[0];
+    // ข้อมูลเก่าบางแถวอาจผูกรหัส U ผิดใบ ต้องตรวจเลขรับเข้าก่อนเขียนทับ
+    if (previous?.[20] !== job.id || String(previous[0] ?? '') !== String(job.values[0] ?? '')) {
+      throw new Error('รหัสอ้างอิงกับเลขรับเข้าไม่ตรงกัน');
+    }
+  } else {
+    location = findLegacySheetRow_(index, runningNumbers, job);
+  }
   if (location) {
     writeRawSheetRow_(location.name, location.row, job.values);
     index.get(location.name).set(job.id, location.row);
