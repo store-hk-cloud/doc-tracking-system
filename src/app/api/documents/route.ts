@@ -55,6 +55,8 @@ export async function GET(request: NextRequest) {
     // แทนวันที่รับเอกสารเข้าระบบ ค่าเริ่มต้นคงพฤติกรรมเดิมไว้เพื่อไม่กระทบหน้าอื่น
     const byDeliveredDate = searchParams.get('date_field') === 'delivered';
     const limit = parseInt(searchParams.get('limit') || '0', 10);
+    // order=queue เรียงตามลำดับที่ผู้ใช้จัดเอง (queue_rank สูงอยู่บน) แทนเลขเอกสาร
+    const byQueue = searchParams.get('order') === 'queue';
 
     const isMineScope = scope === 'mine' && auth.context?.profile.role === 'user';
     const filterRecipients = (q: any) => {
@@ -159,7 +161,16 @@ export async function GET(request: NextRequest) {
     rows.sort((a: any, b: any) =>
       Math.floor(documentOrder.get(a.document_id)! / ID_CHUNK) - Math.floor(documentOrder.get(b.document_id)! / ID_CHUNK)
       || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-    rows.sort((a: any, b: any) => (docMap.get(b.document_id)?.running_no || 0) - (docMap.get(a.document_id)?.running_no || 0));
+    const byRunningNo = (a: any, b: any) => (docMap.get(b.document_id)?.running_no || 0) - (docMap.get(a.document_id)?.running_no || 0);
+    if (byQueue) {
+      // queue_rank เป็น bigint จึงอาจมาเป็นสตริง ต้องเทียบเป็น BigInt ไม่ให้เสียความแม่นยำ
+      // ฐานข้อมูลที่ยังไม่ลง migration ไม่มีคอลัมน์นี้ จึงตกไปเรียงตามเลขเอกสารแบบเดิม
+      const rank = (r: any) => BigInt(r.queue_rank ?? 0);
+      rows.sort((a: any, b: any) => (rank(a) === rank(b) ? 0 : rank(a) > rank(b) ? -1 : 1)
+        || byRunningNo(a, b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    } else {
+      rows.sort(byRunningNo);
+    }
     if (limit > 0) rows = rows.slice(0, limit);
 
     const deptIds = [...new Set(rows.map((r: any) => r.department_id).filter(Boolean))];

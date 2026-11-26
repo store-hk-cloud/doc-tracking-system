@@ -156,3 +156,38 @@ for (const table of ['documents', 'document_recipients', 'delivery_logs']) test(
   const f = fixture(2); f.fail(table); const result = await f.get('status=closed&limit=1');
   assert.equal(result.status, 500); assert.equal(result.error, 'database unavailable');
 });
+
+for (const query of ['status=registered&scope=mine', 'status=delivered&status=awaiting_inspector&status=awaiting_purchasing&status=awaiting_recipient']) {
+  test(`order=queue sorts by queue_rank desc, ties by id, tolerating missing rank: ${query}`, async () => {
+    const f = fixture(5, { role: 'admin' });
+    const status = query.startsWith('status=registered') ? 'registered' : 'delivered';
+    f.tables.documents.forEach((row) => { row.recorded_by = 'me'; });
+    f.tables.document_recipients.forEach((row) => { row.status = status; });
+    // d0..d4 -> r00000..r00004; r00003 ไม่มี queue_rank, r00001/r00002 เสมอกัน
+    Object.assign(f.tables.document_recipients[0], { queue_rank: 10 });
+    Object.assign(f.tables.document_recipients[1], { queue_rank: 50 });
+    Object.assign(f.tables.document_recipients[2], { queue_rank: 50 });
+    Object.assign(f.tables.document_recipients[4], { queue_rank: '9007199254740993' });
+    const ordered = await f.get(`${query}&order=queue`);
+    assert.deepEqual(ordered.data.map(row => row.id), ['r00004', 'r00001', 'r00002', 'r00000', 'r00003']);
+    const plain = await f.get(query);
+    assert.deepEqual(plain.data.map(row => row.document_id), ['d0', 'd1', 'd2', 'd3', 'd4']);
+    assert.equal(ordered.data[0].queue_rank, undefined);
+  });
+}
+
+test('order=queue before the migration keeps the running number order', async () => {
+  const f = fixture(5, { role: 'admin' });
+  f.tables.document_recipients.forEach((row) => { delete row.queue_rank; row.id = `r${9 - Number(row.document_id.slice(1))}`; });
+  const ordered = await f.get('status=closed&order=queue');
+  const plain = await f.get('status=closed');
+  assert.deepEqual(ordered.data.map(row => row.document_id), plain.data.map(row => row.document_id));
+  assert.deepEqual(plain.data.map(row => row.document_id), ['d0', 'd1', 'd2', 'd3', 'd4']);
+});
+
+test('order=queue does not add database queries', async () => {
+  const f = fixture(5); await f.get('status=closed');
+  const baseline = f.calls.length; f.calls.length = 0;
+  await f.get('status=closed&order=queue');
+  assert.equal(f.calls.length, baseline);
+});

@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { documentNo } from '@/lib/document-no';
+import { useQueueReorder } from '@/lib/use-queue-reorder';
 
 export default function DeliveryPage() {
   const [docs, setDocs] = useState<any[]>([]);
@@ -16,12 +17,20 @@ export default function DeliveryPage() {
   const [bulkMessage, setBulkMessage] = useState('');
   const [showBulkSignModal, setShowBulkSignModal] = useState(false);
   const [bulkSignError, setBulkSignError] = useState('');
+  const [orderToast, setOrderToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const reloadSkipped = useRef(false);
+  // ฟังก์ชันโหลดรายการประกาศก่อน hook จัดลำดับ จึงอ่านสถานะบันทึกผ่าน ref ที่ effect ด้านล่างผูกไว้
+  const orderSaving = useRef<() => boolean>(() => false);
 
   const fetchDocs = async () => {
     try {
-      const res = await fetch('/api/documents?status=registered&scope=mine');
+      const res = await fetch('/api/documents?status=registered&scope=mine&order=queue');
       const data = await res.json();
-      if (data.success) setDocs(data.data);
+      if (data.success) {
+        // กำลังบันทึกลำดับ ข้อมูลที่เพิ่งโหลดอาจเป็นลำดับเก่า ถ้าทับตอนนี้ hook จะส่งลำดับเก่ากลับไปบันทึกทับ
+        if (orderSaving.current()) reloadSkipped.current = true;
+        else setDocs(data.data);
+      }
     } catch (e) {
       console.error('fetch docs error:', e);
     }
@@ -29,6 +38,24 @@ export default function DeliveryPage() {
   };
 
   useEffect(() => { fetchDocs(); }, []);
+
+  // หน้านี้ไม่มีตัวกรอง/ค้นหา และแสดงเฉพาะงานที่รอส่งมอบของตัวเองทั้งหมด จึงจัดลำดับได้ทุกแถว ยกเว้นขณะกำลังส่งมอบหลายใบ
+  const { handleProps, rowProps, isSaving } = useQueueReorder({
+    items: docs,
+    setItems: setDocs,
+    getId: (doc: any) => doc.id,
+    isOrderable: () => true,
+    scope: 'delivery',
+    enabled: !loading && !bulkSigning,
+    onSaved: (text) => setOrderToast({ type: 'success', text }),
+    onError: (text) => setOrderToast({ type: 'error', text }),
+    onSettled: (stale) => {
+      if (!stale && !reloadSkipped.current) return;
+      reloadSkipped.current = false;
+      void fetchDocs();
+    },
+  });
+  useEffect(() => { orderSaving.current = isSaving; }, [isSaving]);
 
   const handleSign = async () => {
     if (!signature.trim()) {
@@ -112,16 +139,22 @@ export default function DeliveryPage() {
           </div>
         )}
         {bulkMessage && <div className="toast success" style={{ position: 'static', marginBottom: 12 }}>{bulkMessage}</div>}
+        {orderToast && <div className={`toast ${orderToast.type}`} role="status" style={{ position: 'static', marginBottom: 12 }}>{orderToast.text}</div>}
 
         {loading ? <div className="empty-search">กำลังโหลด...</div> : docs.length === 0 ? <div className="empty-search">ไม่มีเอกสารรอส่งมอบ</div> : (
           <div className="table-wrap">
             <table>
               <thead><tr>
+                <th>ลำดับ</th>
                 <th><input type="checkbox" checked={selectedIds.size === docs.length && docs.length > 0} onChange={toggleSelectAll} /></th>
                 <th>No.</th><th>วันที่รับ</th><th>ผู้ส่ง</th><th>เลขที่เอกสาร</th><th>เรื่อง</th><th>หน่วยงาน</th><th>ดำเนินการ</th>
               </tr></thead>
-              <tbody>{docs.map((doc: any) => (
-                <tr key={doc.id}>
+              <tbody>{docs.map((doc: any, index: number) => (
+                <tr key={doc.id} {...rowProps(doc.id)}>
+                  <td>
+                    <button {...handleProps(doc.id, documentNo(doc), index + 1)} title={bulkSigning ? 'กำลังส่งมอบ ยังจัดลำดับไม่ได้' : undefined}>⠿</button>
+                    <span className="queue-order-no">{index + 1}</span>
+                  </td>
                   <td><input type="checkbox" checked={selectedIds.has(doc.id)} onChange={() => toggleSelect(doc.id)} /></td>
                   <td className="code-cell">{documentNo(doc)}</td><td>{doc.received_date}</td><td>{doc.sender}</td><td>{doc.doc_number || '-'}</td><td>{doc.subject}</td><td>{doc.recipient_dept_name}</td>
                   <td><button className="table-action-button" onClick={() => { setSelectedDoc(doc); setShowModal(true); setSignature(''); setError(''); }}>✍️ ส่งมอบ</button></td>

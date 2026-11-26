@@ -12,7 +12,7 @@ const routes = [
   'admin/backfill-sheets', 'admin/cash-master', 'auth/resolve-username',
   'cashier/handovers', 'cashier/handovers/[id]', 'departments',
   'deliveries', 'deliveries/[id]/verify', 'deliveries/queue',
-  'documents', 'documents/[id]', 'documents/[id]/redeliver', 'documents/[id]/sign',
+  'documents', 'documents/order', 'documents/[id]', 'documents/[id]/redeliver', 'documents/[id]/sign',
   'messenger/bank-branches', 'messenger/lookups', 'messenger/reports/daily',
   'messenger/runs', 'messenger/runs/[id]', 'messenger/runs/[id]/deposit',
   'messenger/runs/[id]/photos', 'messenger/runs/[id]/pickup',

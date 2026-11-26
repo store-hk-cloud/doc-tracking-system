@@ -5,6 +5,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { getGoodsReceiptWorkflowAction, isGoodsReceipt } from '@/lib/document-workflow';
 import { documentNo } from '@/lib/document-no';
 import { submitReceipt } from '@/lib/receipt-submit';
+import { useQueueReorder } from '@/lib/use-queue-reorder';
 import { RECEIPT_QUEUE_BATCH_LIMIT, RECEIPT_QUEUE_URL, receiptQueueError, type ReceiptQueueBatch } from '@/lib/receipt-queue';
 
 const MIN_KEYWORD_LENGTH = 3;
@@ -60,6 +61,10 @@ export default function RecipientListPage() {
   // Pending tab
   const [pendingDocs, setPendingDocs] = useState<any[]>([]);
   const [pendingLoading, setPendingLoading] = useState(true);
+  const [orderToast, setOrderToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const reloadSkipped = useRef(false);
+  // loadPending ประกาศก่อน hook จัดลำดับ จึงอ่านสถานะบันทึกผ่าน ref ที่ effect ถัดจาก hook ผูกไว้
+  const orderSaving = useRef<() => boolean>(() => false);
   // ค่าว่าง = แสดงทุกวัน ซึ่งเป็นค่าเริ่มต้น เพราะหน้านี้คือ "คิวงานที่ค้าง"
   // เดิมล็อกไว้ที่วันนี้วันเดียว งานที่ค้างจากวันก่อนจึงมองไม่เห็นและ "เลือกทั้งหมด"
   // ก็หมายถึงทั้งหมดของวันนั้นเท่านั้น (ตรวจข้อมูลจริง: ค้าง 114 รายการกระจายอยู่ 7 วัน
@@ -116,9 +121,14 @@ export default function RecipientListPage() {
     setPendingLoading(true);
     try {
       const statusQuery = PENDING_STATUSES.map((status) => `status=${status}`).join('&');
-      const res = await window.fetch(`/api/documents?${statusQuery}`);
+      const res = await window.fetch(`/api/documents?${statusQuery}&order=queue`);
       const data = await res.json();
-      if (data.success) setPendingDocs(data.data.filter((d: any) => PENDING_STATUSES.includes(d.status)));
+      if (data.success) {
+        // กำลังบันทึกลำดับ ข้อมูลที่เพิ่งโหลดอาจเป็นลำดับเก่า ถ้าทับตอนนี้ hook จะส่งลำดับเก่ากลับไปบันทึกทับ
+        // จึงข้ามรอบนี้แล้วโหลดใหม่หลังบันทึกเสร็จ
+        if (orderSaving.current()) reloadSkipped.current = true;
+        else setPendingDocs(data.data.filter((d: any) => PENDING_STATUSES.includes(d.status)));
+      }
     } catch (e) {
       console.error('fetch pending docs error:', e);
     }
@@ -261,6 +271,28 @@ export default function RecipientListPage() {
   // เลือกได้ทุกใบที่เป็นงานของตัวเอง ไม่ใช่เฉพาะขั้น "ลงชื่อรับ" เพราะคนคนเดียว
   // มีทั้งใบที่รอเซ็นผู้ตรวจสอบและใบที่รอลงชื่อรับค้างอยู่พร้อมกันได้
   const signablePending = visiblePending.filter(isPendingOwnStage);
+
+  // เลขลำดับนับจากรายการที่ไม่ผ่านตัวกรอง เพื่อให้เลขนิ่งตรงกับกองกระดาษจริงแม้กำลังค้นหา
+  const isOrderable = (doc: any) => isPendingOwnStage(doc) && !succeededCycles.has(cycleKey(doc.id, doc.recipient_updated_at));
+  const orderNumbers = new Map<string, number>();
+  pendingDocs.filter(isOrderable).forEach((doc: any, i: number) => orderNumbers.set(doc.id, i + 1));
+  const orderFiltered = Boolean(pendingDate || pendingKeyword || pendingStage);
+  const { handleProps, rowProps, isSaving } = useQueueReorder<any>({
+    items: pendingDocs,
+    setItems: setPendingDocs,
+    getId: (d) => d.id,
+    isOrderable,
+    scope: 'stage',
+    enabled: !orderFiltered && !bulkSigning && !pendingLoading,
+    onSaved: (text) => setOrderToast({ type: 'success', text }),
+    onError: (text) => setOrderToast({ type: 'error', text }),
+    onSettled: (stale) => {
+      if (!stale && !reloadSkipped.current) return;
+      reloadSkipped.current = false;
+      void loadPending();
+    },
+  });
+  useEffect(() => { orderSaving.current = isSaving; }, [isSaving]);
   const allSignableSelected = signablePending.length > 0 && signablePending.every((d: any) => selectedIds.has(d.id));
 
   // แหล่งความจริงเดียวของ "จะลงนามกี่ใบ" — ใบที่เลือกไว้ ∩ ใบที่ยังมองเห็นและเป็น
@@ -415,6 +447,7 @@ export default function RecipientListPage() {
     setBulkSigning(true);
     setBulkSignError('');
     setBulkMessage('');
+    setOrderToast(null);
     setBulkFailures([]);
     setBulkProgress({ done: 0, total: targets.length });
     setShowBulkSignModal(false);
@@ -640,6 +673,16 @@ export default function RecipientListPage() {
             </div>
           )}
 
+          {orderToast && (
+            <div
+              className={`toast ${orderToast.type}`}
+              role={orderToast.type === 'error' ? 'alert' : 'status'}
+              style={{ position: 'static', marginBottom: 12 }}
+            >
+              {orderToast.text}
+            </div>
+          )}
+
           {pendingLoading ? (
             <div className="empty-search">กำลังโหลด...</div>
           ) : visiblePending.length === 0 ? (
@@ -651,6 +694,7 @@ export default function RecipientListPage() {
               <table>
                 <thead>
                   <tr>
+                    <th>ลำดับ</th>
                     <th>
                       <input
                         type="checkbox"
@@ -677,7 +721,20 @@ export default function RecipientListPage() {
                   {visiblePending.map((doc: any) => {
                     const action = workflowAction(doc);
                     return (
-                      <tr key={doc.id}>
+                      <tr key={doc.id} {...rowProps(doc.id)}>
+                        <td>
+                          {orderNumbers.has(doc.id) ? (
+                            <>
+                              <button
+                                {...handleProps(doc.id, documentNo(doc), orderNumbers.get(doc.id)!)}
+                                title={orderFiltered ? 'ล้างตัวกรองก่อนจึงจะจัดลำดับได้' : undefined}
+                              >
+                                ⠿
+                              </button>
+                              <span className="queue-order-no">{orderNumbers.get(doc.id)}</span>
+                            </>
+                          ) : '-'}
+                        </td>
                         <td>
                           {isPendingOwnStage(doc) && (
                             <input

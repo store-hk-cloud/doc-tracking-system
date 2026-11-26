@@ -163,3 +163,20 @@ test('dynamic verify route forwards the decoded id and retains the original RPC 
   assert.equal(response.status, 409);
   assert.deepEqual(await response.json(), { success: false, error: 'Delivery is already verified' });
 });
+
+test('documents/order is dispatched to its own handler, not documents/[id]', async () => {
+  const token = 'user-' + actorId;
+  mockSupabase(({ pathname, init }) => {
+    if (pathname === '/rest/v1/profiles') return Response.json({ id: actorId, role: 'user', is_active: true, department_id: null, departments: null });
+    assert.equal(pathname, '/rest/v1/rpc/reorder_document_recipients');
+    const args = JSON.parse(init.body);
+    assert.equal(args.p_actor_id, actorId);
+    assert.equal(args.p_scope, 'stage');
+    return Response.json({ count: 1 });
+  });
+  const response = await handle(request('documents/order', { token, method: 'PUT', body: { scope: 'stage', ids: [batchId] } }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { success: true, data: { count: 1 } });
+  const invalid = await handle(request('documents/order', { token, method: 'PUT', body: { scope: 'stage', ids: [] } }));
+  assert.equal(invalid.status, 400);
+});
