@@ -5,7 +5,11 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { Client } from 'pg';
+import pg from 'pg';
+
+const { Client, types } = pg;
+// เก็บ date/timestamp เป็นข้อความตามที่ Postgres ส่งมา: Date ของ JS ตัดไมโครวินาที และแปลง DATE ตาม timezone ของเครื่องที่รัน
+for (const oid of [1082, 1114, 1184]) types.setTypeParser(oid, (value) => value);
 
 const connectionString = process.env.POSTGRES_URL_NON_POOLING || process.env.DATABASE_URL;
 if (!connectionString) {
@@ -48,6 +52,7 @@ try {
   await client.connect();
   // snapshot เดียวทุกตาราง — ระบบยังเขียนอยู่ระหว่างดึง แต่ไฟล์ทุกไฟล์ต้องเป็นเวลาเดียวกัน
   await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+  await client.query("SET LOCAL TIME ZONE 'UTC'");
 
   const { rows: tables } = await client.query(
     "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename",
