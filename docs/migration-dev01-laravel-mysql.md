@@ -311,7 +311,7 @@ NODE_EXTRA_CA_CERTS="C:/Users/Office14/Documents/Backup/doctracking-export/supab
 - ไม่แตะตารางที่มีแต่ในระบบใหม่ (`sessions`, `notifications`)
 - `queue_rank_counter` ตั้งเป็น `MAX(queue_rank)` หลังนำเข้า
 - `install.php` เรียกคำสั่งเดียวกันเมื่อวางชุดข้อมูลไว้ที่ `core/storage/app/import/` และ **ข้ามขั้น "สร้างแอดมิน"** เมื่อนำเข้า (แอดมินมาจากข้อมูลเดิม ถ้าสร้างใหม่จะถูกลบทิ้งตอนลบแถวที่ไม่มีใน snapshot)
-- ลบไฟล์ใน `import/` หลังนำเข้า **ทุกครั้ง** ทั้งตอนติดตั้ง ตอนซ้อม และวันสลับ (DEPLOY-PATTERN หลักการข้อ 6)
+- ชุดที่อยู่ใต้ `core/storage/app/import/` ถูกลบอัตโนมัติทันทีที่นำเข้าสำเร็จ (DEPLOY-PATTERN หลักการข้อ 6) — ถ้าจะรัน `docs:verify-import` ต่อ ให้อัปชุดไว้ **นอก** `import/` แต่ยังอยู่ใต้ `core/` ที่เว็บเข้าไม่ได้ เช่น `core/storage/app/snapshot-<stamp>/` (www-data อ่านได้ แต่ `/home/dev01` อ่านไม่ได้) แล้ว `sudo rm -rf` เองหลังตรวจ
 
 ### 11.4 การดูแลไฟล์ export (PDPA)
 
@@ -372,7 +372,7 @@ NODE_EXTRA_CA_CERTS="C:/Users/Office14/Documents/Backup/doctracking-export/supab
 
 1. ติดตั้ง dev01 ตาม DEPLOY-PATTERN + นำเข้าชุด snapshot ล่าสุด (ข้อ 11)
 2. **ทดลองคู่ขนาน 1 สัปดาห์** บน dev01 — ผู้ใช้หลัก (ธุรการ, บัญชี, จัดซื้อ, ผู้ตรวจรับ) ลองทุกขั้นด้วยบัญชีและรหัสเดิมของตัวเอง ข้อมูลที่ลองถือเป็นข้อมูลทดสอบ จะถูกล้างด้วยการนำเข้ารอบสุดท้าย
-3. ซ้อมสลับ 1 ครั้ง: ดึง snapshot ใหม่ → `docs:import-snapshot` → `docs:verify-import` จับเวลาทั้งหมด แล้วลบไฟล์ใน `import/`
+3. ซ้อมสลับ 1 ครั้ง: ดึง snapshot ใหม่ → อัปไว้นอก `import/` → `docs:import-snapshot` → `docs:verify-import` จับเวลาทั้งหมด แล้วลบชุดนั้นทิ้ง
 4. เตรียมล่วงหน้า:
    - Worker หน้าแจ้งย้าย ใช้ชื่อเดิม `doc-tracking-system` และ route/โดเมนเดิมใน `wrangler.jsonc` (deploy ทับตัวจริง) ยังไม่ deploy
    - edge function `desktop-api` และ `desktop-device-auth` รุ่นที่ตอบ `410 Gone` ทุกคำขอ ยังไม่ deploy
@@ -391,7 +391,7 @@ NODE_EXTRA_CA_CERTS="C:/Users/Office14/Documents/Backup/doctracking-export/supab
 | | ④ ปิด Worker `doc-tracking-cron` (ไม่ให้ส่งอีเมลค้างซ้ำจากระบบเดิม) |
 | T+2 | รอคิว `document_receipt_private.jobs` ไม่มีสถานะ `queued` แล้วนับแถว `documents`, `document_recipients`, `delivery_logs`, `document_approval_audit` **2 ครั้งห่างกัน 1 นาที** ต้องเท่ากัน ถ้าไม่เท่า แปลว่ายังมีทางเขียนที่ไม่ได้ปิด → หาให้เจอก่อนไปต่อ |
 | T+4 | ดึง snapshot รอบสุดท้าย (`export-supabase-snapshot.mjs`) |
-| T+6 | อัปขึ้น dev01 → `docs:import-snapshot` (ล้างข้อมูลทดลองแทนด้วยข้อมูลจริง) → `docs:verify-import` → ลบไฟล์ใน `import/` |
+| T+6 | อัปขึ้น dev01 ไว้นอก `import/` → `docs:import-snapshot` (ล้างข้อมูลทดลองแทนด้วยข้อมูลจริง) → `docs:verify-import` → ลบชุดนั้นทิ้ง |
 | T+12 | login ทดสอบ 1 บัญชี, เปิดคิวส่ง/รับ, ตรวจเลขเอกสารถัดไป |
 | T+15 | แจ้งผู้ใช้ใช้ระบบใหม่ได้ |
 
